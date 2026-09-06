@@ -32,6 +32,7 @@ import * as elkModule from 'elkjs/lib/elk.bundled.js';
 import type { LayoutOptions, ViewModel } from 'tonto-view';
 import { defaultLayoutOptions } from 'tonto-view';
 import type { Point, Rect, Size } from './geometry.js';
+import { overlaps } from './geometry.js';
 import type { Positions } from './place.js';
 import type { RoutingStyle } from './route.js';
 
@@ -152,6 +153,133 @@ function supportsGroups(algorithm: LayoutOptions['algorithm']): boolean {
     return algorithm === 'layered' || algorithm === 'mrtree';
 }
 
+/**
+ * Moves each relator towards the middle of what it mediates, where there is room.
+ *
+ * The layering can only put it in a rank between its relata; how far along that
+ * rank it sits is decided by everything else in the drawing, and a relator that
+ * is between its relata vertically and a screen away horizontally is not between
+ * them in any sense a reader cares about. So each one is offered the middle, and
+ * takes as much of the way there as is free -- never overlapping anything, and
+ * never moving unless the move is an improvement.
+ */
+function settleRelators(view: ViewModel, positions: Positions): void {
+    const relators = view.nodes.filter(node => node.stereotype === 'relator');
+    if (relators.length === 0) {
+        return;
+    }
+
+    for (const relator of relators) {
+        const rect = positions[relator.id];
+        if (!rect) {
+            continue;
+        }
+        const relata = [...new Set(view.edges
+            .filter(edge => edge.kind === 'relation' && edge.stereotype === 'mediation'
+                && (edge.source === relator.id || edge.target === relator.id))
+            .map(edge => (edge.source === relator.id ? edge.target : edge.source))
+            .filter(id => id !== relator.id))]
+            .map(id => positions[id])
+            .filter((one): one is Rect => one !== undefined);
+        if (relata.length < 2) {
+            continue;
+        }
+
+        const middle = {
+            x: relata.reduce((sum, one) => sum + one.x + one.width / 2, 0) / relata.length - rect.width / 2,
+            y: relata.reduce((sum, one) => sum + one.y + one.height / 2, 0) / relata.length - rect.height / 2
+        };
+        const others = Object.entries(positions)
+            .filter(([id]) => id !== relator.id)
+            .map(([, one]) => one);
+        for (const share of [1, 0.8, 0.6, 0.4, 0.2]) {
+            const candidate = {
+                x: Math.round(rect.x + (middle.x - rect.x) * share),
+                y: Math.round(rect.y + (middle.y - rect.y) * share),
+                width: rect.width,
+                height: rect.height
+            };
+            if (!others.some(one => overlaps(candidate, one, 24))) {
+                positions[relator.id] = candidate;
+                break;
+            }
+        }
+    }
+}
+
+/**
+ * Mediations to hand ELK the other way round, so a relator ranks between the
+ * classes it mediates.
+ *
+ * A relator is a reified relationship: an employment is between an employee and
+ * an employer, and that is where a reader looks for it. But a mediation is
+ * written inside the relator, so the relator is the source of every one of them,
+ * and a layered algorithm puts a source above all its targets -- the relator
+ * ends up over the pair, with both relata below it side by side, which draws it
+ * as their supertype would be drawn.
+ *
+ * Turning half of its mediations round for the layering puts a relatum above and
+ * a relatum below, and the relator lands in the rank between them. Only the
+ * layering sees this; the relation is drawn as it is written.
+ */
+function mediationsToTurn(view: ViewModel, grouped: boolean, only: Set<string>): Set<string> {
+    const relators = new Set(view.nodes
+        .filter(node => node.stereotype === 'relator' && only.has(node.id))
+        .map(node => node.id));
+    const packageOf = new Map(view.nodes.map(node => [node.id, node.package]));
+    // Kept by relatum rather than by edge: a relator that mediates one class
+    // twice -- a marriage and its two spouses -- would otherwise have one of the
+    // pair turned and the other not, which is a two-cycle, and the layering
+    // answers a cycle by pushing its ends apart.
+    const byRelator = new Map<string, Map<string, Array<{ id: string; above: boolean }>>>();
+    for (const edge of view.edges) {
+        if (edge.kind !== 'relation' || edge.stereotype !== 'mediation') {
+            continue;
+        }
+        const relator = relators.has(edge.source) ? edge.source
+            : relators.has(edge.target) ? edge.target
+                : undefined;
+        if (!relator || edge.source === edge.target) {
+            continue;
+        }
+        // With the packages laid out as units, a relator can only be ranked
+        // between relata that are in its own package: the others are held in a
+        // box of their own, and turning the mediation only drags the relator to
+        // the far side of its own package without getting it any closer.
+        const relatum = edge.source === relator ? edge.target : edge.source;
+        if (grouped && packageOf.get(relatum) !== packageOf.get(relator)) {
+            continue;
+        }
+        // `above` says where the relatum would land as the edge is written.
+        const relata = byRelator.get(relator) ?? new Map<string, Array<{ id: string; above: boolean }>>();
+        relata.set(relatum, [...(relata.get(relatum) ?? []), { id: edge.id, above: edge.target === relator }]);
+        byRelator.set(relator, relata);
+    }
+
+    const turn = new Set<string>();
+    for (const relata of byRelator.values()) {
+        if (relata.size < 2) {
+            continue;
+        }
+        const entries = [...relata.entries()].sort((one, other) => one[0].localeCompare(other[0]));
+        const above = entries.filter(([, mediations]) => mediations.every(one => one.above));
+        const below = entries.filter(([, mediations]) => mediations.every(one => !one.above));
+        if (above.length > 0 && below.length > 0) {
+            // Already has a relatum on each side of it.
+            continue;
+        }
+        const crowd = above.length > 0 ? above : below;
+        // Half of them, and at least one: the relator wants company on both
+        // sides, not to be moved from the top of the pile to the bottom of it.
+        for (const [, mediations] of crowd.slice(0, Math.max(Math.floor(crowd.length / 2), 1))) {
+            for (const mediation of mediations) {
+                turn.add(mediation.id);
+            }
+        }
+    }
+    return turn;
+}
+
 export async function autoLayout(
     view: ViewModel,
     sizes: Record<string, Size>,
@@ -167,6 +295,7 @@ export async function autoLayout(
     }
 
     const sizeOf = (id: string): Size => sizes[id] ?? { width: 160, height: 60 };
+
     const grouped = settings.groupByPackage && supportsGroups(settings.algorithm);
     const algorithmOptions = optionsFor(settings, routing);
     const children: ElkNode[] = grouped
@@ -187,6 +316,7 @@ export async function autoLayout(
             .filter(group => (group.children?.length ?? 0) > 0)
         : nodes.map(node => ({ id: node.id, ...sizeOf(node.id) }));
 
+    const attempt = async (turnedMediations: Set<string>): Promise<{ positions: Positions; routes: Record<string, Point[]> }> => {
     const graph: ElkNode = {
         id: 'root',
         layoutOptions: {
@@ -202,19 +332,30 @@ export async function autoLayout(
         children,
         edges: view.edges
             .filter(edge => subject.has(edge.source) && subject.has(edge.target))
-            .map((edge): ElkEdge => (edge.kind === 'generalization'
-                ? {
-                    id: edge.id,
-                    sources: [edge.target],
-                    targets: [edge.source],
-                    layoutOptions: { 'elk.layered.priority.direction': '10', 'elk.layered.priority.straightness': '10' }
+            .map((edge): ElkEdge => {
+                if (edge.kind === 'generalization') {
+                    return {
+                        id: edge.id,
+                        sources: [edge.target],
+                        targets: [edge.source],
+                        layoutOptions: {
+                            'elk.layered.priority.direction': '10',
+                            'elk.layered.priority.straightness': '10'
+                        }
+                    };
                 }
-                : {
+                const turned = turnedMediations.has(edge.id);
+                return {
                     id: edge.id,
-                    sources: [edge.source],
-                    targets: [edge.target],
-                    layoutOptions: { 'elk.layered.priority.direction': '0' }
-                }))
+                    sources: [turned ? edge.target : edge.source],
+                    targets: [turned ? edge.source : edge.target],
+                    layoutOptions: edge.kind === 'relation' && edge.stereotype === 'mediation'
+                        // A mediation should come out straight where it can: it
+                        // is the line that says what the relator is between.
+                        ? { 'elk.layered.priority.direction': '4', 'elk.layered.priority.straightness': '8' }
+                        : { 'elk.layered.priority.direction': '0' }
+                };
+            })
     };
 
     const laid = await new Elk().layout(graph);
@@ -238,6 +379,7 @@ export async function autoLayout(
         }
     };
     walk(laid, 0, 0);
+    settleRelators(view, positions);
 
     const routes: Record<string, Point[]> = {};
     if (routing === 'orthogonal') {
@@ -262,4 +404,51 @@ export async function autoLayout(
     }
 
     return { positions, routes };
+    };
+
+    // Turning a relator's mediations round is not free: it changes the ranking
+    // for everything, and on one model it lengthened enough lines to cost a
+    // dozen labels their place. So the plain layout comes first, and only the
+    // relators it strands are worth turning -- and the turn is kept only if it
+    // seats more of them.
+    const plain = await attempt(new Set());
+    const stranded = strandedRelators(view, plain.positions);
+    if (stranded.size === 0) {
+        return plain;
+    }
+    const turnedMediations = mediationsToTurn(view, grouped, stranded);
+    if (turnedMediations.size === 0) {
+        return plain;
+    }
+    const turned = await attempt(turnedMediations);
+    return strandedRelators(view, turned.positions).size < stranded.size ? turned : plain;
+}
+
+/** The relators that did not land between the classes they mediate. */
+function strandedRelators(view: ViewModel, positions: Positions): Set<string> {
+    const centre = (rect: Rect) => ({ x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 });
+    const stranded = new Set<string>();
+    for (const relator of view.nodes.filter(node => node.stereotype === 'relator')) {
+        const rect = positions[relator.id];
+        const relata = [...new Set(view.edges
+            .filter(edge => edge.kind === 'relation' && edge.stereotype === 'mediation'
+                && (edge.source === relator.id || edge.target === relator.id))
+            .map(edge => (edge.source === relator.id ? edge.target : edge.source))
+            .filter(id => id !== relator.id))]
+            .map(id => positions[id])
+            .filter((one): one is Rect => one !== undefined);
+        if (!rect || relata.length < 2) {
+            continue;
+        }
+        const points = relata.map(centre);
+        const at = centre(rect);
+        const inside = at.x >= Math.min(...points.map(one => one.x)) - 24
+            && at.x <= Math.max(...points.map(one => one.x)) + 24
+            && at.y >= Math.min(...points.map(one => one.y)) - 24
+            && at.y <= Math.max(...points.map(one => one.y)) + 24;
+        if (!inside) {
+            stranded.add(relator.id);
+        }
+    }
+    return stranded;
 }

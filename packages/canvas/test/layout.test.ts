@@ -129,4 +129,48 @@ describe('packages and the layout', () => {
         expect(overlapping(bandOf(together.positions, 'A'), bandOf(together.positions, 'B'))).toBe(false);
         expect(overlapping(bandOf(loose.positions, 'A'), bandOf(loose.positions, 'B'))).toBe(true);
     });
+
+    /**
+     * A relator is a reified relationship, and a reader looks for it between the
+     * classes it relates. Both mediations are written inside the relator, so a
+     * layered algorithm would rank it above the pair like a supertype; the
+     * layout turns one of them round for the ranking and then settles the
+     * relator towards the middle.
+     */
+    test('seats a relator between the classes it mediates', async () => {
+        const clazz = (name: string, stereotype: string) => ({
+            id: `Sample::${name}`, kind: 'class' as const, name, package: 'Sample',
+            stereotype, color: '#FF99A3', isExternal: false, attributes: []
+        });
+        const view: ViewModel = {
+            groups: [{
+                id: 'pkg:Sample', name: 'Sample', isExternal: false,
+                nodes: ['Sample::Person', 'Sample::Organization', 'Sample::Employment']
+            }],
+            nodes: [clazz('Person', 'kind'), clazz('Organization', 'kind'), clazz('Employment', 'relator')],
+            edges: [
+                {
+                    kind: 'relation', id: 'r1', stereotype: 'mediation',
+                    source: 'Sample::Employment', target: 'Sample::Person'
+                },
+                {
+                    kind: 'relation', id: 'r2', stereotype: 'mediation',
+                    source: 'Sample::Employment', target: 'Sample::Organization'
+                }
+            ],
+            gensets: []
+        };
+
+        const positions = await arrange(view, true);
+        const middle = (id: string) => {
+            const rect = positions[id]!;
+            return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+        };
+        const relator = middle('Sample::Employment');
+        const relata = [middle('Sample::Person'), middle('Sample::Organization')];
+        const within = (value: number, one: number, other: number) =>
+            value >= Math.min(one, other) - 24 && value <= Math.max(one, other) + 24;
+        expect(within(relator.x, relata[0]!.x, relata[1]!.x)).toBe(true);
+        expect(within(relator.y, relata[0]!.y, relata[1]!.y)).toBe(true);
+    });
 });
