@@ -1,8 +1,20 @@
 """What makes a diagram hard to read, counted from the SVG it produced.
 
-Two things the eye trips on: lines that lie on top of each other, so two
-associations look like one, and a decorator that sits nearer somebody else's
-line than its own, so it is read against the wrong association.
+Three things the eye trips on, none of which a unit test can see:
+
+- **superimposed lines**: how many pixels two lines run together closely enough
+  to look like one. Two associations drawn as one line is the worst thing a
+  class diagram can do -- the reader counts one relationship where the model has
+  two, and both sets of multiplicities land in the same place.
+- **misread labels**: a decorator sitting nearer somebody else's line than its
+  own, so it is read against the wrong association.
+- **lines behind a class**: a line that disappears under a box it has nothing to
+  do with is read as ending there.
+
+    tools/render.sh /tmp/svg && python3 tools/readability.py /tmp/svg/*.svg
+
+Generalization trees are counted as one drawing: a tree's stem, bus and legs
+touch each other by construction, and are read as one thing.
 """
 import math, re, sys
 
@@ -14,6 +26,10 @@ def parse(svg):
     edges = {}
     for m in re.finditer(r'data-edge="([^"]+)"><path d="([^"]+)"', svg):
         edges[m.group(1).replace('&gt;', '>').replace('&amp;', '&')] = segments(m.group(2))
+    # the trees have no edge ids: their legs are lines too, and cross boxes too
+    for i, m in enumerate(re.finditer(r'<g class="tv-edge tv-tree"[^>]*>(.*?)</g>', svg, re.S)):
+        for j, p in enumerate(re.finditer(r'<path d="([^"]+)"', m.group(1))):
+            edges['tree%d.%d' % (i, j)] = segments(p.group(1))
     nodes = [tuple(map(float, m.groups())) for m in re.finditer(
         r'data-node="[^"]*"><rect x="([-\d.]+)" y="([-\d.]+)" width="([\d.]+)" height="([\d.]+)"', svg)]
     labels = []
@@ -56,10 +72,17 @@ def superimposed(a, b, tolerance=6.0, degrees=10):
 
 def report(name, svg):
     edges, nodes, labels = parse(svg)
+    def family(key):
+        # A tree's stem, bus and legs are one drawing: a leg that continues the
+        # stem is the tree, not two lines pretending to be one.
+        return key.split('.')[0] if key.startswith('tree') else key
+
     overlap = 0.0
     ids = list(edges)
     for i, one in enumerate(ids):
         for other in ids[i + 1:]:
+            if family(one) == family(other):
+                continue
             for sa in edges[one]:
                 for sb in edges[other]:
                     overlap += superimposed(sa, sb)
@@ -74,7 +97,29 @@ def report(name, svg):
         if theirs < mine - 1:
             misread += 1
 
-    print(f'{name:22} superimposed {overlap:7.0f}px   labels nearer another line {misread:3}/{len(labels):3}')
+    behind = 0
+    for key, segs in edges.items():
+        ends = [segs[0][0], segs[-1][1]]
+        for rect in nodes:
+            if any(rect[0] - 3 <= p[0] <= rect[0] + rect[2] + 3 and rect[1] - 3 <= p[1] <= rect[1] + rect[3] + 3
+                   for p in ends):
+                continue
+            crossing = False
+            for a, b in segs:
+                steps = max(int(math.hypot(b[0] - a[0], b[1] - a[1]) / 3), 1)
+                for i in range(steps + 1):
+                    x, y = a[0] + (b[0] - a[0]) * i / steps, a[1] + (b[1] - a[1]) * i / steps
+                    if rect[0] + 2 < x < rect[0] + rect[2] - 2 and rect[1] + 2 < y < rect[1] + rect[3] - 2:
+                        crossing = True
+                        break
+                if crossing:
+                    break
+            if crossing:
+                behind += 1
+                break
+
+    print(f'{name:22} superimposed {overlap:6.0f}px  misread labels {misread:3}/{len(labels):3}'
+          f'  lines behind a class {behind:3}/{len(edges):3}')
 
 for path in sys.argv[1:]:
     report(path.split('/')[-1], open(path).read())
