@@ -255,8 +255,10 @@ Parity *and* the notation the redesign can express, in the first release:
   high-order type it is;
 - relations with their stereotype (`«mediation»`, `«material»`,
   `«characterization»`, …), their name with UML's solid reading-direction
-  triangle, cardinalities, role names, and the whole-part diamond on the end
-  that carries it;
+  triangle, multiplicities and role names on opposite sides of each end, and the
+  whole-part diamond on the end that carries it. A multiplicity is written the
+  way a diagram writes one -- no brackets, `*` rather than `0..*`, and nothing
+  at all for `1`, which is what an end means when it says nothing;
 - end decorations — `subsets`, `redefines`, `addOnly`, and an open padlock on an
   end that is *not* `const`: an end that cannot change is the ordinary case, and
   a decoration on the ordinary case is noise on every line, so the exception is

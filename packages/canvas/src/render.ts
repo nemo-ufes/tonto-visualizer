@@ -11,7 +11,7 @@ import type { EdgeRoute, ViewEdge, ViewGenset, ViewModel, ViewNode, ViewRelation
 import type { DisplayOptions } from 'tonto-view';
 import type { Point, Rect } from './geometry.js';
 import { alongPath, boundsOf, centerOf } from './geometry.js';
-import { attributeLines, FONT, NODE, nodeLabel, stereotypeLabel, textWidth } from './measure.js';
+import { attributeLines, FONT, multiplicityLabel, NODE, nodeLabel, stereotypeLabel, textWidth } from './measure.js';
 import type { Positions } from './place.js';
 import { routeEdge } from './route.js';
 import type { Theme } from './theme.js';
@@ -54,7 +54,7 @@ export function render(input: RenderInput): Rendered {
 
     const paths: Record<string, Point[]> = {};
     const drawnByGenset = new Set<string>();
-    const placer = new LabelPlacer(rects);
+    const placer = new LabelPlacer(rects, groups.map(group => group.rect));
     const spreads = spreadIndex(view);
     const gensetMarkup = view.gensets
         .map(genset => drawGenset(genset, view, positions, theme, drawnByGenset, placer))
@@ -219,7 +219,13 @@ function drawEdgeLabels(
 class LabelPlacer {
     private readonly taken: Rect[] = [];
 
-    constructor(private readonly nodes: Rect[]) {}
+    /**
+     * @param nodes the class boxes, which a label must not cover
+     * @param groups the package boxes, which it should rather not cross -- a
+     *   dashed border under a multiplicity is untidy where a class name under
+     *   one is unreadable, so they weigh less than a class and more than nothing
+     */
+    constructor(private readonly nodes: Rect[], private readonly groups: Rect[] = []) {}
 
     /**
      * The first clear candidate, or -- in a corner of the diagram where nothing
@@ -282,8 +288,21 @@ class LabelPlacer {
         for (const rect of this.taken) {
             penalty += overlapArea(box, rect);
         }
+        for (const rect of this.groups) {
+            // Only the border matters: a package box is mostly empty, and a
+            // label inside one is where labels belong.
+            penalty += borderOverlap(box, rect) * 0.6;
+        }
         return penalty;
     }
+}
+
+/** How much of a box lies across another's outline rather than inside it. */
+function borderOverlap(box: Rect, frame: Rect): number {
+    const inside = overlapArea(box, {
+        x: frame.x + 2, y: frame.y + 2, width: Math.max(frame.width - 4, 0), height: Math.max(frame.height - 4, 0)
+    });
+    return overlapArea(box, frame) - inside;
 }
 
 function overlapArea(one: Rect, other: Rect): number {
@@ -367,8 +386,12 @@ function endLabel(
     }
 
     let markup = '';
-    if (display.showCardinalities && end.cardinality) {
-        markup += placeAtEnd(`[${end.cardinality}]`, forwards, total, [1, 2, -1], theme, placer);
+    const multiplicity = display.showCardinalities ? multiplicityLabel(end.cardinality) : undefined;
+    // The multiplicity above the line or to its right, the role name on the
+    // other side: two things read at one end of a line are told apart by which
+    // side of it they sit on, which is what UML uses the sides for.
+    if (multiplicity) {
+        markup += placeAtEnd(multiplicity, forwards, total, [1, 2, -1], theme, placer);
     }
     if (role.length > 0) {
         markup += placeAtEnd(role.join(' '), forwards, total, [-1, -2, 1], theme, placer);
@@ -379,14 +402,26 @@ function endLabel(
     return markup;
 }
 
-/** A label a short way in from an end, on one side of the line by preference. */
+/**
+ * A label at an end, on one side of the line by preference.
+ *
+ * Close in, and closer before further: a multiplicity a third of the way along
+ * its line has stopped belonging to either end, and on a diagram where several
+ * lines leave the same box it starts to look like it belongs to a neighbour.
+ * The distances walk outwards only as far as they must, and never past the
+ * middle, where an end label would collide with the relation's own name.
+ */
 function placeAtEnd(
     text: string, forwards: Point[], total: number, sides: number[], theme: Theme, placer: LabelPlacer
 ): string {
     const width = textWidth(text, FONT.edge);
+    const reach = Math.min(total * 0.45, 64);
     const candidates: Point[] = [];
-    for (const distance of [17, 30, 46, 64]) {
-        candidates.push(...besideLine(forwards, Math.min(distance, total * 0.45), width, sides));
+    for (const distance of [12, 19, 28, 40, 54]) {
+        if (distance > reach && candidates.length > 0) {
+            break;
+        }
+        candidates.push(...besideLine(forwards, Math.min(distance, reach), width, sides));
     }
     const at = placer.place(candidates, text);
     return label(at.x, at.y, text, theme, 'middle', 'tv-end');
@@ -492,8 +527,14 @@ function besideLine(points: Point[], at: number, width: number, steps: number[])
     const vertical = Math.abs(dy) > Math.abs(dx);
     // Off a vertical line by half the label's width plus a margin, off a
     // horizontal one by a line's height: what it takes to clear it either way.
-    const reach = vertical ? width / 2 + 8 : 13;
-    const normal = { x: -(dy / length), y: dx / length };
+    const reach = vertical ? width / 2 + 9 : 13;
+    let normal = { x: -(dy / length), y: dx / length };
+    // Turned so that side 1 is always up or to the right, whichever way the
+    // line runs. Without this the multiplicity sits above one line and below
+    // the next, and which side a label is on stops meaning anything.
+    if (normal.y > 0 || (normal.y === 0 && normal.x < 0)) {
+        normal = { x: -normal.x, y: -normal.y };
+    }
     return steps.map(step => ({
         x: here.x + normal.x * reach * step,
         y: here.y + normal.y * reach * step + (vertical ? 4 : step === 0 ? -6 : 0)
