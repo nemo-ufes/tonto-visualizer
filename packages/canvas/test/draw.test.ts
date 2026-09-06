@@ -155,8 +155,8 @@ describe('drawing', () => {
             'Sample::Employee': { x: 400, y: 0, width: 120, height: 42 }
         };
         const svg = render({ view, positions, display }).svg;
-        const stereotype = svg.match(/<text class="tv-edge-stereotype" x="([-\d.]+)" y="([-\d.]+)"[^>]*>«mediation»/);
-        const name = svg.match(/<text x="([-\d.]+)" y="([-\d.]+)"[^>]*>binds</);
+        const stereotype = svg.match(/<text class="tv-edge-stereotype"[^>]*? x="([-\d.]+)" y="([-\d.]+)"[^>]*>«mediation»/);
+        const name = svg.match(/<text[^>]*? x="([-\d.]+)" y="([-\d.]+)"[^>]*>binds</);
         expect(stereotype).not.toBeNull();
         expect(name).not.toBeNull();
         // Two lines, the stereotype above: they are not the same kind of thing,
@@ -176,7 +176,7 @@ describe('drawing', () => {
             'Sample::Employee': { x: 400, y: 0, width: 120, height: 42 }
         };
         const svg = render({ view, positions, display }).svg;
-        const name = svg.match(/<text x="([-\d.]+)" y="([-\d.]+)"[^>]*>binds</)!;
+        const name = svg.match(/<text[^>]*? x="([-\d.]+)" y="([-\d.]+)"[^>]*>binds</)!;
         const triangle = svg.match(/<polygon class="tv-reading" points="([-\d.]+),([-\d.]+)/)!;
         const gap = Number(triangle[1]) - Number(name[1]);
         // Beyond the name's own half-width, and not out in the middle of nowhere.
@@ -205,7 +205,7 @@ describe('drawing', () => {
 
     test('keeps the multiplicity and the role name apart', () => {
         const svg = drawn(related()).svg;
-        const labels = [...svg.matchAll(/<text class="tv-end" x="([-\d.]+)" y="([-\d.]+)"/g)]
+        const labels = [...svg.matchAll(/<text class="tv-end"[^>]*? x="([-\d.]+)" y="([-\d.]+)"/g)]
             .map(match => ({ x: Number(match[1]), y: Number(match[2]) }));
         // Multiplicity on one side of the line, role name on the other: run
         // together they read as one phrase, and on a busy diagram there is no
@@ -268,11 +268,11 @@ describe('drawing', () => {
             'Sample::Employee': { x: 400, y: 0, width: 120, height: 42 }
         };
         const svg = render({ view, positions, display }).svg;
-        const texts = [...svg.matchAll(/<text class="tv-end" x="([-\d.]+)" y="([-\d.]+)"[^>]*>([^<]*)</g)]
+        const texts = [...svg.matchAll(/<text class="tv-end"[^>]*? x="([-\d.]+)" y="([-\d.]+)"[^>]*>([^<]*)</g)]
             .map(match => ({ x: Number(match[1]), y: Number(match[2]), text: match[3] }));
         const multiplicity = texts.find(one => one.text === '1..*');
         const role = texts.find(one => one.text === 'contracts');
-        const lock = svg.match(/tv-lock" transform="translate\(([-\d.]+), ([-\d.]+)\)/);
+        const lock = svg.match(/tv-lock"[^>]*?transform="translate\(([-\d.]+), ([-\d.]+)\)/);
         expect(multiplicity).toBeDefined();
         expect(role).toBeDefined();
         expect(lock).not.toBeNull();
@@ -297,7 +297,7 @@ describe('drawing', () => {
         // A label that could not find room near its line ends up some way from
         // it, and a drawing sized to the boxes alone cropped it -- a relation's
         // name half off the left edge, in an export nobody could correct.
-        for (const [, x, y] of svg.matchAll(/<text[^>]*x="([-\d.]+)" y="([-\d.]+)"/g)) {
+        for (const [, x, y] of svg.matchAll(/<text[^>]*? x="([-\d.]+)" y="([-\d.]+)"/g)) {
             expect(Number(x)).toBeGreaterThan(box[1]!);
             expect(Number(x)).toBeLessThan(box[1]! + box[3]!);
             expect(Number(y)).toBeGreaterThan(box[2]!);

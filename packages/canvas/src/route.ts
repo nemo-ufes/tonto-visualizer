@@ -20,13 +20,28 @@
  */
 
 import type { Point, Rect } from './geometry.js';
-import { borderPoint, centerOf, segmentHitsRect } from './geometry.js';
+import { borderPoint, centerOf, segmentHitsRect, sideOf } from './geometry.js';
 
 export type RoutingStyle = 'straight' | 'orthogonal';
 
 export interface RouteRequest {
     /** A route already decided -- by ELK, or by the modeller -- used as it stands. */
     stored?: Point[];
+    /**
+     * Where this line meets each box, when the ends arriving at a box have been
+     * spread along its border. Without them every line aims at the far centre,
+     * and lines between neighbouring boxes arrive at the same spot.
+     */
+    ends?: { source: Point; target: Point };
+    /** Which of the loops on this class this is, when a class relates to itself. */
+    loop?: { index: number; count: number };
+    /**
+     * Bends other lines have already taken. Two lines going round the same box
+     * pick the same corner unless told otherwise, and then they run together
+     * between it and their ends -- which is the superimposition the ports were
+     * meant to prevent, moved to the middle of the diagram.
+     */
+    avoid?: Point[];
     style?: RoutingStyle;
     /** Which of the edges between this pair this is, and how many there are. */
     spread?: { index: number; count: number };
@@ -45,6 +60,9 @@ const SPREAD = 16;
 /** How wide a berth a detour gives the box it is going round. */
 const CLEARANCE = 22;
 
+/** How far a right-angled line steps out of a border before it turns. */
+const STUB = 18;
+
 /** How much of two boxes has to line up before they are joined straight across. */
 const FACING = 24;
 const LOOP = 28;
@@ -54,12 +72,17 @@ export function routeEdge(source: Rect, target: Rect, request: RouteRequest = {}
         return request.stored;
     }
     if (source === target || (source.x === target.x && source.y === target.y && source.width === target.width)) {
-        return selfLoop(source);
+        return selfLoop(source, request.loop?.index ?? 0);
     }
     const offset = spreadOf(request.spread);
+    if (request.ends) {
+        return request.style === 'orthogonal'
+            ? orthogonalBetween(source, target, request.ends)
+            : straightBetween(request.ends, source, target, request.obstacles, request.avoid);
+    }
     return request.style === 'orthogonal'
         ? orthogonal(source, target, offset)
-        : straight(source, target, offset, request.obstacles);
+        : straight(source, target, offset, request.obstacles, request.avoid);
 }
 
 /** The perpendicular distance this edge runs from the line its group shares. */
@@ -79,7 +102,60 @@ function spreadOf(spread: { index: number; count: number } | undefined): number 
  * two at these offsets, and it keeps a bundle of parallel edges exactly
  * parallel, which is what the eye is reading them by.
  */
-function straight(source: Rect, target: Rect, offset: number, obstacles?: Rect[]): Point[] {
+/** Port to port, with the same detour round anything in the way. */
+function straightBetween(
+    ends: { source: Point; target: Point }, source: Rect, target: Rect, obstacles?: Rect[], avoid?: Point[]
+): Point[] {
+    const start = round(ends.source);
+    const end = round(ends.target);
+    const blocked = obstacles?.filter(rect => rect !== source && rect !== target
+        && segmentHitsRect(start, end, rect, 4));
+    if (!blocked || blocked.length === 0) {
+        return [start, end];
+    }
+    // The ports are kept: a detour that re-aimed at the box centres put every
+    // blocked line back on the same two border points, which is how two
+    // relations between one pair of classes came to be drawn as one line.
+    return detour(source, target, start, end, blocked, obstacles ?? [], true, avoid);
+}
+
+/**
+ * Out of each port at right angles, then one turn -- or two, when both ends
+ * leave the same way and the line has to cross between them.
+ */
+function orthogonalBetween(source: Rect, target: Rect, ends: { source: Point; target: Point }): Point[] {
+    const from = stub(source, ends.source);
+    const to = stub(target, ends.target);
+    const points = [round(ends.source), round(from.at)];
+    if (from.vertical === to.vertical) {
+        const middle = from.vertical
+            ? { first: { x: from.at.x, y: (from.at.y + to.at.y) / 2 }, second: { x: to.at.x, y: (from.at.y + to.at.y) / 2 } }
+            : { first: { x: (from.at.x + to.at.x) / 2, y: from.at.y }, second: { x: (from.at.x + to.at.x) / 2, y: to.at.y } };
+        points.push(round(middle.first), round(middle.second));
+    } else {
+        points.push(round(from.vertical ? { x: from.at.x, y: to.at.y } : { x: to.at.x, y: from.at.y }));
+    }
+    points.push(round(to.at), round(ends.target));
+    return points;
+}
+
+/** A short step straight out of the border, so the line leaves the box squarely. */
+function stub(rect: Rect, at: Point): { at: Point; vertical: boolean } {
+    const side = sideOf(rect, at);
+    switch (side) {
+        case 'top':
+            return { at: { x: at.x, y: at.y - STUB }, vertical: true };
+        case 'bottom':
+            return { at: { x: at.x, y: at.y + STUB }, vertical: true };
+        case 'left':
+            return { at: { x: at.x - STUB, y: at.y }, vertical: false };
+        case 'right':
+        default:
+            return { at: { x: at.x + STUB, y: at.y }, vertical: false };
+    }
+}
+
+function straight(source: Rect, target: Rect, offset: number, obstacles?: Rect[], request_avoid?: Point[]): Point[] {
     const from = centerOf(source);
     const to = centerOf(target);
     let start = borderPoint(source, to);
@@ -96,7 +172,7 @@ function straight(source: Rect, target: Rect, offset: number, obstacles?: Rect[]
     if (!blocked || blocked.length === 0) {
         return [round(start), round(end)];
     }
-    return detour(source, target, start, end, blocked, obstacles ?? []);
+    return detour(source, target, start, end, blocked, obstacles ?? [], false, request_avoid);
 }
 
 /**
@@ -110,7 +186,10 @@ function straight(source: Rect, target: Rect, offset: number, obstacles?: Rect[]
  * straight, because a two-bend detour that still crosses something has bought
  * nothing and costs the reader a corner.
  */
-function detour(source: Rect, target: Rect, start: Point, end: Point, blocked: Rect[], obstacles: Rect[]): Point[] {
+function detour(
+    source: Rect, target: Rect, start: Point, end: Point, blocked: Rect[], obstacles: Rect[], keepEnds: boolean,
+    avoid: Point[] = []
+): Point[] {
     const candidates: Point[] = [];
     for (const rect of blocked) {
         const left = rect.x - CLEARANCE;
@@ -138,10 +217,13 @@ function detour(source: Rect, target: Rect, start: Point, end: Point, blocked: R
         bends: 0
     };
     for (const via of candidates) {
-        const first = borderPoint(source, via);
-        const last = borderPoint(target, via);
+        const first = keepEnds ? start : borderPoint(source, via);
+        const last = keepEnds ? end : borderPoint(target, via);
         const hits = others.filter(rect => segmentHitsRect(first, via, rect, 4)
-            || segmentHitsRect(via, last, rect, 4)).length;
+            || segmentHitsRect(via, last, rect, 4)).length
+            // A bend another line has already taken counts against this one as
+            // much as a box does: two lines sharing a corner share the run to it.
+            + (avoid.some(point => Math.hypot(point.x - via.x, point.y - via.y) < CLEARANCE) ? 1 : 0);
         const length = Math.hypot(via.x - first.x, via.y - first.y) + Math.hypot(last.x - via.x, last.y - via.y);
         // Fewer boxes crossed first, then the shorter way round; a bend is only
         // ever taken to buy a box back.
@@ -204,16 +286,24 @@ function orthogonal(source: Rect, target: Rect, offset: number): Point[] {
     ];
 }
 
-/** A relation from a class to itself: out of the right side and back into the top. */
-function selfLoop(rect: Rect): Point[] {
+/**
+ * A relation from a class to itself: out of the right side and back into the
+ * top, each loop wider than the last.
+ *
+ * A class with two of them -- gUFO's `ConcreteIndividual` has constitution and
+ * historical dependence, both to itself -- drew the same rectangle twice, which
+ * reads as one relation with two labels stacked on it.
+ */
+function selfLoop(rect: Rect, index: number): Point[] {
+    const reach = LOOP + index * 16;
     const right = rect.x + rect.width;
-    const y = Math.round(rect.y + rect.height / 3);
-    const x = Math.round(rect.x + rect.width / 2);
+    const y = Math.round(rect.y + rect.height / 3 + index * 6);
+    const x = Math.round(rect.x + rect.width / 2 + index * 10);
     return [
         { x: right, y },
-        { x: right + LOOP, y },
-        { x: right + LOOP, y: rect.y - LOOP },
-        { x, y: rect.y - LOOP },
+        { x: right + reach, y },
+        { x: right + reach, y: rect.y - reach },
+        { x, y: rect.y - reach },
         { x, y: rect.y }
     ];
 }

@@ -109,6 +109,28 @@ export function segmentHitsRect(from: Point, to: Point, rect: Rect, margin = 0):
         && clip(dy, rect.y + rect.height + margin - from.y);
 }
 
+/** How far a point is from a segment, measuring to its nearest point. */
+export function distanceToSegment(point: Point, from: Point, to: Point): number {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const lengthSquared = dx * dx + dy * dy;
+    if (lengthSquared === 0) {
+        return Math.hypot(point.x - from.x, point.y - from.y);
+    }
+    const along = Math.max(0, Math.min(1,
+        ((point.x - from.x) * dx + (point.y - from.y) * dy) / lengthSquared));
+    return Math.hypot(point.x - (from.x + along * dx), point.y - (from.y + along * dy));
+}
+
+/** How far a point is from a polyline. */
+export function distanceToPath(point: Point, path: Point[]): number {
+    let nearest = Infinity;
+    for (let index = 0; index + 1 < path.length; index += 1) {
+        nearest = Math.min(nearest, distanceToSegment(point, path[index]!, path[index + 1]!));
+    }
+    return nearest;
+}
+
 export function distance(one: Point, other: Point): number {
     return Math.hypot(one.x - other.x, one.y - other.y);
 }
