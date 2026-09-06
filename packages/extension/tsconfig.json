@@ -1,0 +1,13 @@
+{
+    "extends": "../../tsconfig.base.json",
+    "compilerOptions": {
+        "rootDir": "src",
+        "outDir": "out-tsc",
+        "noEmit": true,
+        "composite": false,
+        "lib": ["ES2022", "DOM"],
+        "module": "ESNext",
+        "moduleResolution": "Bundler"
+    },
+    "include": ["src/**/*.ts"]
+}

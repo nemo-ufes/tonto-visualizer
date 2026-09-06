@@ -32,7 +32,8 @@ import {
     isParthood,
     wholeEndOf
 } from './language.js';
-import { colorOf, DATATYPE_COLOR, UNRESOLVED_COLOR } from './natures.js';
+import { colorOf } from './natures.js';
+import { DATATYPE_COLOR, UNRESOLVED_COLOR } from './palette.js';
 import { generalizationId, gensetId, instantiationId, qualify, RelationIds } from './ids.js';
 import type { ContentOptions } from './options.js';
 import { defaultContentOptions } from './options.js';
