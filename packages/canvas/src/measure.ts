@@ -29,7 +29,9 @@ export const FONT = {
     name: 13,
     stereotype: 11,
     attribute: 12,
-    edge: 11
+    edge: 11,
+    /** A relation's stereotype, which sits over its name rather than beside it. */
+    edgeStereotype: 9.5
 } as const;
 
 /** Average advance per character, as a fraction of the size. */

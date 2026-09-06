@@ -118,6 +118,7 @@ text {
 .tv-attribute { font-size: ${FONT.attribute}px; }
 .tv-edge path { fill: none; stroke: ${theme.line}; stroke-width: 1.2; }
 .tv-end { fill: ${theme.muted}; }
+.tv-edge-stereotype { font-size: ${FONT.edgeStereotype}px; fill-opacity: 0.78; letter-spacing: 0.01em; }
 .tv-marker { fill: ${theme.surface}; stroke: ${theme.line}; stroke-width: 1.2; }
 .tv-arrow { fill: none; stroke: ${theme.line}; stroke-width: 1.2; }
 .tv-reading { fill: ${theme.text}; stroke: none; }
@@ -216,7 +217,7 @@ function drawEdgeLabels(
         return relationLabels(edge, points, display, theme, placer);
     }
     if (edge.kind === 'instantiation') {
-        return centreLabel(points, '«instanceOf»', theme, placer);
+        return centreLabel(points, { stereotype: '«instanceOf»' }, theme, placer);
     }
     return '';
 }
@@ -279,6 +280,32 @@ class LabelPlacer {
         return fallback.at;
     }
 
+    /**
+     * The best of the candidates for a block whose size is known outright -- a
+     * label of more than one line, where the text alone does not say how tall it
+     * is. Scored like `place`, and it claims what it takes.
+     */
+    placeBox(candidates: Point[], width: number, height: number): Point {
+        let best: { at: Point; box: Rect; score: number } | undefined;
+        for (const [index, candidate] of candidates.entries()) {
+            const box = { x: candidate.x - width / 2, y: candidate.y - height / 2, width, height };
+            const score = this.penaltyOf(box) + index * DISPLACEMENT;
+            if (!best || score < best.score) {
+                best = { at: candidate, box, score };
+            }
+            if (score === 0) {
+                break;
+            }
+        }
+        const fallback = best ?? {
+            at: candidates[0] ?? { x: 0, y: 0 },
+            box: { x: 0, y: 0, width, height },
+            score: 0
+        };
+        this.taken.push(fallback.box);
+        return fallback.at;
+    }
+
     /** What this box would cover, without claiming it. */
     cost(box: Rect): number {
         return this.penaltyOf(box);
@@ -294,14 +321,24 @@ class LabelPlacer {
         return this.taken;
     }
 
-    /** How much of what is already drawn this label would cover. A class counts double. */
+    /**
+     * How much of what is already drawn this label would cover.
+     *
+     * A class weighs most: a multiplicity over a class name costs the reader
+     * both, where the same multiplicity a little further from its line costs
+     * only a glance. Another label weighs less than a class and more than a
+     * dashed package border. The numbers only have to be right against
+     * DISPLACEMENT, which is what moving away costs -- set too low, a label
+     * would rather sit on a box than take four steps, which is how they came to
+     * be printed across SeniorStaff and EmploymentContract.
+     */
     private penaltyOf(box: Rect): number {
         let penalty = 0;
         for (const rect of this.nodes) {
-            penalty += overlapArea(box, rect) * 2;
+            penalty += overlapArea(box, rect) * 6;
         }
         for (const rect of this.taken) {
-            penalty += overlapArea(box, rect);
+            penalty += overlapArea(box, rect) * 2;
         }
         for (const rect of this.groups) {
             // Only the border matters: a package box is mostly empty, and a
@@ -350,14 +387,14 @@ function relationLabels(
         middle.push(`«${edge.stereotype}»`);
     }
     const named = display.showRelationNames && Boolean(edge.name);
-    if (named && edge.name) {
-        middle.push(edge.name);
-    }
     // UML's reading direction: the solid triangle beside the name says which way
     // round the sentence goes -- "University has Department", not the reverse.
     // It belongs to the name, so it is only drawn where there is one.
-    let markup = middle.length > 0
-        ? centreLabel(points, middle.join(' '), theme, placer, named ? 'forwards' : undefined)
+    let markup = middle.length > 0 || named
+        ? centreLabel(
+            points,
+            { ...(middle[0] ? { stereotype: middle[0] } : {}), ...(named && edge.name ? { name: edge.name } : {}) },
+            theme, placer, named)
         : '';
     markup += endLabel(edge, points, true, display, theme, placer);
     markup += endLabel(edge, points, false, display, theme, placer);
@@ -503,38 +540,65 @@ function padlock(at: Point, theme: Theme): string {
         + `<rect x="2.8" y="4.6" width="6.8" height="5.4" rx="1.3" stroke="${theme.muted}"/>`
         + `</g>`;
 }
+/**
+ * The name of an association and, over it, its stereotype.
+ *
+ * Two lines rather than one, because they are not the same kind of thing: the
+ * stereotype says what sort of relation this is and the name says what it is
+ * called, and `«mediation» binds` run together reads as a four-word phrase. UML
+ * sets the stereotype over the name for the same reason it sets it over a class
+ * name. It is set smaller here too, so a line of a model does not begin with the
+ * word «characterization» in the same size as everything else.
+ */
 function centreLabel(
-    points: Point[], text: string, theme: Theme, placer: LabelPlacer, reading?: 'forwards'
+    points: Point[],
+    parts: { stereotype?: string; name?: string },
+    theme: Theme,
+    placer: LabelPlacer,
+    reading = false
 ): string {
     const length = pathLength(points);
-    // Outwards from the middle: the middle reads as "this whole line", and the
-    // further a label sits from it the more it looks like it belongs to one end.
+    // A margin over the estimate, since the triangle is placed off the end of
+    // the text and a mark on the last letter is worse than a small gap. The
+    // estimate is weighted per character, so the margin can be small -- and the
+    // name is now on its own, without the guillemets the estimate overshoots on.
+    const nameWidth = parts.name ? textWidth(parts.name, FONT.edge) * 1.02 : 0;
+    const marker = reading && parts.name ? MARKER : 0;
+    const stereotypeWidth = parts.stereotype ? textWidth(parts.stereotype, FONT.edgeStereotype) : 0;
+    const width = Math.max(nameWidth + marker, stereotypeWidth);
+    const height = (parts.stereotype ? LINE.stereotype : 0) + (parts.name ? LINE.name : 0);
+
+    // Outwards from the middle, and step-major: a label that cannot sit at the
+    // middle of its line belongs a little further along it, not a label's width
+    // out to the side.
     const fractions = [0.5, 0.42, 0.58, 0.34, 0.66, 0.26, 0.74];
-    // The estimate is calibrated for Helvetica and its metric twins; a machine
-    // that has none of them sets the same string wider. The triangle is placed
-    // off the end of the text, so it is the one thing that must allow for that
-    // -- a mark on top of the last letter is worse than a slightly wide gap.
-    // A little wider than the estimate, since the triangle is placed off the end
-    // of the text and a mark on the last letter is worse than a wide gap. The
-    // estimate is weighted per character now, so the margin can be small.
-    const measured = textWidth(text, FONT.edge) * 1.03;
-    const marker = reading ? 8 : 0;
-    const width = measured + marker;
-    const candidates = fractions.flatMap(fraction => {
-        const at = length * fraction;
-        return besideLine(points, at, width, [0, 1, -1, 2, -2]);
-    });
-    const at = placer.place(candidates, text);
-    // The text keeps its place; the triangle sits after it, which is where a
-    // reader expects the arrow of "A has B ▶" to be.
-    const shifted = { x: at.x - marker / 2, y: at.y };
-    let markup = label(shifted.x, shifted.y, text, theme, 'middle');
-    if (reading) {
-        const tip = { x: shifted.x + measured / 2 + marker, y: shifted.y - 3.5 };
-        markup += readingTriangle(tip, directionNear(points, at));
+    const candidates = [0, 1, -1, 2, -2].flatMap(step =>
+        fractions.map(fraction => besideLine(points, length * fraction, { width, height }, [step])[0]!));
+    const at = placer.placeBox(candidates, width, height);
+
+    let markup = '';
+    let top = at.y - height / 2;
+    if (parts.stereotype) {
+        markup += label(at.x, top + LINE.stereotype - 2, parts.stereotype, theme, 'middle', 'tv-edge-stereotype');
+        top += LINE.stereotype;
+    }
+    if (parts.name) {
+        // The name keeps the middle and the triangle sits just after it, which
+        // is where a reader expects the arrow of "A has B ▶" to be.
+        const baseline = top + LINE.name - 3;
+        const centre = at.x - marker / 2;
+        markup += label(centre, baseline, parts.name, theme, 'middle');
+        if (reading) {
+            const tip = { x: centre + nameWidth / 2 + marker, y: baseline - 3.5 };
+            markup += readingTriangle(tip, directionNear(points, at));
+        }
     }
     return markup;
 }
+
+/** Height of each line of a centre label, and how far the triangle stands off. */
+const LINE = { stereotype: 12, name: 14 } as const;
+const MARKER = 9;
 
 /** The direction the line runs at the point nearest `at`, source to target. */
 function directionNear(points: Point[], at: Point): Point {
@@ -570,16 +634,18 @@ function readingTriangle(tip: Point, direction: Point): string {
  * taxonomy -- where nearly every edge is vertical -- that was every label
  * landing on its own line or on the box below.
  */
-function besideLine(points: Point[], at: number, width: number, steps: number[]): Point[] {
+function besideLine(points: Point[], at: number, size: number | { width: number; height: number }, steps: number[]): Point[] {
     const here = alongPath(points, true, at);
     const ahead = alongPath(points, true, at + 12);
     const dx = ahead.x - here.x;
     const dy = ahead.y - here.y;
     const length = Math.hypot(dx, dy) || 1;
     const vertical = Math.abs(dy) > Math.abs(dx);
+    const width = typeof size === 'number' ? size : size.width;
+    const height = typeof size === 'number' ? FONT.edge + 2 : size.height;
     // Off a vertical line by half the label's width plus a margin, off a
-    // horizontal one by a line's height: what it takes to clear it either way.
-    const reach = vertical ? width / 2 + 9 : 13;
+    // horizontal one by half its height: what it takes to clear it either way.
+    const reach = vertical ? width / 2 + 9 : height / 2 + 7;
     let normal = { x: -(dy / length), y: dx / length };
     // Turned so that side 1 is always up or to the right, whichever way the
     // line runs. Without this the multiplicity sits above one line and below
@@ -589,7 +655,7 @@ function besideLine(points: Point[], at: number, width: number, steps: number[])
     }
     return steps.map(step => ({
         x: here.x + normal.x * reach * step,
-        y: here.y + normal.y * reach * step + (vertical ? 4 : step === 0 ? -6 : 0)
+        y: here.y + normal.y * reach * step + (vertical ? 4 : 0)
     }));
 }
 

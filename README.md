@@ -33,9 +33,9 @@ Working end to end, and rough in places.
 
 The notation covers classes with stereotypes and attributes, datatypes and
 enumerations, generalizations, generalization sets as one shared triangle with
-`{disjoint, complete}`, relations with their stereotype and UML's solid
-reading-direction triangle, multiplicities and role names on opposite sides of
-each end, whole-part diamonds, `instanceOf`, and an open padlock on an end that
+`{disjoint, complete}`, relations with their stereotype set over their
+name and smaller, UML's solid reading-direction triangle just after the name,
+multiplicities and role names on opposite sides of each end, whole-part diamonds, `instanceOf`, and an open padlock on an end that
 is not `const` -- an end that cannot change is the ordinary case, so the
 exception is what carries a mark.
 

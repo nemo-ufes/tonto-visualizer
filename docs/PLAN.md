@@ -254,8 +254,9 @@ Parity *and* the notation the redesign can express, in the first release:
   `{disjoint, complete}` with the set's name, `categorizer` drawn as the
   high-order type it is;
 - relations with their stereotype (`«mediation»`, `«material»`,
-  `«characterization»`, …), their name with UML's solid reading-direction
-  triangle, multiplicities and role names on opposite sides of each end, and the
+  `«characterization»`, …) set over their name and smaller, as UML sets a
+  stereotype over a class name, with the solid reading-direction triangle just
+  after the name, multiplicities and role names on opposite sides of each end, and the
   whole-part diamond on the end that carries it. A multiplicity is written the
   way a diagram writes one -- no brackets, `*` rather than `0..*`, and nothing
   at all for `1`, which is what an end means when it says nothing;
