@@ -148,6 +148,42 @@ describe('drawing', () => {
         expect(svg).toContain('binds');
     });
 
+    test('sets a relation stereotype over its name, and smaller', () => {
+        const view = related();
+        const positions = {
+            'Sample::Contract': { x: 0, y: 0, width: 120, height: 42 },
+            'Sample::Employee': { x: 400, y: 0, width: 120, height: 42 }
+        };
+        const svg = render({ view, positions, display }).svg;
+        const stereotype = svg.match(/<text class="tv-edge-stereotype" x="([-\d.]+)" y="([-\d.]+)"[^>]*>«mediation»/);
+        const name = svg.match(/<text x="([-\d.]+)" y="([-\d.]+)"[^>]*>binds</);
+        expect(stereotype).not.toBeNull();
+        expect(name).not.toBeNull();
+        // Two lines, the stereotype above: they are not the same kind of thing,
+        // and "«mediation» binds" run together reads as one four-word phrase.
+        expect(Number(stereotype![2])).toBeLessThan(Number(name![2]));
+        expect(Math.abs(Number(stereotype![1]) - Number(name![1]))).toBeLessThan(30);
+        // And smaller, so a line of the model does not begin with
+        // «characterization» set as large as everything else.
+        const style = svg.match(/<style>([\s\S]*?)<\/style>/)![1]!;
+        expect(style).toContain('.tv-edge-stereotype { font-size: 9.5px');
+    });
+
+    test('puts the reading triangle just after the name it belongs to', () => {
+        const view = related();
+        const positions = {
+            'Sample::Contract': { x: 0, y: 0, width: 120, height: 42 },
+            'Sample::Employee': { x: 400, y: 0, width: 120, height: 42 }
+        };
+        const svg = render({ view, positions, display }).svg;
+        const name = svg.match(/<text x="([-\d.]+)" y="([-\d.]+)"[^>]*>binds</)!;
+        const triangle = svg.match(/<polygon class="tv-reading" points="([-\d.]+),([-\d.]+)/)!;
+        const gap = Number(triangle[1]) - Number(name[1]);
+        // Beyond the name's own half-width, and not out in the middle of nowhere.
+        expect(gap).toBeGreaterThan(0);
+        expect(gap).toBeLessThan(40);
+    });
+
     test('leaves the reading triangle off a relation with no name', () => {
         const view = related();
         const edge = view.edges[0]!;
