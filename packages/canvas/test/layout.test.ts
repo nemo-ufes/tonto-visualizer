@@ -87,3 +87,46 @@ describe('arranging a model', () => {
         }
     });
 });
+
+describe('packages and the layout', () => {
+
+    /** Two packages, each a chain, with one class of A specializing one of B. */
+    function twoPackages(): ViewModel {
+        const names = [['A', 'One'], ['A', 'Two'], ['B', 'Three'], ['B', 'Four']] as const;
+        return {
+            groups: [
+                { id: 'pkg:A', name: 'A', isExternal: false, nodes: ['A::One', 'A::Two'] },
+                { id: 'pkg:B', name: 'B', isExternal: false, nodes: ['B::Three', 'B::Four'] }
+            ],
+            nodes: names.map(([pkg, name]) => ({
+                id: `${pkg}::${name}`, kind: 'class' as const, name, package: pkg,
+                stereotype: 'kind', color: '#FF99A3', isExternal: false, attributes: []
+            })),
+            edges: [
+                { kind: 'generalization', id: 'g1', source: 'A::Two', target: 'B::Three' },
+                { kind: 'generalization', id: 'g2', source: 'B::Four', target: 'A::One' }
+            ],
+            gensets: []
+        };
+    }
+
+    test('lays a model out as one graph when the packages are ignored', async () => {
+        const view = twoPackages();
+        const sizes = Object.fromEntries(view.nodes.map(node => [node.id, sizeOf(node, display)]));
+        const together = await autoLayout(view, sizes, {}, { ...defaultLayoutOptions, groupByPackage: true });
+        const loose = await autoLayout(view, sizes, {}, { ...defaultLayoutOptions, groupByPackage: false });
+
+        for (const laid of [together, loose]) {
+            expect(Object.keys(laid.positions)).toHaveLength(4);
+        }
+        // Kept together, a package's classes occupy one band; ignored, they
+        // interleave -- which is the whole point of the option, and why the
+        // package boxes stop being drawn when they would enclose a stranger.
+        const bandOf = (positions: Record<string, { y: number }>, pkg: string) =>
+            view.nodes.filter(node => node.package === pkg).map(node => positions[node.id]!.y);
+        const overlapping = (one: number[], other: number[]) =>
+            Math.min(...one) < Math.max(...other) && Math.min(...other) < Math.max(...one);
+        expect(overlapping(bandOf(together.positions, 'A'), bandOf(together.positions, 'B'))).toBe(false);
+        expect(overlapping(bandOf(loose.positions, 'A'), bandOf(loose.positions, 'B'))).toBe(true);
+    });
+});

@@ -10,7 +10,7 @@
 import type { EdgeRoute, ViewEdge, ViewModel, ViewNode, ViewRelation } from 'tonto-view';
 import type { DisplayOptions } from 'tonto-view';
 import type { Point, Rect } from './geometry.js';
-import { alongPath, boundsOf, centerOf, distanceToPath } from './geometry.js';
+import { alongPath, boundsOf, centerOf, distanceToPath, segmentHitsRect } from './geometry.js';
 import { attributeLines, FONT, multiplicityLabel, NODE, nodeLabel, stereotypeLabel, textWidth } from './measure.js';
 import type { Positions } from './place.js';
 import { assignPorts } from './ports.js';
@@ -83,7 +83,10 @@ export function render(input: RenderInput): Rendered {
         bends.push(...paths[edge.id]!.slice(1, -1));
     }
     const placer = new LabelPlacer(rects, groups.map(group => group.rect), paths);
-    const treeMarkup = trees.plans.map(plan => drawTree(plan, positions, theme, placer)).join('');
+    const buses: BusLine[] = [];
+    const treeMarkup = trees.plans
+        .map(plan => drawTree(plan, positions, theme, placer, rects, buses))
+        .join('');
 
     // Labels are drawn last, over the boxes. A line may pass behind a class --
     // that reads as a line -- but a cardinality hidden behind one has simply
@@ -761,7 +764,16 @@ function label(
  * going three ways says less than three arrows do, so in that case the edges are
  * left to draw themselves.
  */
-function drawTree(plan: TreePlan, positions: Positions, theme: Theme, placer: LabelPlacer): string {
+interface BusLine {
+    y: number;
+    left: number;
+    right: number;
+}
+
+function drawTree(
+    plan: TreePlan, positions: Positions, theme: Theme, placer: LabelPlacer, obstacles: Rect[] = [],
+    buses: BusLine[] = []
+): string {
     const general = positions[plan.general];
     const children = plan.children
         .map(id => ({ id, rect: positions[id] }))
@@ -773,12 +785,25 @@ function drawTree(plan: TreePlan, positions: Positions, theme: Theme, placer: La
     const below = children.every(entry => entry.rect.y >= general.y + general.height);
 
     const direction = below ? 1 : -1;
-    const apex = { x: centerOf(general).x, y: below ? general.y + general.height : general.y };
+    // Each of a parent's trees gets its own place along the border, as an
+    // association would.
+    const span = Math.max(general.width - 28, 0);
+    const apex = {
+        x: Math.round(general.x + (general.width - span) / 2
+            + span * (plan.lane.index + 1) / (plan.lane.count + 1)),
+        y: below ? general.y + general.height : general.y
+    };
     const base = { x: apex.x, y: apex.y + 14 * direction };
     const nearest = below
         ? Math.min(...children.map(entry => entry.rect.y))
         : Math.max(...children.map(entry => entry.rect.y + entry.rect.height));
-    const bus = Math.round((base.y + nearest) / 2);
+    const bus = busDepth(plan, base, nearest, direction, children, obstacles, buses);
+
+    buses.push({
+        y: bus,
+        left: Math.min(...children.map(entry => centerOf(entry.rect).x), base.x),
+        right: Math.max(...children.map(entry => centerOf(entry.rect).x), base.x)
+    });
 
     let markup = `<g class="tv-edge tv-tree"${plan.marker ? ` data-genset="${escape(plan.marker)}"` : ''}>`;
     markup += `<polygon class="tv-marker" points="${apex.x},${apex.y} ${base.x - 9},${base.y} ${base.x + 9},${base.y}"/>`;
@@ -787,9 +812,7 @@ function drawTree(plan: TreePlan, positions: Positions, theme: Theme, placer: La
     const right = Math.max(...children.map(entry => centerOf(entry.rect).x), base.x);
     markup += `<path d="M ${round(left)} ${bus} L ${round(right)} ${bus}"/>`;
     for (const entry of children) {
-        const centre = centerOf(entry.rect);
-        const edge = below ? entry.rect.y : entry.rect.y + entry.rect.height;
-        markup += `<path d="M ${round(centre.x)} ${bus} L ${round(centre.x)} ${round(edge)}"/>`;
+        markup += `<path d="${legPath(entry.rect, bus, direction, obstacles)}"/>`;
     }
 
     if (plan.label) {
@@ -814,6 +837,8 @@ interface TreePlan {
     edges: string[];
     label?: string;
     marker?: string;
+    /** Which of this parent's trees this is, and how many it has. */
+    lane: { index: number; count: number };
 }
 
 /**
@@ -839,7 +864,8 @@ function planTrees(view: ViewModel, positions: Positions): { plans: TreePlan[]; 
                 .filter(edge => edge.kind === 'generalization' && edge.genset === genset.id)
                 .map(edge => edge.id),
             label: constraints.length > 0 ? `${genset.name} {${constraints.join(', ')}}` : genset.name,
-            marker: genset.id
+            marker: genset.id,
+            lane: { index: 0, count: 1 }
         });
     }
     for (const plan of plans) {
@@ -861,13 +887,121 @@ function planTrees(view: ViewModel, positions: Positions): { plans: TreePlan[]; 
         if (children.length < 2 || !canDrawTree(parent, children, positions)) {
             continue;
         }
-        plans.push({ general: parent, children, edges: edgeIds });
+        plans.push({ general: parent, children, edges: edgeIds, lane: { index: 0, count: 1 } });
         for (const id of edgeIds) {
             covered.add(id);
         }
     }
 
+    // A class with a generalization set and other subtypes besides has two
+    // trees, and both drew their triangle at the middle of its border and their
+    // bus at the same depth: one tree on top of another, which says there is one.
+    const byGeneral = new Map<string, TreePlan[]>();
+    for (const plan of plans) {
+        byGeneral.set(plan.general, [...(byGeneral.get(plan.general) ?? []), plan]);
+    }
+    for (const family of byGeneral.values()) {
+        family.forEach((plan, index) => {
+            plan.lane = { index, count: family.length };
+        });
+    }
+
     return { plans, covered };
+}
+
+/**
+ * A leg from the bus down to one subtype, round anything in the way.
+ *
+ * A subtype further from the parent than its siblings has a long leg, and on a
+ * dense diagram there is often a class standing in it. Straight through is the
+ * one thing it must not do -- a line that disappears behind a class it has
+ * nothing to do with is read as ending there -- so it steps aside, comes down
+ * beside the obstacle and turns back in just above the subtype.
+ */
+function legPath(child: Rect, bus: number, direction: number, obstacles: Rect[]): string {
+    const centre = centerOf(child).x;
+    const edge = direction > 0 ? child.y : child.y + child.height;
+    const blocking = obstacles.filter(rect => rect !== child
+        && segmentHitsRect({ x: centre, y: bus }, { x: centre, y: edge }, rect, 2));
+    if (blocking.length === 0) {
+        return `M ${round(centre)} ${bus} L ${round(centre)} ${round(edge)}`;
+    }
+
+    const turn = edge - direction * 22;
+    for (const rect of blocking) {
+        for (const aside of [rect.x - 20, rect.x + rect.width + 20]) {
+            const clear = !obstacles.some(other => other !== child
+                && (segmentHitsRect({ x: centre, y: bus }, { x: aside, y: bus }, other, 2)
+                    || segmentHitsRect({ x: aside, y: bus }, { x: aside, y: turn }, other, 2)
+                    || segmentHitsRect({ x: aside, y: turn }, { x: centre, y: turn }, other, 2)));
+            if (clear) {
+                return `M ${round(centre)} ${bus} L ${round(aside)} ${bus} L ${round(aside)} ${round(turn)} `
+                    + `L ${round(centre)} ${round(turn)} L ${round(centre)} ${round(edge)}`;
+            }
+        }
+    }
+    return `M ${round(centre)} ${bus} L ${round(centre)} ${round(edge)}`;
+}
+
+/**
+ * How deep to run the bus.
+ *
+ * Halfway between the parent and its nearest subtype is the usual place, but a
+ * bus is a long horizontal line and there is often a class sitting on it, or on
+ * the leg of a subtype further away. So a few depths in the gap are tried and
+ * the one that crosses fewest boxes wins, the middle breaking ties -- and where
+ * a parent has more than one tree they start from different depths, so two
+ * buses do not lie on top of each other.
+ */
+function busDepth(
+    plan: TreePlan,
+    base: Point,
+    nearest: number,
+    direction: number,
+    children: Array<{ rect: Rect }>,
+    obstacles: Rect[],
+    buses: BusLine[]
+): number {
+    const gap = Math.abs(nearest - base.y);
+    const lane = plan.lane.count > 1 ? (plan.lane.index - (plan.lane.count - 1) / 2) * 20 : 0;
+    const candidates = [0.5, 0.35, 0.65, 0.25, 0.75, 0.85]
+        .map(fraction => Math.round(base.y + direction * (gap * fraction + lane)))
+        .filter(depth => Math.abs(depth - base.y) > 6 && Math.abs(depth - nearest) > 6);
+    if (candidates.length === 0) {
+        return Math.round((base.y + nearest) / 2);
+    }
+
+    const left = Math.min(...children.map(entry => centerOf(entry.rect).x), base.x);
+    const right = Math.max(...children.map(entry => centerOf(entry.rect).x), base.x);
+    let best = { depth: candidates[0]!, crossings: Infinity };
+    for (const depth of candidates) {
+        // Another tree's bus at the same depth is worth as much as a class in
+        // the way: several parents at one rank all put their bus halfway to the
+        // next, and four of them lay on top of one another for hundreds of
+        // pixels, reading as one long line with legs going everywhere.
+        let crossings = buses.filter(other => Math.abs(other.y - depth) < 12
+            && other.left < right && left < other.right).length * 2;
+        for (const rect of obstacles) {
+            if (segmentHitsRect({ x: left, y: depth }, { x: right, y: depth }, rect, 2)) {
+                crossings += 1;
+            }
+            for (const entry of children) {
+                const centre = centerOf(entry.rect).x;
+                const edge = direction > 0 ? entry.rect.y : entry.rect.y + entry.rect.height;
+                if (rect !== entry.rect
+                    && segmentHitsRect({ x: centre, y: depth }, { x: centre, y: edge }, rect, 2)) {
+                    crossings += 1;
+                }
+            }
+        }
+        if (crossings < best.crossings) {
+            best = { depth, crossings };
+        }
+        if (crossings === 0) {
+            break;
+        }
+    }
+    return best.depth;
 }
 
 /** A tree reads as one only where every subtype is on the same side. */
@@ -881,9 +1015,20 @@ function canDrawTree(generalId: string, childIds: string[], positions: Positions
         || children.every(rect => rect.y + rect.height <= general.y);
 }
 
+/**
+ * A box round each package, where one can honestly be drawn.
+ *
+ * The box is the bounding rectangle of the package's classes, which is only the
+ * package if nothing else has landed inside it. Laid out as one graph -- which
+ * is what ignoring the packages means -- classes interleave, and a box drawn
+ * round the ones belonging to `Person` enclosed `University`, `Department` and
+ * `Staff` as well. A box that says a class is in a package it is not in is
+ * worse than no box: the reader believes it.
+ */
 function groupBoxes(view: ViewModel, positions: Positions): Array<{ id: string; name: string; rect: Rect }> {
     return view.groups
         .map(group => {
+            const members = new Set(group.nodes);
             const rects = group.nodes
                 .map(id => positions[id])
                 .filter((rect): rect is Rect => rect !== undefined);
@@ -891,16 +1036,17 @@ function groupBoxes(view: ViewModel, positions: Positions): Array<{ id: string; 
                 return undefined;
             }
             const bounds = boundsOf(rects);
-            return {
-                id: group.id,
-                name: group.name,
-                rect: {
-                    x: bounds.x - GROUP_PADDING,
-                    y: bounds.y - GROUP_PADDING - GROUP_HEADER,
-                    width: bounds.width + GROUP_PADDING * 2,
-                    height: bounds.height + GROUP_PADDING * 2 + GROUP_HEADER
-                }
+            const rect = {
+                x: bounds.x - GROUP_PADDING,
+                y: bounds.y - GROUP_PADDING - GROUP_HEADER,
+                width: bounds.width + GROUP_PADDING * 2,
+                height: bounds.height + GROUP_PADDING * 2 + GROUP_HEADER
             };
+            const encloses = view.nodes.some(node => {
+                const other = positions[node.id];
+                return !members.has(node.id) && other !== undefined && overlapArea(other, rect) > 0;
+            });
+            return encloses ? undefined : { id: group.id, name: group.name, rect };
         })
         .filter((group): group is { id: string; name: string; rect: Rect } => group !== undefined);
 }

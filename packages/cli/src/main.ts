@@ -24,6 +24,7 @@ diagram of the model would hold.
   --layout <name>    layered (default), stress, mrtree, radial, force
   --routing <name>   straight (default) or orthogonal
   --direction <dir>  DOWN (default) or RIGHT
+  --loose            lay the model out as one graph, ignoring its packages
   --package <name>   restrict the view to this package; repeatable
   --no-external      leave out elements from packages outside the view
   --no-datatypes     leave out datatypes and enumerations
@@ -43,6 +44,7 @@ export async function run(argv: string[]): Promise<number> {
     let algorithm: LayoutOptions['algorithm'] = defaultLayoutOptions.algorithm;
     let routing: DisplayOptions['routing'] = defaultDisplayOptions.routing;
     let direction: LayoutOptions['direction'] = defaultLayoutOptions.direction;
+    let groupByPackage = defaultLayoutOptions.groupByPackage;
     const paths: string[] = [];
     for (let index = 0; index < argv.length; index += 1) {
         const argument = argv[index]!;
@@ -68,6 +70,8 @@ export async function run(argv: string[]): Promise<number> {
             routing = argv[++index] as DisplayOptions['routing'];
         } else if (argument === '--direction') {
             direction = argv[++index] as LayoutOptions['direction'];
+        } else if (argument === '--loose') {
+            groupByPackage = false;
         } else {
             paths.push(argument);
         }
@@ -106,7 +110,7 @@ export async function run(argv: string[]): Promise<number> {
         algorithm,
         direction,
         routing,
-        grouped: display.showPackageGroups
+        groupByPackage
     });
     const drawn = render({
         view,

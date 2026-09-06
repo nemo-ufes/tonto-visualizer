@@ -72,8 +72,6 @@ interface ElkNode {
 }
 
 export interface AutoLayoutRequest extends Partial<LayoutOptions> {
-    /** Group nodes by package. */
-    grouped?: boolean;
     /** Lay out only these nodes, leaving the rest where they are. */
     only?: string[];
     /**
@@ -169,7 +167,7 @@ export async function autoLayout(
     }
 
     const sizeOf = (id: string): Size => sizes[id] ?? { width: 160, height: 60 };
-    const grouped = (request.grouped ?? false) && supportsGroups(settings.algorithm);
+    const grouped = settings.groupByPackage && supportsGroups(settings.algorithm);
     const algorithmOptions = optionsFor(settings, routing);
     const children: ElkNode[] = grouped
         ? view.groups

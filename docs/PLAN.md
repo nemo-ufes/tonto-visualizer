@@ -120,6 +120,13 @@ the qualified name for a declaration, and a derived key for a relation — becau
 that id is what a saved position is keyed by. This layer is pure: no DOM, no
 `vscode`, and it is where the golden tests live.
 
+Packages can be kept together or ignored, and it is a choice because the
+measurements do not settle it: over the five example models, ignoring them
+produced a smaller drawing three times out of five and a much worse one on
+`boats`. A package box is then drawn only where it holds nothing but its own
+classes -- laid out as one graph they interleave, and a box round the classes of
+one package enclosed three from another, which the reader would believe.
+
 **(b) Layout, only where the modeller has not spoken.** `elkjs` (the layered
 algorithm, packages as compound nodes) runs when a view is first drawn or when
 an arrangement is asked for. Elements with a saved position are pinned; only new and
@@ -149,7 +156,13 @@ machine and a card half empty on another. One stack means one set of width
 estimates, calibrated against the browser and weighted per character, so `[1..*]`
 is not given the room of `«characterization»`.
 
-Lines are **straight**, border to border. A class diagram is read as things
+Lines are **straight**, border to border, and none of them passes behind a
+class. Each has its own place along the border of the classes it joins, so two
+associations between the same neighbours are two lines; a line blocked by a
+class bends round it, twice if one bend will not clear; and specializations of
+one class are gathered into a shared tree, since four subtypes each drawing its
+own line to one supertype produce four that converge and two that run together.
+`tools/readability.py` counts what is left. A class diagram is read as things
 joined by lines, not as a circuit board: a direct line says *these two* at a
 glance, where a right-angled one has to be followed round two corners, and on a
 model with many associations the corridors start to read as the diagram. Two

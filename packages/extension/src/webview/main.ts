@@ -314,7 +314,12 @@ function fillOptions(): void {
         ], layout?.algorithm ?? 'layered',
             value => host.postMessage({ type: 'layout', layout: { algorithm: value as LayoutOptions['algorithm'] } })),
         choice('Direction', [['DOWN', 'Top to bottom'], ['RIGHT', 'Left to right']], layout?.direction ?? 'DOWN',
-            value => host.postMessage({ type: 'layout', layout: { direction: value as LayoutOptions['direction'] } }))
+            value => host.postMessage({ type: 'layout', layout: { direction: value as LayoutOptions['direction'] } })),
+        // Not free: a class that would sit beside the one it specializes has to
+        // stay inside its own package instead. Worth offering both ways round,
+        // since which reads better depends on the model.
+        toggle('Keep packages together', layout?.groupByPackage ?? true,
+            value => host.postMessage({ type: 'layout', layout: { groupByPackage: value } }))
     ]));
     optionsPanel.append(section('Drawn', displayRows.map(([key, label]) =>
         toggle(label, Boolean(display?.[key]), value => host.postMessage({ type: 'display', display: { [key]: value } })))));

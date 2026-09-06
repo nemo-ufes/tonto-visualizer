@@ -110,7 +110,6 @@ export class DiagramPanel {
         const laid = await autoLayout(this.view, sizes, this.positions, {
             ...store.state.layout,
             routing: store.state.display.routing,
-            grouped: store.state.display.showPackageGroups,
             ...(only ? { only } : {})
         });
         this.positions = laid.positions;

@@ -190,23 +190,7 @@ function detour(
     source: Rect, target: Rect, start: Point, end: Point, blocked: Rect[], obstacles: Rect[], keepEnds: boolean,
     avoid: Point[] = []
 ): Point[] {
-    const candidates: Point[] = [];
-    for (const rect of blocked) {
-        const left = rect.x - CLEARANCE;
-        const right = rect.x + rect.width + CLEARANCE;
-        const top = rect.y - CLEARANCE;
-        const bottom = rect.y + rect.height + CLEARANCE;
-        const middleX = rect.x + rect.width / 2;
-        const middleY = rect.y + rect.height / 2;
-        // Corners, and the middle of each side: a box is passed either round its
-        // end or over its face, and which is shorter depends on where the two
-        // classes sit.
-        candidates.push(
-            { x: left, y: top }, { x: right, y: top }, { x: left, y: bottom }, { x: right, y: bottom },
-            { x: middleX, y: top }, { x: middleX, y: bottom }, { x: left, y: middleY }, { x: right, y: middleY }
-        );
-    }
-
+    const candidates = cornersOf(blocked);
     const others = obstacles.filter(rect => rect !== source && rect !== target);
     // The straight line is in the running: a detour is worth a corner only if it
     // crosses fewer boxes than going straight through did.
@@ -221,17 +205,74 @@ function detour(
         const last = keepEnds ? end : borderPoint(target, via);
         const hits = others.filter(rect => segmentHitsRect(first, via, rect, 4)
             || segmentHitsRect(via, last, rect, 4)).length
-            // A bend another line has already taken counts against this one as
-            // much as a box does: two lines sharing a corner share the run to it.
             + (avoid.some(point => Math.hypot(point.x - via.x, point.y - via.y) < CLEARANCE) ? 1 : 0);
         const length = Math.hypot(via.x - first.x, via.y - first.y) + Math.hypot(last.x - via.x, last.y - via.y);
-        // Fewer boxes crossed first, then the shorter way round; a bend is only
-        // ever taken to buy a box back.
         if (hits < best.hits || (hits === best.hits && best.bends > 0 && length < best.length)) {
             best = { points: [round(first), round(via), round(last)], hits, length, bends: 1 };
         }
     }
+    if (best.hits === 0) {
+        return best.points;
+    }
+
+    // One bend was not enough. Two are worth trying before giving up and
+    // crossing something: a line that disappears behind a class it has nothing
+    // to do with is read as ending there. The corners of whatever blocked the
+    // one-bend attempts join the search, since those are the boxes to get round.
+    const alsoBlocking = new Set<Rect>();
+    for (const via of candidates) {
+        const first = keepEnds ? start : borderPoint(source, via);
+        const last = keepEnds ? end : borderPoint(target, via);
+        for (const rect of others) {
+            if (segmentHitsRect(first, via, rect, 4) || segmentHitsRect(via, last, rect, 4)) {
+                alsoBlocking.add(rect);
+            }
+        }
+    }
+    const wider = [...candidates, ...cornersOf([...alsoBlocking])];
+    for (const first of wider) {
+        for (const second of wider) {
+            if (first === second) {
+                continue;
+            }
+            const from = keepEnds ? start : borderPoint(source, first);
+            const to = keepEnds ? end : borderPoint(target, second);
+            const hits = others.filter(rect => segmentHitsRect(from, first, rect, 4)
+                || segmentHitsRect(first, second, rect, 4)
+                || segmentHitsRect(second, to, rect, 4)).length;
+            if (hits > 0) {
+                continue;
+            }
+            const length = Math.hypot(first.x - from.x, first.y - from.y)
+                + Math.hypot(second.x - first.x, second.y - first.y)
+                + Math.hypot(to.x - second.x, to.y - second.y);
+            if (best.hits > 0 || length < best.length) {
+                best = { points: [round(from), round(first), round(second), round(to)], hits: 0, length, bends: 2 };
+            }
+        }
+    }
     return best.points;
+}
+
+/** Corners and side-middles of the boxes to get round, with clearance. */
+function cornersOf(rects: Rect[]): Point[] {
+    const candidates: Point[] = [];
+    for (const rect of rects) {
+        const left = rect.x - CLEARANCE;
+        const right = rect.x + rect.width + CLEARANCE;
+        const top = rect.y - CLEARANCE;
+        const bottom = rect.y + rect.height + CLEARANCE;
+        const middleX = rect.x + rect.width / 2;
+        const middleY = rect.y + rect.height / 2;
+        // Corners, and the middle of each side: a box is passed either round its
+        // end or over its face, and which is shorter depends on where the two
+        // classes sit.
+        candidates.push(
+            { x: left, y: top }, { x: right, y: top }, { x: left, y: bottom }, { x: right, y: bottom },
+            { x: middleX, y: top }, { x: middleX, y: bottom }, { x: left, y: middleY }, { x: right, y: middleY }
+        );
+    }
+    return candidates;
 }
 
 function round(point: Point): Point {
