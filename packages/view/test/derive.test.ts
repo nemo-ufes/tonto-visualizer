@@ -176,6 +176,45 @@ role Employee specializes Person
         const after = stripLocations(derive({ models: await session.models() }));
         expect(after).toEqual(before);
     });
+
+    test('resolves inverseOf to the id of the relation it names, on both halves', async () => {
+        const view = await viewOfText(`
+package Sample
+kind Person {
+    @historicalDependence (addOnly children) [*] -- hasFather -- [1] (const father) Man
+}
+subkind Man specializes Person {
+    (const father) [1] -- hasChild -- [*] (addOnly children) Person inverseOf Person.hasFather
+}
+`);
+        // Written on one side of the pair and recorded on both, because a
+        // drawing that shows the two as one line has to reach the other half
+        // from whichever of them it is holding. As an id, not as the name it
+        // was written as: resolving the name is the language's job, and the
+        // canvas has no way to do it.
+        const child = relation(view, 'hasChild');
+        const father = relation(view, 'hasFather');
+        expect(child.inverseOf).toBe(father.id);
+        expect(father.inverseOf).toBe(child.id);
+    });
+
+    test('leaves inverseOf off a pair that does not run between the same two classes', async () => {
+        const view = await viewOfText(`
+package Sample
+kind Person {
+    @historicalDependence (addOnly children) [*] -- hasFather -- [1] (const father) Man
+}
+kind Company
+subkind Man specializes Person {
+    [1] -- worksAt -- [*] Company inverseOf Person.hasFather
+}
+`);
+        // The two are not one association stated twice, whatever the model
+        // says. Drawing them as one line would be the picture disagreeing with
+        // the validator, which is worse than drawing both.
+        expect(relation(view, 'worksAt').inverseOf).toBeUndefined();
+        expect(relation(view, 'hasFather').inverseOf).toBeUndefined();
+    });
 });
 
 function node(view: Awaited<ReturnType<typeof viewOfText>>, id: string) {
