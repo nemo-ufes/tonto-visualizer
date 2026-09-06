@@ -29,6 +29,7 @@ import {
     isEnumeration,
     isExternalRelation,
     isGeneralizationSet,
+    inverseEndsAgree,
     isParthood,
     wholeEndOf
 } from './language.js';
@@ -137,6 +138,7 @@ class Derivation {
             const found = byId.get(this.idOf.get(relation) ?? '');
             return found?.kind === 'relation' ? found : undefined;
         };
+        const candidates = new Map<string, { one: ViewRelation; other: ViewRelation }>();
         for (const { relation, inverse } of this.inverses) {
             const one = relationAt(relation);
             const other = relationAt(inverse);
@@ -146,8 +148,26 @@ class Derivation {
             if (one.source !== other.target || one.target !== other.source) {
                 continue;
             }
-            one.inverseOf = other.id;
-            other.inverseOf = one.id;
+            if (!inverseEndsAgree(relation, inverse)) {
+                continue;
+            }
+            const key = one.id < other.id ? `${one.id}\0${other.id}` : `${other.id}\0${one.id}`;
+            candidates.set(key, { one, other });
+        }
+
+        // More than one relation claiming the same inverse is not one
+        // association stated twice. Leave every claim visible so the malformed
+        // model cannot look valid in the diagram.
+        const claims = new Map<string, number>();
+        for (const { one, other } of candidates.values()) {
+            claims.set(one.id, (claims.get(one.id) ?? 0) + 1);
+            claims.set(other.id, (claims.get(other.id) ?? 0) + 1);
+        }
+        for (const { one, other } of candidates.values()) {
+            if (claims.get(one.id) === 1 && claims.get(other.id) === 1) {
+                one.inverseOf = other.id;
+                other.inverseOf = one.id;
+            }
         }
     }
 

@@ -8,7 +8,7 @@
 
 import * as vscode from 'vscode';
 import type { ContentOptions, DisplayOptions, ViewModel } from 'tonto-view';
-import { derive, reconcile } from 'tonto-view';
+import { derive, expandInverseIds, idsAtSource, reconcile } from 'tonto-view';
 import { ViewSession } from 'tonto-view/session';
 import { autoLayout } from 'tonto-canvas';
 import { darkTheme, lightTheme, placeNewNodes, render, segmentHitsRect, sizeOf } from 'tonto-canvas/draw';
@@ -428,7 +428,10 @@ export class DiagramPanel {
                 return;
             case 'hide':
                 if (store) {
-                    const hidden = new Set([...(store.state.content.hidden ?? []), ...message.ids]);
+                    const hidden = new Set([
+                        ...(store.state.content.hidden ?? []),
+                        ...expandInverseIds(this.view.edges, message.ids)
+                    ]);
                     store.update({ content: { ...store.state.content, hidden: [...hidden] } });
                     await this.refresh();
                 }
@@ -476,12 +479,7 @@ export class DiagramPanel {
             return;
         }
         const uri = this.document.uri.toString();
-        const ids = this.view.nodes
-            .filter(node => node.source
-                && node.source.uri === uri
-                && position.line >= node.source.line
-                && position.line <= node.source.endLine)
-            .map(node => node.id);
+        const ids = idsAtSource(this.view, uri, position.line);
         this.selected = new Set(ids);
         this.post({ type: 'select', ids });
     }

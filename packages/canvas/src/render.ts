@@ -9,6 +9,7 @@
 
 import type { EdgeRoute, ViewEdge, ViewModel, ViewNode, ViewRelation, ViewRelationEnd } from 'tonto-view';
 import type { DisplayOptions } from 'tonto-view';
+import { inversePairs } from 'tonto-view/inverses';
 import type { Point, Rect } from './geometry.js';
 import { alongPath, boundsOf, centerOf, distanceToPath, segmentHitsRect } from './geometry.js';
 import { attributeLines, FONT, multiplicityLabel, NODE, nodeLabel, stereotypeLabel, textWidth } from './measure.js';
@@ -128,26 +129,6 @@ function mediationsThrough(
  * a model the validator rejects, and one where drawing fewer lines than there
  * are relations would hide the mistake.
  */
-function inversePairs(view: ViewModel): { covered: Set<string>; partnerOf: Map<string, ViewRelation> } {
-    const relations = new Map<string, ViewRelation>();
-    for (const edge of view.edges) {
-        if (edge.kind === 'relation') {
-            relations.set(edge.id, edge);
-        }
-    }
-    const covered = new Set<string>();
-    const partnerOf = new Map<string, ViewRelation>();
-    for (const edge of relations.values()) {
-        const other = edge.inverseOf ? relations.get(edge.inverseOf) : undefined;
-        if (!other || other.inverseOf !== edge.id || other.id === edge.id || edge.id > other.id) {
-            continue;
-        }
-        covered.add(other.id);
-        partnerOf.set(edge.id, other);
-    }
-    return { covered, partnerOf };
-}
-
 /**
  * The two halves of an inverse pair as the one relation they state.
  *
@@ -191,7 +172,7 @@ export function render(input: RenderInput): Rendered {
     // An inverse pair is one line, decided before the ends are spread along the
     // borders: the half that is not drawn must not be given a share of a border
     // either, or the line that is drawn arrives beside the space kept for it.
-    const inverses = inversePairs(view);
+    const inverses = inversePairs(view.edges);
     const drawn = view.edges.filter(edge => !inverses.covered.has(edge.id));
     const ports = assignPorts(drawn, positions, mediationsThrough(view, positions, inverses.covered));
     const loops = loopIndex(view);
@@ -250,7 +231,10 @@ export function render(input: RenderInput): Rendered {
             const partner = edge.kind === 'relation' ? inverses.partnerOf.get(edge.id) : undefined;
             const both = edge.kind === 'relation' && partner ? mergedWith(edge, partner) : edge;
             labelMarkup += drawEdgeLabels(both, points, display, theme, placer, partner);
-            return drawEdge(both, points, theme, selected.has(edge.id));
+            return drawEdge(
+                both, points, theme,
+                selected.has(edge.id) || (partner !== undefined && selected.has(partner.id))
+            );
         })
         .join('');
 

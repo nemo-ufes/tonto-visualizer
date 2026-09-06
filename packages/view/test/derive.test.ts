@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { derive } from '../src/index.js';
+import { derive, expandInverseIds, idsAtSource } from '../src/index.js';
 import { ViewSession } from '../src/session.js';
 
 const parties = resolve(import.meta.dirname, 'fixtures/parties');
@@ -196,6 +196,21 @@ subkind Man specializes Person {
         const father = relation(view, 'hasFather');
         expect(child.inverseOf).toBe(father.id);
         expect(father.inverseOf).toBe(child.id);
+        expect(expandInverseIds(view.edges, [child.id])).toEqual([child.id, father.id]);
+    });
+
+    test('leaves inverse declarations separate when their ends disagree', async () => {
+        const view = await viewOfText(`
+package Sample
+kind Person {
+    @historicalDependence (addOnly children) [*] -- hasFather -- [1] (const father) Man
+}
+subkind Man specializes Person {
+    -- hasChildren -- Person inverseOf Person.hasFather
+}
+`);
+        expect(relation(view, 'hasChildren').inverseOf).toBeUndefined();
+        expect(relation(view, 'hasFather').inverseOf).toBeUndefined();
     });
 
     test('leaves inverseOf off a pair that does not run between the same two classes', async () => {
@@ -214,6 +229,20 @@ subkind Man specializes Person {
         // the validator, which is worse than drawing both.
         expect(relation(view, 'worksAt').inverseOf).toBeUndefined();
         expect(relation(view, 'hasFather').inverseOf).toBeUndefined();
+    });
+
+    test('finds relation declarations as well as classes at an editor line', async () => {
+        const view = await viewOfText(`
+package Sample
+kind Person {
+    -- knows -- Person
+}
+`);
+        const person = node(view, 'Sample::Person');
+        const knows = relation(view, 'knows');
+        expect(person.source).toBeDefined();
+        expect(knows.source_).toBeDefined();
+        expect(idsAtSource(view, knows.source_!.uri, knows.source_!.line)).toContain(knows.id);
     });
 });
 

@@ -204,6 +204,26 @@ describe('drawing', () => {
         }
     });
 
+    test('routes a self-loop around an unrelated card at its preferred corner', () => {
+        const source = { x: 200, y: 200, width: 120, height: 42 };
+        const obstacle = { x: 300, y: 150, width: 120, height: 42 };
+        const points = routeEdge(source, source, {
+            ends: { source: { x: 320, y: 221 }, target: { x: 260, y: 200 } },
+            obstacles: [source, obstacle]
+        });
+        for (let index = 0; index + 1 < points.length; index += 1) {
+            expect(segmentHitsRect(points[index]!, points[index + 1]!, obstacle, 4)).toBe(false);
+        }
+    });
+
+    test('does not infer a self-loop from two overlapping rectangles', () => {
+        const source = { x: 20, y: 30, width: 120, height: 42 };
+        const target = { x: 20, y: 30, width: 120, height: 80 };
+        const points = routeEdge(source, target);
+        expect(points).toHaveLength(2);
+        expect(points.every(point => point.x >= source.x && point.x <= source.x + source.width)).toBe(true);
+    });
+
     test('runs parallel edges beside one another', () => {
         const source = { x: 0, y: 0, width: 100, height: 60 };
         const target = { x: 300, y: 0, width: 100, height: 60 };
@@ -300,6 +320,21 @@ describe('drawing', () => {
         expect(Object.keys(output.paths)).toEqual(['rel:Sample::Man->Sample::Person::hasChild']);
         expect(output.svg.match(/data-edge=/g)).toHaveLength(1);
         expect(output.svg).not.toContain('data-edge="rel:Sample::Person-&gt;Sample::Man');
+    });
+
+    test('selects the combined line through either inverse id', () => {
+        const view = inversePair();
+        const covered = view.edges[1]!.id;
+        const rendered = render({
+            view,
+            positions: {
+                'Sample::Man': { x: 0, y: 0, width: 140, height: 42 },
+                'Sample::Person': { x: 460, y: 0, width: 140, height: 42 }
+            },
+            display,
+            selection: [covered]
+        });
+        expect(rendered.svg).toMatch(/<g class="tv-edge tv-selected"/);
     });
 
     test('writes both readings of an inverse pair on that line', () => {
