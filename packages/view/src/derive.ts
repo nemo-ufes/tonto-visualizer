@@ -45,6 +45,7 @@ import type {
     ViewGroup,
     ViewModel,
     ViewNode,
+    ViewRelation,
     ViewRelationEnd
 } from './model.js';
 
@@ -72,6 +73,8 @@ class Derivation {
     /** Ids handed out during the walk, so a generalization set can name what it groups. */
     private readonly idOf = new Map<AstNode, string>();
     private readonly relationIds = new RelationIds();
+    /** `inverseOf` as it was written, resolved once every relation has an id. */
+    private readonly inverses: Array<{ relation: Relation; inverse: Relation }> = [];
     /** Packages inside the view, as AST nodes, so containment is an identity test. */
     private readonly included = new Set<Package>();
 
@@ -102,13 +105,50 @@ class Derivation {
             }
         }
 
+        const edges = this.edges.filter(edge => this.nodes.has(edge.source) && this.nodes.has(edge.target));
+        this.linkInverses(edges);
+
         return {
             ...(this.input.focus ? { focus: this.input.focus } : {}),
             groups: [...this.groups.values()].filter(group => group.nodes.length > 0),
             nodes: [...this.nodes.values()],
-            edges: this.edges.filter(edge => this.nodes.has(edge.source) && this.nodes.has(edge.target)),
+            edges,
             gensets: this.options.showGensets ? this.gensets : []
         };
+    }
+
+    /**
+     * Marks each half of an inverse pair with the id of the other half.
+     *
+     * Written on one side only -- `Man.hasChild inverseOf Person.hasFather` --
+     * and recorded on both, because a drawing that shows the pair as one line
+     * has to be able to reach the other half from whichever of the two it is
+     * looking at.
+     *
+     * Only a pair that really is one association twice over is marked: the two
+     * must run between the same classes in opposite directions. An `inverseOf`
+     * naming something else is a model the validator will reject, and drawing
+     * two unrelated relations as one line would be the picture disagreeing with
+     * it.
+     */
+    private linkInverses(edges: ViewEdge[]): void {
+        const byId = new Map(edges.map(edge => [edge.id, edge]));
+        const relationAt = (relation: Relation): ViewRelation | undefined => {
+            const found = byId.get(this.idOf.get(relation) ?? '');
+            return found?.kind === 'relation' ? found : undefined;
+        };
+        for (const { relation, inverse } of this.inverses) {
+            const one = relationAt(relation);
+            const other = relationAt(inverse);
+            if (!one || !other || one.id === other.id) {
+                continue;
+            }
+            if (one.source !== other.target || one.target !== other.source) {
+                continue;
+            }
+            one.inverseOf = other.id;
+            other.inverseOf = one.id;
+        }
     }
 
     private walkPackage(one: Package): void {
@@ -248,6 +288,12 @@ class Derivation {
 
         const id = this.relationIds.next(source, target, relation.stereotype, relation.name);
         this.idOf.set(relation, id);
+        // Which relation `inverseOf` names is the language's answer, and the
+        // relation it names may not have been walked yet, so the reference is
+        // kept and resolved to an id in `linkInverses`.
+        if (relation.inverseOf?.ref) {
+            this.inverses.push({ relation, inverse: relation.inverseOf.ref });
+        }
         const whole = isParthood(relation) ? wholeEndOf(relation) : undefined;
         this.addEdge({
             kind: 'relation',
@@ -259,7 +305,6 @@ class Derivation {
             sourceEnd: this.endOf(relation.sourceMeta, cardinality(relation.sourceCardinality), whole === 'source'),
             targetEnd: this.endOf(relation.targetMeta, cardinality(relation.targetCardinality), whole === 'target'),
             ...(whole ? { whole } : {}),
-            ...(relation.inverseOf?.$refText ? { inverseOf: relation.inverseOf.$refText } : {}),
             ...(relation.specializes?.$refText ? { specializes: relation.specializes.$refText } : {}),
             ...this.documentedRelation(relation)
         });
