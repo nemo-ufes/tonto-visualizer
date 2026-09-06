@@ -16,7 +16,9 @@ elsewhere and is read, not reimplemented.
 |---|---|
 | `vendor/tontoredesign` | the language, as a pinned git submodule. **Never edited from here.** |
 | `packages/view` | the AST read as a diagram: nodes, edges, groups, gensets. No DOM, no `vscode`. |
-| `packages/cli` | `tonto-view`, which prints a view model |
+| `packages/canvas` | sizes, placement, routing, SVG. Runs in a webview and in Node; `./draw` is the half that does not need ELK. |
+| `packages/extension` | the VS Code panel: host in `src`, the canvas app in `src/webview` |
+| `packages/cli` | `tonto-view`, which prints a view model or draws it |
 | `docs/PLAN.md` | what is being built, and the decisions behind it |
 
 ## The rules this repository is built on
@@ -36,6 +38,11 @@ elsewhere and is read, not reimplemented.
   and say what is wrong somewhere that is not the middle of the canvas.
 - **The derivation is testable without a screen.** `packages/view` has no DOM
   and no `vscode` import, so what a diagram holds is a golden file and a diff.
+- **Look at the picture.** Layout and drawing defects are invisible in the
+  markup and obvious in a render. `node packages/cli/bin/tonto-view.js <model>
+  --svg` draws one; every defect fixed here so far -- labels behind boxes,
+  cardinalities printing on top of each other, routes landing in the corner of
+  the canvas -- passed review as code and was caught by looking.
 
 ## House style
 

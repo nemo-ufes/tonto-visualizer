@@ -14,17 +14,29 @@ See [docs/PLAN.md](docs/PLAN.md) for what is being built and why.
 
 ## Status
 
-Early. What works today:
+Working end to end, and rough in places.
 
 - `packages/view` — a Tonto model read as an explicit diagram: nodes, edges,
   package groups and generalization sets, with ids stable across edits, colours
   from the natures a class actually classifies, and unresolved names drawn
   rather than dropped.
-- `packages/cli` — `tonto-view <file-or-directory>`, which prints that view
-  model as JSON.
+- `packages/canvas` — sizes, placement, orthogonal routing and SVG. Automatic
+  layout (ELK) places only what has not been placed by hand.
+- `packages/cli` — `tonto-view <file-or-directory> [--svg]`.
+- `packages/extension` — the panel: live redraw as the model is typed, the last
+  good picture kept while it does not parse, drag to arrange, double-click to
+  open the declaration, cursor-follows-selection, package filter, display
+  options, nature legend, SVG export, and a `.tontoview` file beside the model
+  holding the arrangement.
 
-Still to come: the canvas that draws and moves it, and the extension that puts
-it beside the editor.
+The notation covers classes with stereotypes and attributes, datatypes and
+enumerations, generalizations, generalization sets as one shared triangle with
+`{disjoint, complete}`, relations with their stereotype, cardinalities, role
+names and end decorations, whole-part diamonds, and `instanceOf`.
+
+Not there yet: dragging a route by hand (the file format holds them; the panel
+does not draw the handles), undo/redo, resizing a card, marquee selection, PNG
+export, and any editing of the model from the diagram.
 
 ## Getting started
 

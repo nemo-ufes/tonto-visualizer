@@ -9,6 +9,7 @@
     "types": "out/index.d.ts",
     "exports": {
         ".": "./out/index.js",
+        "./palette": "./out/palette.js",
         "./session": "./out/session.js"
     },
     "files": [

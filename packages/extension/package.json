@@ -1,0 +1,96 @@
+{
+    "name": "tonto-visualizer",
+    "displayName": "Tonto Visualizer",
+    "version": "0.1.0",
+    "private": true,
+    "description": "An OntoUML diagram beside the text: a Tonto model drawn as it is typed, and arranged by hand.",
+    "license": "MIT",
+    "type": "module",
+    "publisher": "tonto-redesign",
+    "categories": ["Visualization", "Programming Languages"],
+    "keywords": ["tonto", "ontouml", "ufo", "ontology", "diagram"],
+    "engines": {
+        "vscode": "^1.90.0"
+    },
+    "main": "./out/extension.cjs",
+    "activationEvents": [
+        "onLanguage:tonto"
+    ],
+    "contributes": {
+        "commands": [
+            {
+                "command": "tonto.viz.open",
+                "title": "Open Diagram",
+                "category": "Tonto",
+                "icon": "$(symbol-structure)"
+            },
+            {
+                "command": "tonto.viz.autoLayout",
+                "title": "Arrange Diagram Automatically",
+                "category": "Tonto"
+            },
+            {
+                "command": "tonto.viz.exportSvg",
+                "title": "Export Diagram as SVG",
+                "category": "Tonto"
+            }
+        ],
+        "menus": {
+            "commandPalette": [
+                { "command": "tonto.viz.open", "when": "editorLangId == 'tonto'" },
+                { "command": "tonto.viz.autoLayout", "when": "tontoVizOpen" },
+                { "command": "tonto.viz.exportSvg", "when": "tontoVizOpen" }
+            ],
+            "editor/title": [
+                { "command": "tonto.viz.open", "when": "editorLangId == 'tonto'", "group": "navigation" }
+            ],
+            "explorer/context": [
+                { "command": "tonto.viz.open", "when": "resourceExtname == '.tonto'", "group": "navigation" }
+            ]
+        },
+        "configuration": {
+            "title": "Tonto Visualizer",
+            "properties": {
+                "tonto.viz.update": {
+                    "type": "string",
+                    "enum": ["onType", "onSave"],
+                    "default": "onType",
+                    "scope": "window",
+                    "markdownDescription": "When the diagram catches up with the text. `onType` redraws as the model is written, keeping the last good picture while it does not parse; `onSave` waits."
+                },
+                "tonto.viz.followActiveEditor": {
+                    "type": "boolean",
+                    "default": true,
+                    "scope": "window",
+                    "markdownDescription": "Follow the editor: opening another `.tonto` file draws that file's packages. Turn off to keep one diagram on screen while reading elsewhere."
+                },
+                "tonto.viz.saveArrangement": {
+                    "type": "boolean",
+                    "default": true,
+                    "scope": "window",
+                    "markdownDescription": "Write positions to a `.tontoview` file beside the model, so a hand-arranged diagram survives a restart and can be committed."
+                }
+            }
+        }
+    },
+    "files": ["out", "media"],
+    "scripts": {
+        "clean": "shx rm -rf out",
+        "prebuild": "npm run clean",
+        "build": "node esbuild.mjs",
+        "watch": "node esbuild.mjs --watch",
+        "package": "npm run build && vsce package --no-dependencies -o tonto-visualizer.vsix"
+    },
+    "dependencies": {
+        "tonto-canvas": "*",
+        "tonto-view": "*"
+    },
+    "devDependencies": {
+        "@types/node": "^20.0.0",
+        "@types/vscode": "^1.90.0",
+        "@vscode/vsce": "^3.9.2",
+        "esbuild": "^0.28.1",
+        "shx": "^0.3.4",
+        "typescript": "^5.6.0"
+    }
+}
