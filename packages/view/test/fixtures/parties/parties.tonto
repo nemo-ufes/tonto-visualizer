@@ -1,0 +1,25 @@
+package Parties
+
+/// A person, in the everyday sense.
+///
+/// Identity comes from the individual, not from any role they play.
+kind Person {
+    name: string
+    @begin birthDate: const date [0..1]
+}
+
+phase Child specializes Person
+phase Adult specializes Person
+
+disjoint complete genset PersonAgePhases where Child, Adult specializes Person
+
+kind Organization {
+    address: Address [0..1]
+}
+
+datatype Address {
+    street: string
+    city: string
+}
+
+role Employee specializes Person

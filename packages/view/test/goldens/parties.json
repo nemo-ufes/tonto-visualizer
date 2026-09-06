@@ -1,0 +1,324 @@
+{
+  "groups": [
+    {
+      "id": "pkg:Employment",
+      "name": "Employment",
+      "isExternal": false,
+      "nodes": [
+        "Employment::EmploymentContract",
+        "Employment::Car",
+        "Employment::Wheel",
+        "Employment::Currency"
+      ]
+    },
+    {
+      "id": "pkg:Parties",
+      "name": "Parties",
+      "isExternal": false,
+      "nodes": [
+        "Parties::Employee",
+        "Parties::Person",
+        "Parties::Organization",
+        "Parties::Child",
+        "Parties::Adult",
+        "Parties::Address"
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "Employment::EmploymentContract",
+      "kind": "class",
+      "name": "EmploymentContract",
+      "package": "Employment",
+      "stereotype": "relator",
+      "natures": {
+        "natures": [
+          "relators"
+        ],
+        "origin": "implied"
+      },
+      "color": "#99FF99",
+      "isExternal": false,
+      "attributes": []
+    },
+    {
+      "id": "Employment::Car",
+      "kind": "class",
+      "name": "Car",
+      "package": "Employment",
+      "stereotype": "kind",
+      "natures": {
+        "natures": [
+          "functional-complexes"
+        ],
+        "origin": "implied"
+      },
+      "color": "#FF99A3",
+      "isExternal": false,
+      "attributes": []
+    },
+    {
+      "id": "Employment::Wheel",
+      "kind": "class",
+      "name": "Wheel",
+      "package": "Employment",
+      "stereotype": "kind",
+      "natures": {
+        "natures": [
+          "functional-complexes"
+        ],
+        "origin": "implied"
+      },
+      "color": "#FF99A3",
+      "isExternal": false,
+      "attributes": []
+    },
+    {
+      "id": "Employment::Currency",
+      "kind": "enumeration",
+      "name": "Currency",
+      "package": "Employment",
+      "stereotype": "enum",
+      "color": "#FFFFFF",
+      "isExternal": false,
+      "attributes": [],
+      "literals": [
+        "brl",
+        "eur",
+        "usd"
+      ]
+    },
+    {
+      "id": "Parties::Employee",
+      "kind": "class",
+      "name": "Employee",
+      "package": "Parties",
+      "stereotype": "role",
+      "natures": {
+        "natures": [
+          "functional-complexes"
+        ],
+        "origin": "inherited",
+        "from": "Person"
+      },
+      "color": "#FFDADD",
+      "isExternal": false,
+      "attributes": []
+    },
+    {
+      "id": "Parties::Person",
+      "kind": "class",
+      "name": "Person",
+      "package": "Parties",
+      "stereotype": "kind",
+      "natures": {
+        "natures": [
+          "functional-complexes"
+        ],
+        "origin": "implied"
+      },
+      "color": "#FF99A3",
+      "isExternal": false,
+      "attributes": [
+        {
+          "name": "name",
+          "type": "string",
+          "stereotypes": [],
+          "isOrdered": false,
+          "isConst": false,
+          "isAddOnly": false,
+          "isDerived": false
+        },
+        {
+          "name": "birthDate",
+          "type": "date",
+          "cardinality": "0..1",
+          "stereotypes": [
+            "begin"
+          ],
+          "isOrdered": false,
+          "isConst": true,
+          "isAddOnly": false,
+          "isDerived": false
+        }
+      ],
+      "documentation": "A person, in the everyday sense.\n\nIdentity comes from the individual, not from any role they play."
+    },
+    {
+      "id": "Parties::Organization",
+      "kind": "class",
+      "name": "Organization",
+      "package": "Parties",
+      "stereotype": "kind",
+      "natures": {
+        "natures": [
+          "functional-complexes"
+        ],
+        "origin": "implied"
+      },
+      "color": "#FF99A3",
+      "isExternal": false,
+      "attributes": [
+        {
+          "name": "address",
+          "type": "Address",
+          "cardinality": "0..1",
+          "stereotypes": [],
+          "isOrdered": false,
+          "isConst": false,
+          "isAddOnly": false,
+          "isDerived": false
+        }
+      ]
+    },
+    {
+      "id": "Parties::Child",
+      "kind": "class",
+      "name": "Child",
+      "package": "Parties",
+      "stereotype": "phase",
+      "natures": {
+        "natures": [
+          "functional-complexes"
+        ],
+        "origin": "inherited",
+        "from": "Person"
+      },
+      "color": "#FFDADD",
+      "isExternal": false,
+      "attributes": []
+    },
+    {
+      "id": "Parties::Adult",
+      "kind": "class",
+      "name": "Adult",
+      "package": "Parties",
+      "stereotype": "phase",
+      "natures": {
+        "natures": [
+          "functional-complexes"
+        ],
+        "origin": "inherited",
+        "from": "Person"
+      },
+      "color": "#FFDADD",
+      "isExternal": false,
+      "attributes": []
+    },
+    {
+      "id": "Parties::Address",
+      "kind": "datatype",
+      "name": "Address",
+      "package": "Parties",
+      "stereotype": "datatype",
+      "color": "#FFFFFF",
+      "isExternal": false,
+      "attributes": [
+        {
+          "name": "street",
+          "type": "string",
+          "stereotypes": [],
+          "isOrdered": false,
+          "isConst": false,
+          "isAddOnly": false,
+          "isDerived": false
+        },
+        {
+          "name": "city",
+          "type": "string",
+          "stereotypes": [],
+          "isOrdered": false,
+          "isConst": false,
+          "isAddOnly": false,
+          "isDerived": false
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "kind": "generalization",
+      "id": "gen:Parties::Employee->Parties::Person",
+      "target": "Parties::Person"
+    },
+    {
+      "kind": "relation",
+      "id": "rel:Employment::EmploymentContract->Parties::Employee:mediation:",
+      "target": "Parties::Employee",
+      "stereotype": "mediation",
+      "sourceEnd": {
+        "cardinality": "1..*",
+        "isConst": false,
+        "isAddOnly": false
+      },
+      "targetEnd": {
+        "cardinality": "1",
+        "isConst": true,
+        "isAddOnly": false
+      }
+    },
+    {
+      "kind": "relation",
+      "id": "rel:Employment::EmploymentContract->Parties::Organization:mediation:",
+      "target": "Parties::Organization",
+      "stereotype": "mediation",
+      "sourceEnd": {
+        "cardinality": "1..*",
+        "isConst": false,
+        "isAddOnly": false
+      },
+      "targetEnd": {
+        "cardinality": "1",
+        "isConst": true,
+        "isAddOnly": false
+      }
+    },
+    {
+      "kind": "relation",
+      "id": "rel:Employment::Car->Employment::Wheel:componenthood:has",
+      "target": "Employment::Wheel",
+      "stereotype": "componenthood",
+      "name": "has",
+      "sourceEnd": {
+        "cardinality": "1",
+        "isConst": false,
+        "isAddOnly": false,
+        "isWhole": true
+      },
+      "targetEnd": {
+        "cardinality": "4..*",
+        "role": "wheels",
+        "isConst": false,
+        "isAddOnly": false
+      },
+      "whole": "source"
+    },
+    {
+      "kind": "generalization",
+      "id": "gen:Parties::Child->Parties::Person",
+      "target": "Parties::Person",
+      "genset": "set:Parties::PersonAgePhases"
+    },
+    {
+      "kind": "generalization",
+      "id": "gen:Parties::Adult->Parties::Person",
+      "target": "Parties::Person",
+      "genset": "set:Parties::PersonAgePhases"
+    }
+  ],
+  "gensets": [
+    {
+      "id": "set:Parties::PersonAgePhases",
+      "name": "PersonAgePhases",
+      "disjoint": true,
+      "complete": true,
+      "general": "Parties::Person",
+      "specifics": [
+        "Parties::Child",
+        "Parties::Adult"
+      ],
+      "categorizers": []
+    }
+  ]
+}

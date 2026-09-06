@@ -1,0 +1,28 @@
+{
+    "name": "tonto-view-cli",
+    "version": "0.1.0",
+    "private": true,
+    "description": "The view model of a Tonto model, from a terminal: what the diagram would draw, before anything draws it.",
+    "license": "MIT",
+    "type": "module",
+    "bin": {
+        "tonto-view": "./bin/tonto-view.js"
+    },
+    "files": [
+        "out",
+        "bin"
+    ],
+    "scripts": {
+        "clean": "shx rm -rf out tsconfig.tsbuildinfo",
+        "prebuild": "npm run clean",
+        "build": "tsc -b tsconfig.json"
+    },
+    "dependencies": {
+        "tonto-view": "*"
+    },
+    "devDependencies": {
+        "shx": "^0.3.4",
+        "typescript": "^5.6.0",
+        "@types/node": "^20.0.0"
+    }
+}
