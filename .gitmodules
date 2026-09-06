@@ -1,0 +1,4 @@
+[submodule "vendor/tontoredesign"]
+	path = vendor/tontoredesign
+	url = https://github.com/jpalmeida/tontoredesign
+	branch = main

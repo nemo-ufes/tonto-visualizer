@@ -1,0 +1,20 @@
+import Parties
+
+package Employment
+
+relator EmploymentContract {
+    @mediation [1..*] -- [1] (const) Parties.Employee
+    @mediation [1..*] -- [1] (const) Parties.Organization
+}
+
+kind Car {
+    @componenthood [1] <>-- has -- [4..*] (wheels) Wheel
+}
+
+kind Wheel
+
+enum Currency {
+    brl,
+    eur,
+    usd
+}

@@ -1,0 +1,35 @@
+{
+    "name": "tonto-view",
+    "version": "0.1.0",
+    "private": true,
+    "description": "The Tonto AST as an explicit diagram: nodes, edges and groups, with stable ids. No DOM, no vscode.",
+    "license": "MIT",
+    "type": "module",
+    "main": "out/index.js",
+    "types": "out/index.d.ts",
+    "exports": {
+        ".": "./out/index.js",
+        "./session": "./out/session.js"
+    },
+    "files": [
+        "out",
+        "src"
+    ],
+    "scripts": {
+        "clean": "shx rm -rf out tsconfig.tsbuildinfo",
+        "prebuild": "npm run clean",
+        "build": "tsc -b tsconfig.json",
+        "test": "vitest run",
+        "test:watch": "vitest"
+    },
+    "dependencies": {
+        "langium": "~4.3.1",
+        "tonto-language": "file:../../vendor/tontoredesign/packages/language"
+    },
+    "devDependencies": {
+        "shx": "^0.3.4",
+        "typescript": "^5.6.0",
+        "vitest": "^2.1.4",
+        "@types/node": "^20.0.0"
+    }
+}
