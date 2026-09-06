@@ -141,6 +141,14 @@ cardinalities and role names; a dashed `«instanceOf»`. Zoom by transform, pan 
 drag, selection, hover. It is theme-aware — PlantUML always drew on white; this
 can follow the editor.
 
+Text is set in Helvetica, Arial or Liberation Sans -- three faces that are
+metrically compatible, between them covering macOS, Windows and Linux. A
+`system-ui` stack resolves to a different face on each, and the widest ran 18%
+wider than the narrowest when measured: a name over the border of its box on one
+machine and a card half empty on another. One stack means one set of width
+estimates, calibrated against the browser and weighted per character, so `[1..*]`
+is not given the room of `«characterization»`.
+
 Lines are **straight**, border to border. A class diagram is read as things
 joined by lines, not as a circuit board: a direct line says *these two* at a
 glance, where a right-angled one has to be followed round two corners, and on a
@@ -246,9 +254,13 @@ Parity *and* the notation the redesign can express, in the first release:
   `{disjoint, complete}` with the set's name, `categorizer` drawn as the
   high-order type it is;
 - relations with their stereotype (`«mediation»`, `«material»`,
-  `«characterization»`, …), name, direction marker, cardinalities, role names,
-  and the whole-part diamond on the end that carries it;
-- end decorations — `subsets`, `redefines`, `const`, `addOnly`;
+  `«characterization»`, …), their name with UML's solid reading-direction
+  triangle, cardinalities, role names, and the whole-part diamond on the end
+  that carries it;
+- end decorations — `subsets`, `redefines`, `addOnly`, and an open padlock on an
+  end that is *not* `const`: an end that cannot change is the ordinary case, and
+  a decoration on the ordinary case is noise on every line, so the exception is
+  what gets marked;
 - `instanceOf` and `isPowerType`, as a dashed `«instanceOf»`;
 - `///` documentation on hover, and optionally as a note;
 - package boxes, external-reference elements, and the nature legend.

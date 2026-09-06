@@ -1,14 +1,23 @@
 /**
- * How big a card is.
+ * How big a card is, and what it is set in.
  *
  * Measured by estimate rather than by asking the browser, because the same
  * numbers have to come out in a webview, in a test and in the command line
  * renderer: a diagram whose boxes are one size in CI and another on screen has
  * two layouts, and the saved one would be wrong in both.
  *
- * The estimate is the average advance width of the UI sans stack at a given
- * size. It is a little generous on narrow text, which shows as slightly wide
- * boxes and never as a name spilling out of one.
+ * Which is also why the font is chosen the way it is. Helvetica, Arial and
+ * Liberation Sans are metrically compatible -- the same string occupies the same
+ * width in all three -- and between them they cover macOS, Windows and Linux, so
+ * one set of estimates is right everywhere and an exported SVG opens the same
+ * width it was drawn. A `system-ui` stack resolves to a different face on every
+ * platform: measured here, the widest of them ran 18% wider than the narrowest,
+ * which is a name over the border of its box on one machine and a lot of empty
+ * card on another.
+ *
+ * The ratios below are the widest measured over a page of real class names,
+ * attribute lines and edge labels, plus a few per cent. Erring wide shows as a
+ * slightly roomy card and never as text spilling out of one.
  */
 
 import type { ViewNode } from 'tonto-view';
@@ -16,17 +25,35 @@ import type { DisplayOptions } from 'tonto-view';
 import type { Size } from './geometry.js';
 
 export const FONT = {
+    family: '"Helvetica Neue", Helvetica, Arial, "Liberation Sans", sans-serif',
     name: 13,
     stereotype: 11,
     attribute: 12,
     edge: 11
 } as const;
 
-const AVERAGE_ADVANCE = 0.58;
-const BOLD_ADVANCE = 0.62;
+/** Average advance per character, as a fraction of the size. */
+const ADVANCE = 0.53;
+const BOLD_ADVANCE = 0.59;
+
+/**
+ * Characters are not all one width, and a diagram is full of the two extremes:
+ * `[1..*]` is nearly all narrow glyphs, `«characterization»` nearly all wide
+ * ones. Counting every character as average made the first far too wide and the
+ * second too narrow -- which is a roomy cardinality label and a reading triangle
+ * printed on the last letter of a stereotype.
+ */
+const NARROW = new Set([...'iljtfrI.,;:\'"!|()[]{}/\\-1 ']);
+const WIDE = new Set([...'mwMW@%«»&']);
+const NARROW_FACTOR = 0.62;
+const WIDE_FACTOR = 1.42;
 
 export function textWidth(text: string, size: number, bold = false): number {
-    return text.length * size * (bold ? BOLD_ADVANCE : AVERAGE_ADVANCE);
+    let units = 0;
+    for (const character of text) {
+        units += NARROW.has(character) ? NARROW_FACTOR : WIDE.has(character) ? WIDE_FACTOR : 1;
+    }
+    return units * size * (bold ? BOLD_ADVANCE : ADVANCE);
 }
 
 export const NODE = {

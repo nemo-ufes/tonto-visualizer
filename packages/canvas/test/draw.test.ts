@@ -8,6 +8,34 @@ import { sizeOf } from '../src/measure.js';
 
 const display = { ...defaultDisplayOptions };
 
+/** A relator mediating a role, with one end const and one not. */
+function related(): ViewModel {
+    return {
+        groups: [],
+        nodes: ['Contract', 'Employee'].map(name => ({
+            id: `Sample::${name}`, kind: 'class' as const, name, package: 'Sample',
+            stereotype: name === 'Contract' ? 'relator' : 'role', color: '#99FF99',
+            isExternal: false, attributes: []
+        })),
+        edges: [{
+            kind: 'relation' as const,
+            id: 'rel:Sample::Contract->Sample::Employee:mediation:binds',
+            source: 'Sample::Contract',
+            target: 'Sample::Employee',
+            stereotype: 'mediation',
+            name: 'binds',
+            sourceEnd: { cardinality: '1..*', isConst: false, isAddOnly: false },
+            targetEnd: { cardinality: '1', role: 'employee', isConst: true, isAddOnly: false }
+        }],
+        gensets: []
+    };
+}
+
+function drawn(view: ViewModel, options = display) {
+    const sizes = Object.fromEntries(view.nodes.map(node => [node.id, sizeOf(node, options)]));
+    return render({ view, positions: placeNewNodes(view, sizes, {}), display: options });
+}
+
 function model(): ViewModel {
     return {
         groups: [{ id: 'pkg:Sample', name: 'Sample', isExternal: false, nodes: ['Sample::Person', 'Sample::Employee'] }],
@@ -110,6 +138,50 @@ describe('drawing', () => {
         expect(drawn.svg).toContain('«kind»');
         expect(drawn.svg).toContain('name: string');
         expect(Object.keys(drawn.paths)).toEqual(['gen:Sample::Employee->Sample::Person']);
+    });
+
+    test('says which way a named association reads', () => {
+        const svg = drawn(related()).svg;
+        // UML's solid triangle beside the name: "Contract binds Employee", not
+        // the other way round.
+        expect(svg).toContain('class="tv-reading"');
+        expect(svg).toContain('binds');
+    });
+
+    test('leaves the reading triangle off a relation with no name', () => {
+        const view = related();
+        const edge = view.edges[0]!;
+        if (edge.kind === 'relation') {
+            delete edge.name;
+        }
+        expect(drawn(view).svg).not.toContain('class="tv-reading"');
+    });
+
+    test('writes no const, and marks the end that is not const instead', () => {
+        const svg = drawn(related()).svg;
+        // An end that cannot change is the ordinary case, so it carries no
+        // decoration; the exception gets an open padlock. One end here is const
+        // and one is not, so there is exactly one padlock.
+        expect(svg).not.toContain('{const}');
+        expect(svg.match(/class="tv-lock"/g)).toHaveLength(1);
+        expect(svg).toContain('not const');
+    });
+
+    test('keeps the multiplicity and the role name apart', () => {
+        const svg = drawn(related()).svg;
+        const labels = [...svg.matchAll(/<text class="tv-end" x="([-\d.]+)" y="([-\d.]+)"/g)]
+            .map(match => ({ x: Number(match[1]), y: Number(match[2]) }));
+        // Multiplicity on one side of the line, role name on the other: run
+        // together they read as one phrase, and on a busy diagram there is no
+        // telling which half belongs to which end.
+        expect(labels.length).toBeGreaterThanOrEqual(3);
+        const distinct = new Set(labels.map(one => `${one.x},${one.y}`));
+        expect(distinct.size).toEqual(labels.length);
+    });
+
+    test('drops the decorations, the padlock included, when they are turned off', () => {
+        const svg = drawn(related(), { ...display, showEndDecorations: false }).svg;
+        expect(svg).not.toContain('class="tv-lock"');
     });
 
     test('goes monochrome when colours are turned off', () => {
