@@ -47,10 +47,6 @@ export function render(input: RenderInput): Rendered {
         .map(node => positions[node.id])
         .filter((rect): rect is Rect => rect !== undefined);
     const groups = display.showPackageGroups ? groupBoxes(view, positions) : [];
-    const bounds = boundsOf([...rects, ...groups.map(group => group.rect)]);
-    const origin = { x: bounds.x - padding, y: bounds.y - padding };
-    const width = Math.max(bounds.width + padding * 2, 1);
-    const height = Math.max(bounds.height + padding * 2, 1);
 
     const paths: Record<string, Point[]> = {};
     const drawnByGenset = new Set<string>();
@@ -85,6 +81,15 @@ export function render(input: RenderInput): Rendered {
             return drawEdge(edge, points, theme, selected.has(edge.id));
         })
         .join('');
+
+    // Sized after everything is placed, and around what was placed. A label
+    // that could not find room near its line ends up some way from it, and a
+    // drawing sized to the boxes alone cropped it -- a relation's name half off
+    // the left edge, in an export nobody could correct.
+    const bounds = boundsOf([...rects, ...groups.map(group => group.rect), ...placer.boxes()]);
+    const origin = { x: bounds.x - padding, y: bounds.y - padding };
+    const width = Math.max(bounds.width + padding * 2, 1);
+    const height = Math.max(bounds.height + padding * 2, 1);
 
     const nodeMarkup = view.nodes
         .map(node => {
@@ -226,6 +231,13 @@ function drawEdgeLabels(
  * boxes and of the labels already placed. Everything it has placed is remembered,
  * which is why one of these is made per drawing and not per edge.
  */
+/**
+ * What one step away from the preferred position costs, in the same units as an
+ * overlap: about the area of a small label. Enough that a label will cross a
+ * line to stay near its own, and not enough to make it sit on a class name.
+ */
+const DISPLACEMENT = 150;
+
 class LabelPlacer {
     private readonly taken: Rect[] = [];
 
@@ -238,55 +250,48 @@ class LabelPlacer {
     constructor(private readonly nodes: Rect[], private readonly groups: Rect[] = []) {}
 
     /**
-     * The first clear candidate, or -- in a corner of the diagram where nothing
-     * is clear -- the one that covers least.
+     * The best of the candidates: what it would cover, plus what it costs to be
+     * that far from where the label belongs.
      *
-     * Taking the first candidate when all of them collide is what left
-     * "«componenthood» has" printed across a class: the label had nowhere good
-     * to go, and nowhere good was read as "anywhere". Least-bad still lands on
-     * something, but on the smallest something, and usually on a line rather
-     * than on a name.
+     * Both halves are needed. Taking the first candidate when all of them
+     * collide is what left "«componenthood» has" printed across a class -- the
+     * label had nowhere good to go, and nowhere good was read as "anywhere".
+     * Taking the first *clear* one is what sent "«membership» includes" a
+     * hundred and fifty pixels out into open space, still clear of everything
+     * and no longer beside any line: emptiness was free, so the placer bought
+     * as much of it as it liked. Candidates arrive in order of preference, so
+     * position in the list is what being far from home costs.
      */
     place(candidates: Point[], text: string): Point {
-        let best: { at: Point; box: Rect; penalty: number } | undefined;
-        for (const candidate of candidates) {
+        let best: { at: Point; box: Rect; score: number } | undefined;
+        for (const [index, candidate] of candidates.entries()) {
             const box = boxOf(candidate, text);
-            const penalty = this.penaltyOf(box);
-            if (penalty === 0) {
-                this.taken.push(box);
-                return candidate;
+            const score = this.penaltyOf(box) + index * DISPLACEMENT;
+            if (!best || score < best.score) {
+                best = { at: candidate, box, score };
             }
-            if (!best || penalty < best.penalty) {
-                best = { at: candidate, box, penalty };
+            if (score === 0) {
+                break;
             }
         }
-        const fallback = best ?? { at: candidates[0] ?? { x: 0, y: 0 }, box: boxOf(candidates[0] ?? { x: 0, y: 0 }, text), penalty: 0 };
+        const fallback = best ?? { at: candidates[0] ?? { x: 0, y: 0 }, box: boxOf(candidates[0] ?? { x: 0, y: 0 }, text), score: 0 };
         this.taken.push(fallback.box);
         return fallback.at;
     }
 
-    /**
-     * Somewhere to put a mark that is not text -- the padlock, whose size is
-     * known outright rather than estimated from a string.
-     */
-    reserve(candidates: Point[], width: number, height: number): Point {
-        let best: { at: Point; box: Rect; penalty: number } | undefined;
-        for (const candidate of candidates) {
-            const box = { x: candidate.x - width / 2, y: candidate.y - height / 2, width, height };
-            const penalty = this.penaltyOf(box);
-            if (penalty === 0) {
-                this.taken.push(box);
-                return candidate;
-            }
-            if (!best || penalty < best.penalty) {
-                best = { at: candidate, box, penalty };
-            }
-        }
-        if (best) {
-            this.taken.push(best.box);
-            return best.at;
-        }
-        return candidates[0] ?? { x: 0, y: 0 };
+    /** What this box would cover, without claiming it. */
+    cost(box: Rect): number {
+        return this.penaltyOf(box);
+    }
+
+    /** Claims a box, so whatever is placed next avoids it. */
+    take(box: Rect): void {
+        this.taken.push(box);
+    }
+
+    /** Everything placed so far, so the drawing can be sized to include it. */
+    boxes(): Rect[] {
+        return this.taken;
     }
 
     /** How much of what is already drawn this label would cover. A class counts double. */
@@ -360,24 +365,33 @@ function relationLabels(
 }
 
 /**
- * What is written at one end of an association.
+ * What is written at one end of an association: the multiplicity, the role name
+ * with whatever the end redefines, and the padlock if the end is not const.
  *
- * Two labels, not one, on opposite sides of the line: the multiplicity where UML
- * puts it, and the role name with whatever the end redefines on the other. Run
- * together as one string they read as a single phrase -- "[2..*] members" -- and
- * on a busy diagram there is no telling which half belongs to which end.
+ * Placed as one group rather than as three labels that happen to be near each
+ * other. Each found its own spot before, and where all three occurred together
+ * they scattered -- a multiplicity tight against the box, a role name forty
+ * pixels further along, a padlock across the line from both. None of them read
+ * as belonging to the same end, and on a class with several associations
+ * leaving it some of them read as belonging to the wrong one.
  *
- * `const` is not written at all. An end that cannot change is the ordinary case
- * here, and a decoration on the ordinary case is noise on every line; the
- * exception gets the mark instead, as an open padlock.
+ * So one distance from the end is chosen for the whole group, and the two sides
+ * of the line are used as UML uses them: the multiplicity on one, the role name
+ * on the other, level with each other. The padlock travels with the role name,
+ * after it, where a property string like `{addOnly}` goes -- and alone on that
+ * side when there is no role name to travel with, opposite the multiplicity
+ * rather than adrift.
+ *
+ * `const` itself is never written. An end that cannot change is the ordinary
+ * case here, and a decoration on the ordinary case is noise on every line; the
+ * exception gets the mark instead.
  */
 function endLabel(
     edge: ViewRelation, points: Point[], atSource: boolean, display: DisplayOptions, theme: Theme,
     placer: LabelPlacer
 ): string {
     const end = atSource ? edge.sourceEnd : edge.targetEnd;
-    const total = pathLength(points);
-    const forwards = atSource ? points : [...points].reverse();
+    const multiplicity = display.showCardinalities ? multiplicityLabel(end.cardinality) : undefined;
 
     const role: string[] = [];
     if (display.showRoleNames && end.role) {
@@ -394,76 +408,101 @@ function endLabel(
             role.push(`{redefines ${end.redefines}}`);
         }
     }
+    const roleText = role.join(' ');
+    const lock = display.showEndDecorations && !end.isConst;
+    if (!multiplicity && !roleText && !lock) {
+        return '';
+    }
+
+    const forwards = atSource ? points : [...points].reverse();
+    const total = pathLength(points);
+    const reach = Math.min(total * 0.45, 64);
+    const multiplicityWidth = multiplicity ? textWidth(multiplicity, FONT.edge) : 0;
+    const textOnly = textWidth(roleText, FONT.edge);
+    const roleWidth = textOnly + (lock ? LOCK.width + LOCK.gap : 0);
+
+    let best: { multiplicity?: Placed; role?: Placed; cost: number } | undefined;
+    for (const [step, distance] of [13, 19, 27, 37, 50].entries()) {
+        const at = Math.min(distance, reach);
+        for (const side of [1, -1]) {
+            const placedMultiplicity = multiplicity
+                ? placedAt(besideLine(forwards, at, multiplicityWidth, [side])[0]!, multiplicityWidth)
+                : undefined;
+            const placedRole = roleWidth > 0
+                ? placedAt(besideLine(forwards, at, roleWidth, [-side])[0]!, roleWidth)
+                : undefined;
+            // Turning the group over is worth doing only when the usual way
+            // round is much worse: which side the multiplicity is on says
+            // something, and says less if it changes from line to line.
+            const cost = (placedMultiplicity ? placer.cost(placedMultiplicity.box) : 0)
+                + (placedRole ? placer.cost(placedRole.box) : 0)
+                + step * DISPLACEMENT
+                + (side === 1 ? 0 : 260);
+            if (!best || cost < best.cost) {
+                best = {
+                    ...(placedMultiplicity ? { multiplicity: placedMultiplicity } : {}),
+                    ...(placedRole ? { role: placedRole } : {}),
+                    cost
+                };
+            }
+        }
+        if (best?.cost === 0) {
+            break;
+        }
+    }
+    if (!best) {
+        return '';
+    }
 
     let markup = '';
-    const multiplicity = display.showCardinalities ? multiplicityLabel(end.cardinality) : undefined;
-    // The multiplicity above the line or to its right, the role name on the
-    // other side: two things read at one end of a line are told apart by which
-    // side of it they sit on, which is what UML uses the sides for.
-    if (multiplicity) {
-        markup += placeAtEnd(multiplicity, forwards, total, [1, 2, -1], theme, placer);
+    if (best.multiplicity && multiplicity) {
+        placer.take(best.multiplicity.box);
+        markup += label(best.multiplicity.at.x, best.multiplicity.at.y, multiplicity, theme, 'middle', 'tv-end');
     }
-    if (role.length > 0) {
-        markup += placeAtEnd(role.join(' '), forwards, total, [-1, -2, 1], theme, placer);
-    }
-    if (display.showEndDecorations && !end.isConst) {
-        markup += padlock(forwards, total, theme, placer);
+    if (best.role) {
+        placer.take(best.role.box);
+        const { at } = best.role;
+        // The group is centred on `at`: the text takes the left of it and the
+        // padlock follows, so a role name and its mark read in that order
+        // however wide the name is.
+        const left = at.x - roleWidth / 2;
+        if (roleText) {
+            markup += label(left + textOnly / 2, at.y, roleText, theme, 'middle', 'tv-end');
+        }
+        if (lock) {
+            markup += padlock({ x: left + textOnly + (roleText ? LOCK.gap : 0), y: at.y - LOCK.height + 3 }, theme);
+        }
     }
     return markup;
 }
 
-/**
- * A label at an end, on one side of the line by preference.
- *
- * Close in, and closer before further: a multiplicity a third of the way along
- * its line has stopped belonging to either end, and on a diagram where several
- * lines leave the same box it starts to look like it belongs to a neighbour.
- * The distances walk outwards only as far as they must, and never past the
- * middle, where an end label would collide with the relation's own name.
- */
-function placeAtEnd(
-    text: string, forwards: Point[], total: number, sides: number[], theme: Theme, placer: LabelPlacer
-): string {
-    const width = textWidth(text, FONT.edge);
-    const reach = Math.min(total * 0.45, 64);
-    const candidates: Point[] = [];
-    for (const distance of [12, 19, 28, 40, 54]) {
-        if (distance > reach && candidates.length > 0) {
-            break;
-        }
-        candidates.push(...besideLine(forwards, Math.min(distance, reach), width, sides));
-    }
-    const at = placer.place(candidates, text);
-    return label(at.x, at.y, text, theme, 'middle', 'tv-end');
+/** A label and the box it will occupy. */
+interface Placed {
+    at: Point;
+    box: Rect;
 }
+
+function placedAt(at: Point, width: number): Placed {
+    return { at, box: { x: at.x - width / 2, y: at.y - FONT.edge, width, height: FONT.edge + 4 } };
+}
+
+const LOCK = { width: 11, height: 11, gap: 4 } as const;
 
 /**
  * An open padlock: this end may change.
  *
  * Drawn rather than written, and drawn open, because it marks the exception. A
- * word would be read as part of the role name beside it; a small glyph on the
- * line is read as a property of the line.
+ * word would be read as part of the role name beside it; a small glyph after it
+ * is read as a property of the end, which is where UML puts `{addOnly}` and the
+ * rest.
  */
-function padlock(forwards: Point[], total: number, theme: Theme, placer: LabelPlacer): string {
-    // On the role-name side and close in, where UML puts a property's
-    // decoration, and then wherever it fits: a mark that lands on the
-    // multiplicity beside it says less than no mark at all.
-    const candidates: Point[] = [];
-    for (const distance of [13, 24, 36]) {
-        candidates.push(...besideLine(forwards, Math.min(distance, total * 0.4), 12, [-1, 1, -2, 2]));
-    }
-    const at = placer.reserve(candidates, 13, 13);
-    const x = round(at.x - 5.3);
-    const y = round(at.y - 7);
-    return `<g class="tv-lock" transform="translate(${x}, ${y})" aria-label="not const">`
+function padlock(at: Point, theme: Theme): string {
+    return `<g class="tv-lock" transform="translate(${round(at.x)}, ${round(at.y)})" aria-label="not const">`
         + `<title>this end may change (not const)</title>`
-        // The shackle stands off to one side and does not meet the body: a
-        // closed one would say the opposite of what this marks.
-        + `<path d="M 2 5 V 3.1 a 2.7 2.7 0 0 1 5.4 0"/>`
-        + `<rect x="3.5" y="5" width="7.2" height="5.8" rx="1.4" stroke="${theme.muted}"/>`
+        + `<path d="M 1.4 4.6 V 2.9 a 2.5 2.5 0 0 1 5 0"/>`
+        + `<rect x="2.8" y="4.6" width="6.8" height="5.4" rx="1.3" stroke="${theme.muted}"/>`
         + `</g>`;
 }
-
 function centreLabel(
     points: Point[], text: string, theme: Theme, placer: LabelPlacer, reading?: 'forwards'
 ): string {
@@ -475,8 +514,11 @@ function centreLabel(
     // that has none of them sets the same string wider. The triangle is placed
     // off the end of the text, so it is the one thing that must allow for that
     // -- a mark on top of the last letter is worse than a slightly wide gap.
-    const measured = textWidth(text, FONT.edge) * 1.06;
-    const marker = reading ? 11 : 0;
+    // A little wider than the estimate, since the triangle is placed off the end
+    // of the text and a mark on the last letter is worse than a wide gap. The
+    // estimate is weighted per character now, so the margin can be small.
+    const measured = textWidth(text, FONT.edge) * 1.03;
+    const marker = reading ? 8 : 0;
     const width = measured + marker;
     const candidates = fractions.flatMap(fraction => {
         const at = length * fraction;
