@@ -71,8 +71,8 @@ export function routeEdge(source: Rect, target: Rect, request: RouteRequest = {}
     if (request.stored && request.stored.length >= 2) {
         return request.stored;
     }
-    if (source === target || (source.x === target.x && source.y === target.y && source.width === target.width)) {
-        return selfLoop(source, request.loop?.index ?? 0, request.ends);
+    if (source === target) {
+        return selfLoop(source, request.loop?.index ?? 0, request.ends, request.obstacles);
     }
     const offset = spreadOf(request.spread);
     if (request.ends) {
@@ -407,7 +407,38 @@ function orthogonal(source: Rect, target: Rect, offset: number): Point[] {
  * reads as one relation with two labels stacked on it. The ports keep the two
  * apart on the border; `reach` keeps them apart out in the open.
  */
-function selfLoop(rect: Rect, index: number, ends?: { source: Point; target: Point }): Point[] {
+function selfLoop(
+    rect: Rect,
+    index: number,
+    ends?: { source: Point; target: Point },
+    obstacles?: Rect[]
+): Point[] {
+    const others = obstacles?.filter(obstacle => obstacle !== rect) ?? [];
+    const preferred = loopPath(rect, index, ends);
+    if (others.length === 0 || pathIsClear(preferred, others)) {
+        return preferred;
+    }
+
+    // Port assignment chooses a corner by the other lines leaving this class.
+    // A disconnected card cannot contribute an angle there, so make the final
+    // choice with the obstacle rectangles that only routing has. The assigned
+    // corner remains first; alternatives mirror its compact corner ports and
+    // keep their index-dependent reach so multiple loops do not coincide.
+    const insetY = Math.min(14 + index * 8, Math.max(rect.height / 2 - 2, 2));
+    const insetX = Math.min(14 + index * 8, Math.max(rect.width / 2 - 2, 2));
+    const alternatives = [
+        { source: { x: rect.x + rect.width, y: rect.y + insetY }, target: { x: rect.x + rect.width - insetX, y: rect.y } },
+        { source: { x: rect.x + rect.width, y: rect.y + rect.height - insetY }, target: { x: rect.x + rect.width - insetX, y: rect.y + rect.height } },
+        { source: { x: rect.x, y: rect.y + insetY }, target: { x: rect.x + insetX, y: rect.y } },
+        { source: { x: rect.x, y: rect.y + rect.height - insetY }, target: { x: rect.x + insetX, y: rect.y + rect.height } }
+    ].map(candidate => loopPath(rect, index, candidate));
+    const clear = alternatives
+        .filter(candidate => pathIsClear(candidate, others))
+        .sort((one, other) => pathLength(one) - pathLength(other));
+    return clear[0] ?? preferred;
+}
+
+function loopPath(rect: Rect, index: number, ends?: { source: Point; target: Point }): Point[] {
     const reach = LOOP + index * 16;
     const centre = centerOf(rect);
     const from = ends?.source ?? { x: rect.x + rect.width, y: Math.round(rect.y + rect.height / 3) };

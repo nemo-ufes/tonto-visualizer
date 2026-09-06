@@ -11,6 +11,8 @@
  * If that package ever widens its exports, this file is the only one to change.
  */
 
+import type { Relation as LanguageRelation } from 'tonto-language';
+
 export type {
     Attribute,
     ClassDeclaration,
@@ -40,3 +42,35 @@ export { getRelationSource, isParthood, wholeEndOf } from 'tonto-language';
 export { getEffectiveNatures } from '../../../vendor/tontoredesign/packages/language/out/utils/natures.js';
 export type { EffectiveNatures, NatureOrigin } from '../../../vendor/tontoredesign/packages/language/out/utils/natures.js';
 export { isUltimateSortal } from '../../../vendor/tontoredesign/packages/language/out/validation/stereotype-model.js';
+
+/**
+ * The agreement part of the language's inverse-end rule, kept browser-safe.
+ * Importing the whole validator here would pull its Node-only workspace API
+ * into the webview bundle.
+ */
+export function inverseEndsAgree(relation: LanguageRelation, inverse: LanguageRelation): boolean {
+    const facts = (side: 'source' | 'target', of: LanguageRelation) => {
+        const cardinality = side === 'source' ? of.sourceCardinality : of.targetCardinality;
+        const meta = side === 'source' ? of.sourceMeta : of.targetMeta;
+        const lower = cardinality?.lowerBound;
+        const upper = cardinality?.upperBound;
+        // These are the same normalized bounds used by the validator: omitted
+        // means exactly one and `[*]` means zero to unbounded.
+        const bounds = lower === undefined ? { lower: 1, upper: 1 }
+            : lower === '*' && upper === undefined ? { lower: 0, upper: Infinity }
+                : {
+                    lower: Number(lower),
+                    upper: upper === '*' ? Infinity : Number(upper ?? lower)
+                };
+        return {
+            ...bounds,
+            flags: [meta?.isConst ? 'isConst' : '', meta?.isAddOnly ? 'isAddOnly' : ''].filter(Boolean).join(','),
+            name: meta?.name
+        };
+    };
+    const agree = (one: ReturnType<typeof facts>, other: ReturnType<typeof facts>) =>
+        one.lower === other.lower && one.upper === other.upper && one.flags === other.flags
+        && (one.name === undefined || other.name === undefined || one.name === other.name);
+    return agree(facts('source', relation), facts('target', inverse))
+        && agree(facts('target', relation), facts('source', inverse));
+}

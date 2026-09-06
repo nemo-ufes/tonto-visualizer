@@ -30,7 +30,7 @@
 
 import * as elkModule from 'elkjs/lib/elk.bundled.js';
 import type { LayoutOptions, ViewModel } from 'tonto-view';
-import { defaultLayoutOptions } from 'tonto-view';
+import { defaultLayoutOptions, inversePairs } from 'tonto-view';
 import type { Point, Rect, Size } from './geometry.js';
 import { boundsOf, overlaps } from './geometry.js';
 import type { Positions } from './place.js';
@@ -360,6 +360,7 @@ export async function autoLayout(
     const settings: LayoutOptions = { ...defaultLayoutOptions, ...request };
     const routing = request.routing ?? 'straight';
     const subject = new Set(request.only ?? view.nodes.map(node => node.id));
+    const inverses = inversePairs(view.edges);
     const nodes = view.nodes.filter(node => subject.has(node.id));
     if (nodes.length === 0) {
         return { positions: current, routes: {} };
@@ -405,7 +406,8 @@ export async function autoLayout(
         },
         children,
         edges: view.edges
-            .filter(edge => subject.has(edge.source) && subject.has(edge.target))
+            .filter(edge => !inverses.covered.has(edge.id)
+                && subject.has(edge.source) && subject.has(edge.target))
             .map((edge): ElkEdge => {
                 if (edge.kind === 'generalization') {
                     return {

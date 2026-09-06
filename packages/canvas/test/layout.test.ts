@@ -58,6 +58,31 @@ describe('arranging a model', () => {
         }
     });
 
+    test('lays out an inverse pair as the one association that is drawn', async () => {
+        const one = taxonomy(1);
+        const extra = {
+            id: 'Sample::Extra', kind: 'class' as const, name: 'Extra', package: 'Sample',
+            stereotype: 'kind', color: '#FF99A3', isExternal: false, attributes: []
+        };
+        one.nodes.push(extra);
+        one.groups[0]!.nodes.push(extra.id);
+        one.edges.push({
+            kind: 'relation', id: 'relation-a', source: 'Sample::Sub0', target: extra.id,
+            sourceEnd: { isConst: false, isAddOnly: false },
+            targetEnd: { isConst: false, isAddOnly: false },
+            inverseOf: 'relation-b'
+        });
+        const two = structuredClone(one);
+        two.edges.push({
+            kind: 'relation', id: 'relation-b', source: extra.id, target: 'Sample::Sub0',
+            sourceEnd: { isConst: false, isAddOnly: false },
+            targetEnd: { isConst: false, isAddOnly: false },
+            inverseOf: 'relation-a'
+        });
+
+        expect(await arrange(two, false)).toEqual(await arrange(one, false));
+    });
+
     /**
      * ELK lays a compound node out on its own and does not inherit what the
      * graph around it was told, so the spacings have to be repeated on every
