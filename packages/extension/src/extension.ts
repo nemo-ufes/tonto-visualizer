@@ -18,6 +18,15 @@ export function activate(context: vscode.ExtensionContext): void {
         }),
         vscode.commands.registerCommand('tonto.viz.exportSvg', async () => {
             await DiagramPanel.current?.exportSvg();
+        }),
+        // The panel binds these to its own keys as well: a webview only sees a
+        // keystroke while it has focus, and the palette is where a modeller
+        // looks when it does not.
+        vscode.commands.registerCommand('tonto.viz.undo', async () => {
+            await DiagramPanel.current?.stepBack(true);
+        }),
+        vscode.commands.registerCommand('tonto.viz.redo', async () => {
+            await DiagramPanel.current?.stepBack(false);
         })
     );
 }

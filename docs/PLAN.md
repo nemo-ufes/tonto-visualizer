@@ -316,7 +316,7 @@ Parity *and* the notation the redesign can express, in the first release:
 | M1 | `packages/view`: AST → view model, golden tests, `tonto-view` CLI dumping JSON | done |
 | M2 | `packages/canvas`: elkjs layout, sizes, routing, SVG; `--svg` from the command line | done |
 | M3 | The extension: panel, live redraw on type, last-good render, follow-active-editor, options panel, legend, package filter, SVG export | done |
-| M4 | Interaction: select, drag, snap, hide, route handles, auto-layout — and the `.tontoview` file that makes it stick | done, less resizing, marquee and undo |
+| M4 | Interaction: select, drag, snap, hide, route handles, undo, auto-layout — and the `.tontoview` file that makes it stick | done, less resizing and marquee |
 | M5 | The rest of the notation: gensets, relation stereotypes, MLT, end decorations, datatypes, documentation | done |
 | M6 | Packaging: bundled `.vsix`, README, CI, nightly build against `tontoredesign@main` | CI and the bundle done; the marketplace listing is not |
 
@@ -347,10 +347,21 @@ opening its declaration); and a line is a stroke a pixel wide with its own label
 over the middle of it, so what the pointer is over decides only for boxes and
 handles -- a line is chosen by measuring the pointer against the polylines.
 
-What is left, in the order it is worth doing: undo/redo over view changes,
-resizing a card, marquee selection, PNG export, and better label placement on
-dense models -- the placer walks its own line and settles for the least-bad spot
-rather than pushing its neighbours aside.
+A view change can now be taken back, over the view alone: what was typed is
+undone in the editor, which is the one place it can be. The history is the
+store's rather than the panel's, because a webview is disposed and rebuilt
+whenever the panel is hidden, and a history that went with it would let a
+modeller drag something, switch tab, come back and find nothing to undo. One
+thing the modeller did is one step however many changes it made -- arranging the
+diagram moves every class and drops every route -- and a change made outside a
+step is not recorded at all, which is what keeps the routes the model forced to
+be dropped, when a class grew an attribute, out of a history where they would
+undo nothing anyone can see.
+
+What is left, in the order it is worth doing: resizing a card, marquee selection,
+PNG export, and better label placement on dense models -- the placer walks its
+own line and settles for the least-bad spot rather than pushing its neighbours
+aside.
 
 ## 12. Risks
 
