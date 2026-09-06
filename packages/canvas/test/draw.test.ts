@@ -206,6 +206,22 @@ describe('drawing', () => {
         expect(svg).not.toContain('class="tv-lock"');
     });
 
+    /**
+     * The label layer sits above the boxes and outside every other group, so a
+     * rule that reached labels through their edge stopped reaching them the day
+     * they were lifted out of it -- and a text element with no font-family falls
+     * back to a 16px serif. Every association label was set in Times for two
+     * commits, in an SVG whose stated font was Helvetica.
+     */
+    test('sets the font on every text there is, not on the groups that hold them', () => {
+        const style = drawn(related()).svg.match(/<style>([\s\S]*?)<\/style>/)?.[1] ?? '';
+        expect(style).toMatch(/(^|\n)text \{[^}]*font-family: "Helvetica Neue"/);
+        expect(style).toMatch(/(^|\n)text \{[^}]*font-size: 11px/);
+        // Nothing may scope the font to a group a label is not inside.
+        expect(style).not.toContain('.tv-edge text {');
+        expect(style).not.toContain('.tv-labels text {');
+    });
+
     test('goes monochrome when colours are turned off', () => {
         const view = model();
         const sizes = Object.fromEntries(view.nodes.map(node => [node.id, sizeOf(node, display)]));

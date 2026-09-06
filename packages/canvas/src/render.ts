@@ -95,21 +95,31 @@ export function render(input: RenderInput): Rendered {
 
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${origin.x} ${origin.y} ${width} ${height}" width="${width}" height="${height}">
 <style>
+/* Everything that is text, before anything specialises it. The label layer sits
+   above the boxes and outside every other group, so a rule that reached labels
+   through their edge stopped reaching them the day they were lifted out of it --
+   and an SVG with no font-family on a text element falls back to a 16px serif.
+   Stated once at the top, no layer can lose it again. */
+text {
+    font-family: ${FONT.family};
+    font-size: ${FONT.edge}px;
+    fill: ${theme.text};
+    font-variant-numeric: tabular-nums;
+}
 .tv-node rect { stroke: ${theme.line}; stroke-width: 1; }
-.tv-node text { font-family: ${FONT.family}; fill: ${theme.onFill}; }
+.tv-node text { fill: ${theme.onFill}; }
 .tv-name { font-weight: 600; font-size: ${FONT.name}px; letter-spacing: 0.005em; }
 .tv-stereotype { font-size: ${FONT.stereotype}px; fill-opacity: 0.72; letter-spacing: 0.01em; }
 .tv-attribute { font-size: ${FONT.attribute}px; }
 .tv-edge path { fill: none; stroke: ${theme.line}; stroke-width: 1.2; }
-.tv-edge text { font-family: ${FONT.family}; font-size: ${FONT.edge}px; fill: ${theme.text}; font-variant-numeric: tabular-nums; }
-.tv-edge .tv-end { fill: ${theme.muted}; }
+.tv-end { fill: ${theme.muted}; }
+.tv-marker { fill: ${theme.surface}; stroke: ${theme.line}; stroke-width: 1.2; }
+.tv-arrow { fill: none; stroke: ${theme.line}; stroke-width: 1.2; }
 .tv-reading { fill: ${theme.text}; stroke: none; }
 .tv-lock { fill: none; stroke: ${theme.muted}; stroke-width: 1.1; stroke-linecap: round; }
 .tv-lock rect { fill: ${theme.background}; }
-.tv-marker { fill: ${theme.surface}; stroke: ${theme.line}; stroke-width: 1.2; }
-.tv-arrow { fill: none; stroke: ${theme.line}; stroke-width: 1.2; }
 .tv-group rect { fill: none; stroke: ${theme.muted}; stroke-dasharray: 4 3; }
-.tv-group text { font-family: ${FONT.family}; font-size: ${FONT.stereotype}px; fill: ${theme.muted}; }
+.tv-group text { font-size: ${FONT.stereotype}px; fill: ${theme.muted}; }
 .tv-selected rect { stroke: ${theme.accent}; stroke-width: 2.5; }
 .tv-selected path { stroke: ${theme.accent}; stroke-width: 2.2; }
 .tv-unresolved rect { stroke-dasharray: 5 3; }
