@@ -9,14 +9,17 @@
 import { statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { derive } from 'tonto-view';
+import { derive, defaultDisplayOptions } from 'tonto-view';
 import { ViewSession } from 'tonto-view/session';
+import { autoLayout, darkTheme, placeNewNodes, render, sizeOf } from 'tonto-canvas';
 
 const usage = `tonto-view <file-or-directory> [--package <name>]...
 
 Prints the view model -- the nodes, edges, groups and generalization sets a
 diagram of the model would hold.
 
+  --svg              draw it, rather than describing it
+  --dark             the dark theme, with --svg
   --package <name>   restrict the view to this package; repeatable
   --no-external      leave out elements from packages outside the view
   --no-datatypes     leave out datatypes and enumerations
@@ -31,6 +34,8 @@ export async function run(argv: string[]): Promise<number> {
     const packages: string[] = [];
     let showExternalReferences = true;
     let showDatatypes = true;
+    let asSvg = false;
+    let dark = false;
     const paths: string[] = [];
     for (let index = 0; index < argv.length; index += 1) {
         const argument = argv[index]!;
@@ -46,6 +51,10 @@ export async function run(argv: string[]): Promise<number> {
             showExternalReferences = false;
         } else if (argument === '--no-datatypes') {
             showDatatypes = false;
+        } else if (argument === '--svg') {
+            asSvg = true;
+        } else if (argument === '--dark') {
+            dark = true;
         } else {
             paths.push(argument);
         }
@@ -69,6 +78,26 @@ export async function run(argv: string[]): Promise<number> {
         }
     });
 
-    process.stdout.write(JSON.stringify(view, undefined, 2) + '\n');
+    if (!asSvg) {
+        process.stdout.write(JSON.stringify(view, undefined, 2) + '\n');
+        return 0;
+    }
+
+    // Nothing is placed here -- a command line has no saved arrangement -- so
+    // this is the picture a view gets the first time it is opened: laid out
+    // automatically, and afterwards the modeller's to move.
+    const display = { ...defaultDisplayOptions };
+    const sizes = Object.fromEntries(view.nodes.map(node => [node.id, sizeOf(node, display)]));
+    const laid = await autoLayout(view, sizes, placeNewNodes(view, sizes, {}), {
+        grouped: display.showPackageGroups
+    });
+    const drawn = render({
+        view,
+        positions: laid.positions,
+        routes: Object.fromEntries(Object.entries(laid.routes).map(([id, points]) => [id, { points }])),
+        display,
+        ...(dark ? { theme: darkTheme } : {})
+    });
+    process.stdout.write(drawn.svg + '\n');
     return 0;
 }

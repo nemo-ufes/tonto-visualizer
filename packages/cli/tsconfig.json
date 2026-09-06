@@ -4,6 +4,15 @@
         "rootDir": "src",
         "outDir": "out"
     },
-    "include": ["src/**/*.ts"],
-    "references": [{ "path": "../view" }]
+    "include": [
+        "src/**/*.ts"
+    ],
+    "references": [
+        {
+            "path": "../view"
+        },
+        {
+            "path": "../canvas"
+        }
+    ]
 }

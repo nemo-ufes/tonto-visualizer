@@ -7,8 +7,8 @@
     ],
     "scripts": {
         "language": "npm --prefix vendor/tontoredesign install --no-audit --no-fund && npm --prefix vendor/tontoredesign run build --workspace=tonto-language",
-        "build": "npm run build --workspace=tonto-view --workspace=tonto-view-cli",
-        "test": "npm run test --workspace=tonto-view",
+        "build": "npm run build --workspace=tonto-view --workspace=tonto-canvas --workspace=tonto-view-cli",
+        "test": "npm run test --workspace=tonto-view --workspace=tonto-canvas",
         "lint": "npm run lint --workspaces --if-present"
     },
     "devDependencies": {

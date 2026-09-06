@@ -1,0 +1,182 @@
+/**
+ * The arrangement, as a file.
+ *
+ * A diagram someone has laid out by hand is work, and work that lives only in a
+ * webview's memory is lost at the next window reload. So positions, routes,
+ * hidden elements and the options that produced the view are written beside the
+ * model as `*.tontoview` -- plain JSON, small enough to read, diffable enough to
+ * review, and one file per view so a large model can have several.
+ *
+ * Nothing here touches the file system: the extension reads and writes, this
+ * decides what a file means once it is open.
+ */
+
+import type { ContentOptions, DisplayOptions } from './options.js';
+import { defaultContentOptions, defaultDisplayOptions } from './options.js';
+import type { ViewModel } from './model.js';
+
+export const VIEW_FILE_VERSION = 1;
+
+export interface Placement {
+    x: number;
+    y: number;
+    width?: number;
+    height?: number;
+}
+
+export interface Point {
+    x: number;
+    y: number;
+}
+
+export interface EdgeRoute {
+    /**
+     * The whole polyline, ends included, rather than the bends between them.
+     *
+     * A route and the boxes it runs between are one arrangement: a stored bend
+     * with a recomputed endpoint gives a diagonal leg from a border to a corner,
+     * which is what happened when only the bends were kept. So a route is stored
+     * complete and used as it stands -- and dropped, by whoever moves a box, the
+     * moment one of its ends is somewhere else.
+     */
+    points?: Point[];
+    /** How far the label was moved from where it would sit on its own. */
+    labelOffset?: Point;
+}
+
+export interface ViewFile {
+    version: number;
+    /** The package the view is centred on, when it follows one. */
+    focus?: string;
+    content: ContentOptions;
+    display: DisplayOptions;
+    nodes: Record<string, Placement>;
+    edges: Record<string, EdgeRoute>;
+}
+
+export function emptyViewFile(focus?: string): ViewFile {
+    return {
+        version: VIEW_FILE_VERSION,
+        ...(focus ? { focus } : {}),
+        content: { ...defaultContentOptions },
+        display: { ...defaultDisplayOptions },
+        nodes: {},
+        edges: {}
+    };
+}
+
+/**
+ * Reads a file that may have been written by an older version, or by hand, or
+ * not at all.
+ *
+ * A view file is edited by people and survives upgrades, so every field is
+ * treated as absent until it proves otherwise. What cannot be read is replaced
+ * by the default rather than refused: losing a layout because one number was a
+ * string is a bad trade.
+ */
+export function readViewFile(raw: unknown): ViewFile {
+    const source = (typeof raw === 'object' && raw !== null ? raw : {}) as Partial<ViewFile>;
+    const nodes: Record<string, Placement> = {};
+    for (const [id, placement] of Object.entries(source.nodes ?? {})) {
+        const read = readPlacement(placement);
+        if (read) {
+            nodes[id] = read;
+        }
+    }
+    const edges: Record<string, EdgeRoute> = {};
+    for (const [id, route] of Object.entries(source.edges ?? {})) {
+        const read = readRoute(route);
+        if (read) {
+            edges[id] = read;
+        }
+    }
+    return {
+        version: VIEW_FILE_VERSION,
+        ...(typeof source.focus === 'string' ? { focus: source.focus } : {}),
+        content: { ...defaultContentOptions, ...(source.content ?? {}) },
+        display: { ...defaultDisplayOptions, ...(source.display ?? {}) },
+        nodes,
+        edges
+    };
+}
+
+/**
+ * What the file says about a model as it now reads.
+ *
+ * A rename leaves an entry naming an element that no longer exists. It is
+ * reported rather than deleted: the modeller renamed a class, they did not ask
+ * to lose where it sat, and a view that quietly forgot would be indistinguishable
+ * from one that never knew.
+ */
+export interface Reconciled {
+    placed: Record<string, Placement>;
+    routed: Record<string, EdgeRoute>;
+    /** Elements in the view with no saved position, for whatever places them. */
+    unplaced: string[];
+    /** Saved positions for elements the model no longer has. */
+    orphans: string[];
+}
+
+export function reconcile(file: ViewFile, view: ViewModel): Reconciled {
+    const ids = new Set(view.nodes.map(node => node.id));
+    const edgeIds = new Set(view.edges.map(edge => edge.id));
+    const placed: Record<string, Placement> = {};
+    const orphans: string[] = [];
+    for (const [id, placement] of Object.entries(file.nodes)) {
+        if (ids.has(id)) {
+            placed[id] = placement;
+        } else {
+            orphans.push(id);
+        }
+    }
+    const routed: Record<string, EdgeRoute> = {};
+    for (const [id, route] of Object.entries(file.edges)) {
+        if (edgeIds.has(id)) {
+            routed[id] = route;
+        }
+    }
+    return {
+        placed,
+        routed,
+        unplaced: view.nodes.filter(node => !placed[node.id]).map(node => node.id),
+        orphans
+    };
+}
+
+function readPlacement(value: unknown): Placement | undefined {
+    if (typeof value !== 'object' || value === null) {
+        return undefined;
+    }
+    const candidate = value as Record<string, unknown>;
+    if (typeof candidate.x !== 'number' || typeof candidate.y !== 'number') {
+        return undefined;
+    }
+    return {
+        x: candidate.x,
+        y: candidate.y,
+        ...(typeof candidate.width === 'number' ? { width: candidate.width } : {}),
+        ...(typeof candidate.height === 'number' ? { height: candidate.height } : {})
+    };
+}
+
+function readRoute(value: unknown): EdgeRoute | undefined {
+    if (typeof value !== 'object' || value === null) {
+        return undefined;
+    }
+    const candidate = value as Record<string, unknown>;
+    const points = Array.isArray(candidate.points) ? candidate.points.filter(isPoint) : undefined;
+    const labelOffset = isPoint(candidate.labelOffset) ? candidate.labelOffset : undefined;
+    // Two points make a line; anything less is not a route.
+    if ((points?.length ?? 0) < 2 && !labelOffset) {
+        return undefined;
+    }
+    return {
+        ...(points && points.length >= 2 ? { points } : {}),
+        ...(labelOffset ? { labelOffset } : {})
+    };
+}
+
+function isPoint(value: unknown): value is Point {
+    return typeof value === 'object' && value !== null
+        && typeof (value as Point).x === 'number' && typeof (value as Point).y === 'number';
+}

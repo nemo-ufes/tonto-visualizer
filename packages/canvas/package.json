@@ -1,0 +1,33 @@
+{
+    "name": "tonto-canvas",
+    "version": "0.1.0",
+    "private": true,
+    "description": "The drawing half: sizes, placement, routing and SVG for a Tonto view model. Runs in a webview and in Node.",
+    "license": "MIT",
+    "type": "module",
+    "main": "out/index.js",
+    "types": "out/index.d.ts",
+    "exports": {
+        ".": "./out/index.js"
+    },
+    "files": [
+        "out",
+        "src"
+    ],
+    "scripts": {
+        "clean": "shx rm -rf out tsconfig.tsbuildinfo",
+        "prebuild": "npm run clean",
+        "build": "tsc -b tsconfig.json",
+        "test": "vitest run"
+    },
+    "dependencies": {
+        "elkjs": "^0.12.0",
+        "tonto-view": "*"
+    },
+    "devDependencies": {
+        "@types/node": "^20.0.0",
+        "shx": "^0.3.4",
+        "typescript": "^5.6.0",
+        "vitest": "^2.1.4"
+    }
+}
