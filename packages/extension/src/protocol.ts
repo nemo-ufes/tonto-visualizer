@@ -49,4 +49,7 @@ export type FromPanel =
     | { type: 'autoLayout'; only?: string[] }
     | { type: 'hide'; ids: string[] }
     | { type: 'show'; ids: string[] }
-    | { type: 'export'; format: 'svg' };
+    | { type: 'export'; format: 'svg' }
+    /** Take back the last view change, or put it back. */
+    | { type: 'undo' }
+    | { type: 'redo' };

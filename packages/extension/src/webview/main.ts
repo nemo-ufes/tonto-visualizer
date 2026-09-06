@@ -448,6 +448,19 @@ window.addEventListener('keydown', event => {
             selection = new Set();
             reportSelection();
         }
+        return;
+    }
+    // The keys every editor uses, since the panel is where the change was made.
+    // VS Code's own undo is the editor's and takes back what was typed; this one
+    // takes back what was arranged, and the two never see each other's keystroke
+    // because only the focused one gets it.
+    if ((event.ctrlKey || event.metaKey) && !event.altKey) {
+        const key = event.key.toLowerCase();
+        const redo = key === 'y' || (key === 'z' && event.shiftKey);
+        if (key === 'z' || key === 'y') {
+            event.preventDefault();
+            host.postMessage({ type: redo ? 'redo' : 'undo' });
+        }
     }
 });
 

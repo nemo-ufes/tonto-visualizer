@@ -42,6 +42,16 @@
                 "command": "tonto.viz.exportSvg",
                 "title": "Export Diagram as SVG",
                 "category": "Tonto"
+            },
+            {
+                "command": "tonto.viz.undo",
+                "title": "Undo Diagram Change",
+                "category": "Tonto"
+            },
+            {
+                "command": "tonto.viz.redo",
+                "title": "Redo Diagram Change",
+                "category": "Tonto"
             }
         ],
         "menus": {

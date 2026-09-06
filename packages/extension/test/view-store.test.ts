@@ -39,6 +39,89 @@ describe('the view store', () => {
         });
     });
 
+    test('takes back one step per thing the modeller did, not per change it made', async () => {
+        const store = await ViewStore.open(modelUri() as never, 'Sample', true);
+        // Arranging the diagram moves every class and drops every route. Taking
+        // that back one class at a time would be no use to anybody.
+        store.begin('Arrange');
+        store.move({ 'Sample::Person': { x: 10, y: 10 } });
+        store.move({ 'Sample::Employee': { x: 20, y: 20 } });
+        store.reroute('rel:a', { points: [{ x: 0, y: 0 }, { x: 1, y: 1 }] });
+
+        expect(store.history.undo).toBe('Arrange');
+        expect(store.undo()).toBe('Arrange');
+        expect(store.state.nodes).toEqual({});
+        expect(store.state.edges).toEqual({});
+        expect(store.history.undo).toBeUndefined();
+        await store.dispose();
+    });
+
+    test('puts back what it took back, and stops when there is nothing left', async () => {
+        const store = await ViewStore.open(modelUri() as never, 'Sample', true);
+        store.begin('Move');
+        store.move({ 'Sample::Person': { x: 10, y: 10 } });
+        store.begin('Move');
+        store.move({ 'Sample::Person': { x: 30, y: 30 } });
+
+        expect(store.undo()).toBe('Move');
+        expect(store.state.nodes['Sample::Person']).toEqual({ x: 10, y: 10 });
+        expect(store.undo()).toBe('Move');
+        expect(store.state.nodes).toEqual({});
+        expect(store.undo()).toBeUndefined();
+
+        expect(store.redo()).toBe('Move');
+        expect(store.state.nodes['Sample::Person']).toEqual({ x: 10, y: 10 });
+        expect(store.redo()).toBe('Move');
+        expect(store.state.nodes['Sample::Person']).toEqual({ x: 30, y: 30 });
+        expect(store.redo()).toBeUndefined();
+        await store.dispose();
+    });
+
+    test('drops what was taken back once something else is done', async () => {
+        const store = await ViewStore.open(modelUri() as never, 'Sample', true);
+        store.begin('Move');
+        store.move({ 'Sample::Person': { x: 10, y: 10 } });
+        store.undo();
+
+        store.begin('Hide');
+        store.update({ content: { ...store.state.content, hidden: ['Sample::Person'] } });
+
+        // A history that branches is one nobody can hold in their head.
+        expect(store.history.redo).toBeUndefined();
+        expect(store.undo()).toBe('Hide');
+        expect(store.state.content.hidden).toBeUndefined();
+        await store.dispose();
+    });
+
+    test('does not record a change the model forced', async () => {
+        const store = await ViewStore.open(modelUri() as never, 'Sample', true);
+        store.begin('Move');
+        store.move({ 'Sample::Person': { x: 10, y: 10 } });
+
+        // A class that grew an attribute drops the routes that met it. Nobody
+        // asked for that, and an undo that appears to do nothing is worse than
+        // no entry at all.
+        store.reroute('rel:a', undefined);
+
+        expect(store.history.undo).toBe('Move');
+        store.undo();
+        expect(store.state.nodes).toEqual({});
+        expect(store.history.undo).toBeUndefined();
+        await store.dispose();
+    });
+
+    test('writes the arrangement it was taken back to', async () => {
+        const store = await ViewStore.open(modelUri() as never, 'Sample', true);
+        store.begin('Move');
+        store.move({ 'Sample::Person': { x: 24, y: 48 } });
+        store.undo();
+
+        await store.dispose();
+
+        const bytes = filesystem.writeFile.mock.calls.at(-1)![1] as Uint8Array;
+        expect(JSON.parse(Buffer.from(bytes).toString('utf8')).nodes).toEqual({});
+    });
+
     test('starts with the nature-colour legend hidden', async () => {
         const store = await ViewStore.open(modelUri() as never, 'Sample', true);
 

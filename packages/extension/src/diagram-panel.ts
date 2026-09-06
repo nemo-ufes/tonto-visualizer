@@ -366,6 +366,7 @@ export class DiagramPanel {
                 if (!store) {
                     return;
                 }
+                store.begin('Move');
                 this.layoutRequest += 1;
                 store.move(message.positions);
                 for (const [id, placement] of Object.entries(message.positions)) {
@@ -381,6 +382,7 @@ export class DiagramPanel {
                 return;
             case 'rerouted':
                 if (store) {
+                    store.begin(message.route ? 'Route' : 'Straighten');
                     this.layoutRequest += 1;
                     store.reroute(message.edge, message.route);
                 }
@@ -390,6 +392,7 @@ export class DiagramPanel {
                 return;
             case 'display':
                 if (store) {
+                    store.begin('Display option');
                     const before = store.state.display.routing;
                     store.update({ display: { ...store.state.display, ...message.display } });
                     if (message.display.routing && message.display.routing !== before) {
@@ -416,18 +419,21 @@ export class DiagramPanel {
                 return;
             case 'layout':
                 if (store) {
+                    store.begin('Layout option');
                     store.update({ layout: { ...store.state.layout, ...message.layout } });
                     await this.autoLayoutNow();
                 }
                 return;
             case 'content':
                 if (store) {
+                    store.begin('Content option');
                     store.update({ content: { ...store.state.content, ...message.content } });
                     await this.refresh();
                 }
                 return;
             case 'hide':
                 if (store) {
+                    store.begin('Hide');
                     const hidden = new Set([
                         ...(store.state.content.hidden ?? []),
                         ...expandInverseIds(this.view.edges, message.ids)
@@ -438,6 +444,7 @@ export class DiagramPanel {
                 return;
             case 'show':
                 if (store) {
+                    store.begin('Show');
                     const shown = new Set(message.ids);
                     const hidden = (store.state.content.hidden ?? []).filter(id => !shown.has(id));
                     store.update({ content: { ...store.state.content, hidden } });
@@ -445,7 +452,14 @@ export class DiagramPanel {
                 }
                 return;
             case 'autoLayout':
+                store?.begin(message.only ? 'Arrange selection' : 'Arrange');
                 await this.autoLayoutNow(message.only);
+                return;
+            case 'undo':
+                await this.stepBack(true);
+                return;
+            case 'redo':
+                await this.stepBack(false);
                 return;
             case 'export':
                 await this.exportSvg();
@@ -454,6 +468,40 @@ export class DiagramPanel {
                 this.selected = new Set(message.ids);
                 return;
         }
+    }
+
+    /**
+     * Takes a view change back, or puts it back.
+     *
+     * Only the view: what the modeller typed is taken back in the editor, which
+     * is the one place it can be. Dragging a class, bending a line, hiding
+     * something, arranging the diagram and every option in the panel are view
+     * changes; each of them is one step, however much of the file it rewrote.
+     */
+    async stepBack(backwards: boolean): Promise<void> {
+        const store = this.store;
+        if (!store) {
+            return;
+        }
+        const content = store.state.content;
+        const label = backwards ? store.undo() : store.redo();
+        if (!label) {
+            void vscode.window.setStatusBarMessage(`Nothing to ${backwards ? 'undo' : 'redo'}`, 2000);
+            return;
+        }
+        // An arrangement still being computed belongs to the state just replaced.
+        this.layoutRequest += 1;
+        void vscode.window.setStatusBarMessage(`${backwards ? 'Undo' : 'Redo'}: ${label}`, 2000);
+        if (store.state.content !== content) {
+            // What is drawn changed, not only where it is: an element that was
+            // hidden is not in the view model at all, so it has to be derived
+            // again before it can be put back on the canvas.
+            await this.refresh();
+            return;
+        }
+        const reconciled = reconcile(store.state, this.view);
+        this.positions = placeNewNodes(this.view, this.sizes(store.state.display), reconciled.placed);
+        this.send();
     }
 
     /** Opens the declaration an element was written in, and puts the cursor on it. */
@@ -517,7 +565,7 @@ export class DiagramPanel {
         <div id="canvas"></div>
     </div>
     <div id="legend" class="legend" hidden></div>
-    <div id="hint" class="hint">Drag to move · click a line to take hold of its route · double-click to open the declaration · scroll to zoom</div>
+    <div id="hint" class="hint">Drag to move · click a line to take hold of its route · double-click to open the declaration · Ctrl/⌘Z to undo</div>
 </div>
 <script nonce="${nonce}" src="${script}"></script>
 </body>
