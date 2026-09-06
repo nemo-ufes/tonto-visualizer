@@ -14,7 +14,7 @@ elsewhere and is read, not reimplemented.
 
 | | |
 |---|---|
-| `vendor/tontoredesign` | the language, as a pinned git submodule. **Never edited from here.** |
+| `vendor/tontoredesign` | the language, as a pinned git submodule. Private, so a clone needs credentials for it and CI needs the `LANGUAGE_TOKEN` secret. **Never edited from here.** |
 | `packages/view` | the AST read as a diagram: nodes, edges, groups, gensets. No DOM, no `vscode`. |
 | `packages/canvas` | sizes, placement, routing, SVG. Runs in a webview and in Node; `./draw` is the half that does not need ELK. |
 | `packages/extension` | the VS Code panel: host in `src`, the canvas app in `src/webview` |

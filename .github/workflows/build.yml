@@ -12,9 +12,21 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      # The language is a private repository, and the automatic GITHUB_TOKEN is
+      # scoped to this one, so it cannot clone the submodule: checkout stops on
+      # a bare "Repository not found" that reads like the repository is gone.
+      # Say what is actually missing before spending a runner on it.
+      - if: ${{ !secrets.LANGUAGE_TOKEN }}
+        run: |
+          echo "::error::vendor/tontoredesign is private and the LANGUAGE_TOKEN secret is not set, so the submodule cannot be cloned. Set a token with read access to jpalmeida/tontoredesign as the LANGUAGE_TOKEN repository secret, or make that repository public and drop the secret from this workflow."
+          exit 1
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+          # Checkout persists this for the submodule clone and for the fetch the
+          # scheduled run does below. Once tontoredesign is public, github.token
+          # reaches it on its own and this line can go.
+          token: ${{ secrets.LANGUAGE_TOKEN || github.token }}
       - if: github.event_name == 'schedule'
         run: git -C vendor/tontoredesign fetch origin main && git -C vendor/tontoredesign checkout origin/main
       - uses: actions/setup-node@v4
