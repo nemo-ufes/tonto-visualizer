@@ -7,8 +7,17 @@
     "license": "MIT",
     "type": "module",
     "publisher": "tonto-redesign",
-    "categories": ["Visualization", "Programming Languages"],
-    "keywords": ["tonto", "ontouml", "ufo", "ontology", "diagram"],
+    "categories": [
+        "Visualization",
+        "Programming Languages"
+    ],
+    "keywords": [
+        "tonto",
+        "ontouml",
+        "ufo",
+        "ontology",
+        "diagram"
+    ],
     "engines": {
         "vscode": "^1.90.0"
     },
@@ -37,15 +46,32 @@
         ],
         "menus": {
             "commandPalette": [
-                { "command": "tonto.viz.open", "when": "editorLangId == 'tonto'" },
-                { "command": "tonto.viz.autoLayout", "when": "tontoVizOpen" },
-                { "command": "tonto.viz.exportSvg", "when": "tontoVizOpen" }
+                {
+                    "command": "tonto.viz.open",
+                    "when": "editorLangId == 'tonto'"
+                },
+                {
+                    "command": "tonto.viz.autoLayout",
+                    "when": "tontoVizOpen"
+                },
+                {
+                    "command": "tonto.viz.exportSvg",
+                    "when": "tontoVizOpen"
+                }
             ],
             "editor/title": [
-                { "command": "tonto.viz.open", "when": "editorLangId == 'tonto'", "group": "navigation" }
+                {
+                    "command": "tonto.viz.open",
+                    "when": "editorLangId == 'tonto'",
+                    "group": "navigation"
+                }
             ],
             "explorer/context": [
-                { "command": "tonto.viz.open", "when": "resourceExtname == '.tonto'", "group": "navigation" }
+                {
+                    "command": "tonto.viz.open",
+                    "when": "resourceExtname == '.tonto'",
+                    "group": "navigation"
+                }
             ]
         },
         "configuration": {
@@ -53,7 +79,10 @@
             "properties": {
                 "tonto.viz.update": {
                     "type": "string",
-                    "enum": ["onType", "onSave"],
+                    "enum": [
+                        "onType",
+                        "onSave"
+                    ],
                     "default": "onType",
                     "scope": "window",
                     "markdownDescription": "When the diagram catches up with the text. `onType` redraws as the model is written, keeping the last good picture while it does not parse; `onSave` waits."
@@ -73,13 +102,17 @@
             }
         }
     },
-    "files": ["out", "media"],
+    "files": [
+        "out",
+        "media"
+    ],
     "scripts": {
         "clean": "shx rm -rf out",
         "prebuild": "npm run clean",
         "build": "node esbuild.mjs",
         "watch": "node esbuild.mjs --watch",
-        "package": "npm run build && vsce package --no-dependencies -o tonto-visualizer.vsix"
+        "package": "npm run build && vsce package --no-dependencies -o tonto-visualizer.vsix",
+        "test": "vitest run"
     },
     "dependencies": {
         "tonto-canvas": "*",
@@ -91,6 +124,7 @@
         "@vscode/vsce": "^3.9.2",
         "esbuild": "^0.28.1",
         "shx": "^0.3.4",
-        "typescript": "^5.6.0"
+        "typescript": "^5.6.0",
+        "vitest": "^2.1.4"
     }
 }
