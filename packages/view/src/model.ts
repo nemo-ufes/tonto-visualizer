@@ -88,6 +88,11 @@ export interface ViewRelation {
     targetEnd: ViewRelationEnd;
     /** A parthood is drawn with a diamond; this says which end holds it. */
     whole?: 'source' | 'target';
+    /**
+     * The id of the relation this one is the inverse of, on both halves of the
+     * pair however the model wrote it. The two state one association twice, so
+     * a drawing may show them as one line.
+     */
     inverseOf?: string;
     specializes?: string;
     documentation?: string;

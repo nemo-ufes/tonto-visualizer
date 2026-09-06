@@ -7,7 +7,7 @@
  * rather than by re-rendering the diagram on every pointer move.
  */
 
-import type { EdgeRoute, ViewEdge, ViewModel, ViewNode, ViewRelation } from 'tonto-view';
+import type { EdgeRoute, ViewEdge, ViewModel, ViewNode, ViewRelation, ViewRelationEnd } from 'tonto-view';
 import type { DisplayOptions } from 'tonto-view';
 import type { Point, Rect } from './geometry.js';
 import { alongPath, boundsOf, centerOf, distanceToPath, segmentHitsRect } from './geometry.js';
@@ -63,12 +63,15 @@ function isClear(positions: Record<string, Rect>, one: string, other: string, vi
  * employment under contract, is as much the relationship as the relator it
  * specializes.
  */
-function mediationsThrough(view: ViewModel, positions: Record<string, Rect>): Set<string> {
+function mediationsThrough(
+    view: ViewModel, positions: Record<string, Rect>, covered: ReadonlySet<string> = new Set()
+): Set<string> {
     const relators = new Set(view.nodes
         .filter(node => node.stereotype === 'relator' || node.natures?.natures.includes('relators'))
         .map(node => node.id));
     const mediations = view.edges.filter(edge =>
-        edge.kind === 'relation' && edge.stereotype === 'mediation' && edge.source !== edge.target);
+        edge.kind === 'relation' && edge.stereotype === 'mediation' && edge.source !== edge.target
+        && !covered.has(edge.id));
 
     // A relator that mediates one class twice -- a marriage and its two spouses
     // -- cannot be read through: both lines leave for the same place, and aiming
@@ -106,6 +109,71 @@ function mediationsThrough(view: ViewModel, positions: Record<string, Rect>): Se
     return through;
 }
 
+/**
+ * Which half of each inverse pair is drawn, and which half it speaks for.
+ *
+ * `Man.hasChild inverseOf Person.hasFather` is one association stated twice, and
+ * drawing it twice puts two lines between the same pair of classes saying the
+ * same thing in opposite directions -- the reader counts two relationships where
+ * the model has one. So the pair is drawn as one line with both readings written
+ * on it, and the other half is covered: not routed, not drawn, and not counted
+ * as a line by the label placer.
+ *
+ * Which of the two keeps the line is decided by their ids, not by which was
+ * written first. A saved route belongs to an id, and the line has to stay the
+ * same line when the modeller moves a declaration from one file to another.
+ *
+ * The pair has to agree. `derive` marks both halves, so a relation whose
+ * `inverseOf` is not returned is one of several claiming the same partner --
+ * a model the validator rejects, and one where drawing fewer lines than there
+ * are relations would hide the mistake.
+ */
+function inversePairs(view: ViewModel): { covered: Set<string>; partnerOf: Map<string, ViewRelation> } {
+    const relations = new Map<string, ViewRelation>();
+    for (const edge of view.edges) {
+        if (edge.kind === 'relation') {
+            relations.set(edge.id, edge);
+        }
+    }
+    const covered = new Set<string>();
+    const partnerOf = new Map<string, ViewRelation>();
+    for (const edge of relations.values()) {
+        const other = edge.inverseOf ? relations.get(edge.inverseOf) : undefined;
+        if (!other || other.inverseOf !== edge.id || other.id === edge.id || edge.id > other.id) {
+            continue;
+        }
+        covered.add(other.id);
+        partnerOf.set(edge.id, other);
+    }
+    return { covered, partnerOf };
+}
+
+/**
+ * The two halves of an inverse pair as the one relation they state.
+ *
+ * The ends are the same two ends written twice, so the line carries each of them
+ * once -- but the two declarations need not spell the same one out equally.
+ * `Person.hasEmployment` names the role `employments` where its inverse leaves
+ * that end unnamed, and dropping the half that happens not to be drawn would
+ * lose the role name off the picture.
+ *
+ * Merging is a spread because `endOf` leaves an unstated field out of the object
+ * rather than setting it undefined: the drawn half wins wherever it says
+ * anything, and the other fills the gaps.
+ */
+function mergedWith(edge: ViewRelation, partner: ViewRelation): ViewRelation {
+    const merge = (one: ViewRelationEnd, other: ViewRelationEnd): ViewRelationEnd => ({ ...other, ...one });
+    return {
+        ...edge,
+        sourceEnd: merge(edge.sourceEnd, partner.targetEnd),
+        targetEnd: merge(edge.targetEnd, partner.sourceEnd),
+        // The diamond is on an end, so it crosses over with the end it is on.
+        ...(edge.whole || !partner.whole
+            ? {}
+            : { whole: partner.whole === 'source' ? 'target' as const : 'source' as const })
+    };
+}
+
 export function render(input: RenderInput): Rendered {
     const { view, positions, display } = input;
     const theme = input.theme ?? lightTheme;
@@ -120,7 +188,12 @@ export function render(input: RenderInput): Rendered {
     // associations between the same neighbours do not arrive as one line --
     // except at a relator, where a mediation is anchored on the ray out of the
     // centre so that the pair of them reads as one line passing through it.
-    const ports = assignPorts(view.edges, positions, mediationsThrough(view, positions));
+    // An inverse pair is one line, decided before the ends are spread along the
+    // borders: the half that is not drawn must not be given a share of a border
+    // either, or the line that is drawn arrives beside the space kept for it.
+    const inverses = inversePairs(view);
+    const drawn = view.edges.filter(edge => !inverses.covered.has(edge.id));
+    const ports = assignPorts(drawn, positions, mediationsThrough(view, positions, inverses.covered));
     const loops = loopIndex(view);
 
     // Every route is computed before any label is placed. A label belongs to one
@@ -131,7 +204,7 @@ export function render(input: RenderInput): Rendered {
     const trees = planTrees(view, positions);
     const paths: Record<string, Point[]> = {};
     const bends: Point[] = [];
-    for (const edge of view.edges) {
+    for (const edge of drawn) {
         if (trees.covered.has(edge.id)) {
             continue;
         }
@@ -161,7 +234,7 @@ export function render(input: RenderInput): Rendered {
     // that reads as a line -- but a cardinality hidden behind one has simply
     // gone missing, and the reader has no way to know it was there.
     let labelMarkup = '';
-    const edgeMarkup = view.edges
+    const edgeMarkup = drawn
         .map(edge => {
             if (trees.covered.has(edge.id)) {
                 return '';
@@ -172,8 +245,12 @@ export function render(input: RenderInput): Rendered {
                 return '';
             }
             const points = paths[edge.id]!;
-            labelMarkup += drawEdgeLabels(edge, points, display, theme, placer);
-            return drawEdge(edge, points, theme, selected.has(edge.id));
+            // An inverse pair is drawn from what both halves say, so the
+            // half that keeps the line carries the other's ends and its name.
+            const partner = edge.kind === 'relation' ? inverses.partnerOf.get(edge.id) : undefined;
+            const both = edge.kind === 'relation' && partner ? mergedWith(edge, partner) : edge;
+            labelMarkup += drawEdgeLabels(both, points, display, theme, placer, partner);
+            return drawEdge(both, points, theme, selected.has(edge.id));
         })
         .join('');
 
@@ -244,7 +321,11 @@ function loopIndex(view: ViewModel): Map<string, { index: number; count: number 
     }
     const loops = new Map<string, { index: number; count: number }>();
     for (const ids of byNode.values()) {
-        ids.forEach((id, index) => loops.set(id, { index, count: ids.length }));
+        // By id, which is the order the ports were given out in. The index sets
+        // how far out a loop runs, so if the two disagree the loop with the
+        // wider berth can start from the inner port and cross the other.
+        [...ids].sort((one, other) => one.localeCompare(other))
+            .forEach((id, index) => loops.set(id, { index, count: ids.length }));
     }
     return loops;
 }
@@ -301,13 +382,14 @@ function drawEdge(edge: ViewEdge, points: Point[], theme: Theme, isSelected: boo
 }
 
 function drawEdgeLabels(
-    edge: ViewEdge, points: Point[], display: DisplayOptions, theme: Theme, placer: LabelPlacer
+    edge: ViewEdge, points: Point[], display: DisplayOptions, theme: Theme, placer: LabelPlacer,
+    partner?: ViewRelation
 ): string {
     if (edge.kind === 'relation') {
-        return relationLabels(edge, points, display, theme, placer);
+        return relationLabels(edge, points, display, theme, placer, partner);
     }
     if (edge.kind === 'instantiation') {
-        return centreLabel(points, { stereotype: '«instanceOf»' }, theme, placer, false, edge.id);
+        return centreLabel(points, [{ stereotype: '«instanceOf»' }], theme, placer, edge.id);
     }
     return '';
 }
@@ -515,26 +597,48 @@ function relationDecoration(edge: ViewRelation, points: Point[], _theme: Theme):
     return diamondAt(tip, towards);
 }
 
+/**
+ * What is written along an association, and for an inverse pair what is written
+ * along the one line that stands for both.
+ *
+ * The line runs the way the drawn half is written, so that half reads forwards
+ * and its inverse reads back along the same line. Each keeps its own reading
+ * triangle, which is what makes one line carry two sentences without ambiguity:
+ * `Man hasChild ▶ Person` and `◀ hasFather`.
+ *
+ * A stereotype stays over the name it belongs to, as UML sets it, and is written
+ * once when both halves declare the same one. They often do not -- a material
+ * relation is regularly the inverse of a mediation -- and saying `«material»`
+ * over a line that is half a mediation would be the picture disagreeing with the
+ * model.
+ */
 function relationLabels(
-    edge: ViewRelation, points: Point[], display: DisplayOptions, theme: Theme, placer: LabelPlacer
+    edge: ViewRelation, points: Point[], display: DisplayOptions, theme: Theme, placer: LabelPlacer,
+    partner?: ViewRelation
 ): string {
-    const middle: string[] = [];
-    if (display.showRelationStereotypes && edge.stereotype) {
-        middle.push(`«${edge.stereotype}»`);
+    const stereotypeOf = (one: ViewRelation): string | undefined =>
+        (display.showRelationStereotypes && one.stereotype ? `«${one.stereotype}»` : undefined);
+    const nameOf = (one: ViewRelation): string | undefined =>
+        (display.showRelationNames && one.name ? one.name : undefined);
+
+    const shared = partner !== undefined && edge.stereotype === partner.stereotype;
+    const readings: Reading[] = [reading(stereotypeOf(edge), nameOf(edge), 'forward')];
+    if (partner) {
+        readings.push(reading(shared ? undefined : stereotypeOf(partner), nameOf(partner), 'backward'));
     }
-    const named = display.showRelationNames && Boolean(edge.name);
-    // UML's reading direction: the solid triangle beside the name says which way
-    // round the sentence goes -- "University has Department", not the reverse.
-    // It belongs to the name, so it is only drawn where there is one.
-    let markup = middle.length > 0 || named
-        ? centreLabel(
-            points,
-            { ...(middle[0] ? { stereotype: middle[0] } : {}), ...(named && edge.name ? { name: edge.name } : {}) },
-            theme, placer, named, edge.id)
-        : '';
+
+    let markup = centreLabel(points, readings, theme, placer, edge.id);
     markup += endLabel(edge, points, true, display, theme, placer);
     markup += endLabel(edge, points, false, display, theme, placer);
     return markup;
+}
+
+/** A reading, with its triangle only where there is a name to point away from. */
+function reading(stereotype: string | undefined, name: string | undefined, along: Reading['direction']): Reading {
+    return {
+        ...(stereotype ? { stereotype } : {}),
+        ...(name ? { name, direction: along } : {})
+    };
 }
 
 /**
@@ -679,7 +783,7 @@ function padlock(at: Point, theme: Theme, owner: string): string {
         + `</g>`;
 }
 /**
- * The name of an association and, over it, its stereotype.
+ * One sentence written along a line: a name, and over it the stereotype.
  *
  * Two lines rather than one, because they are not the same kind of thing: the
  * stereotype says what sort of relation this is and the name says what it is
@@ -688,28 +792,51 @@ function padlock(at: Point, theme: Theme, owner: string): string {
  * name. It is set smaller here too, so a line of a model does not begin with the
  * word «characterization» in the same size as everything else.
  */
+interface Reading {
+    stereotype?: string;
+    name?: string;
+    /** Which way along the line the name reads; `forward` is source to target. */
+    direction?: 'forward' | 'backward';
+}
+
+/**
+ * Everything written at the middle of one line, as one block.
+ *
+ * A line usually carries one reading. An inverse pair carries two, and they are
+ * placed together rather than found a spot each: they belong to the same line,
+ * and two blocks bidding separately for room near it end up on opposite sides
+ * of it, reading as the labels of two different lines -- which is the thing
+ * drawing the pair as one line was for.
+ */
 function centreLabel(
     points: Point[],
-    parts: { stereotype?: string; name?: string },
+    readings: Reading[],
     theme: Theme,
     placer: LabelPlacer,
-    reading = false,
     owner?: string
 ): string {
-    const length = pathLength(points);
     // A margin over the estimate, since the triangle is placed off the end of
     // the text and a mark on the last letter is worse than a small gap. The
     // estimate is weighted per character, so the margin can be small -- and the
     // name is now on its own, without the guillemets the estimate overshoots on.
-    const nameWidth = parts.name ? textWidth(parts.name, FONT.edge) * 1.02 : 0;
-    const marker = reading && parts.name ? MARKER : 0;
-    const stereotypeWidth = parts.stereotype ? textWidth(parts.stereotype, FONT.edgeStereotype) : 0;
-    const width = Math.max(nameWidth + marker, stereotypeWidth);
-    const height = (parts.stereotype ? LINE.stereotype : 0) + (parts.name ? LINE.name : 0);
+    const nameWidth = (one: Reading) => (one.name ? textWidth(one.name, FONT.edge) * 1.02 : 0);
+    const markerOf = (one: Reading) => (one.direction && one.name ? MARKER : 0);
+    const lines = readings.filter(one => one.stereotype !== undefined || one.name !== undefined);
+    if (lines.length === 0) {
+        return '';
+    }
+
+    const width = Math.max(...lines.map(one => Math.max(
+        nameWidth(one) + markerOf(one),
+        one.stereotype ? textWidth(one.stereotype, FONT.edgeStereotype) : 0
+    )));
+    const height = lines.reduce((total, one) =>
+        total + (one.stereotype ? LINE.stereotype : 0) + (one.name ? LINE.name : 0), 0);
 
     // Outwards from the middle, and step-major: a label that cannot sit at the
     // middle of its line belongs a little further along it, not a label's width
     // out to the side.
+    const length = pathLength(points);
     const fractions = [0.5, 0.42, 0.58, 0.34, 0.66, 0.26, 0.74];
     const candidates = [0, 1, -1, 2, -2].flatMap(step =>
         fractions.map(fraction => besideLine(points, length * fraction, { width, height }, [step])[0]!));
@@ -717,19 +844,26 @@ function centreLabel(
 
     let markup = '';
     let top = at.y - height / 2;
-    if (parts.stereotype) {
-        markup += label(at.x, top + LINE.stereotype - 2, parts.stereotype, theme, 'middle', 'tv-edge-stereotype', owner);
-        top += LINE.stereotype;
-    }
-    if (parts.name) {
-        // The name keeps the middle and the triangle sits just after it, which
-        // is where a reader expects the arrow of "A has B ▶" to be.
-        const baseline = top + LINE.name - 3;
-        const centre = at.x - marker / 2;
-        markup += label(centre, baseline, parts.name, theme, 'middle', undefined, owner);
-        if (reading) {
-            const tip = { x: centre + nameWidth / 2 + marker, y: baseline - 3.5 };
-            markup += readingTriangle(tip, directionNear(points, at));
+    for (const one of lines) {
+        if (one.stereotype) {
+            markup += label(at.x, top + LINE.stereotype - 2, one.stereotype, theme, 'middle', 'tv-edge-stereotype', owner);
+            top += LINE.stereotype;
+        }
+        if (one.name) {
+            // The name keeps the middle and the triangle sits just off the end
+            // it points at, which is where a reader expects the arrow of
+            // "A has B ▶" to be -- and of "◀ B is had by A" on the way back.
+            const baseline = top + LINE.name - 3;
+            const marker = markerOf(one);
+            const back = one.direction === 'backward' ? -1 : 1;
+            const centre = at.x - back * marker / 2;
+            markup += label(centre, baseline, one.name, theme, 'middle', undefined, owner);
+            if (marker > 0) {
+                const along = directionNear(points, at);
+                const tip = { x: centre + back * (nameWidth(one) / 2 + marker), y: baseline - 3.5 };
+                markup += readingTriangle(tip, { x: along.x * back, y: along.y * back });
+            }
+            top += LINE.name;
         }
     }
     return markup;

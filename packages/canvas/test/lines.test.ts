@@ -36,6 +36,12 @@ function drawnWith(names: string[], edges: ViewEdge[], positions: Record<string,
     return render({ view, positions: placed, display }).svg;
 }
 
+/** The points of a drawn edge, in order. */
+function points(d: string): Array<{ x: number; y: number }> {
+    return [...d.matchAll(/[ML] ([-\d.]+) ([-\d.]+)/g)]
+        .map(match => ({ x: Number(match[1]), y: Number(match[2]) }));
+}
+
 /** The `d` of every drawn edge, by edge id. */
 function paths(svg: string): Record<string, string> {
     return Object.fromEntries([...svg.matchAll(/data-edge="([^"]+)"><path d="([^"]+)"/g)]
@@ -75,6 +81,39 @@ describe('telling one line from another', () => {
         expect(drawn.one).not.toEqual(drawn.two);
     });
 
+    test('turns a loop at the corner with the most room around it', () => {
+        // `Other` is up and to the right, which is where a loop used to be drawn
+        // whatever else was there -- out of the right side and back over the top,
+        // straight across the line to `Other`.
+        const svg = drawnWith(['Thing', 'Other'],
+            [relation('loop', 'Thing', 'Thing'), relation('away', 'Thing', 'Other')],
+            { Thing: { x: 200, y: 200 }, Other: { x: 600, y: 0 } });
+        const loop = points(paths(svg).loop!);
+        expect(loop[0]!.x).toBe(200);
+        expect(loop[loop.length - 1]!.y).toBe(242);
+    });
+
+    test('leaves a loop where it has always been when nothing else is there', () => {
+        const svg = drawnWith(['Thing'], [relation('loop', 'Thing', 'Thing')], { Thing: { x: 200, y: 200 } });
+        const loop = points(paths(svg).loop!);
+        // Out of the right side and back in over the top: a class on its own is
+        // drawn as it was before a loop had a corner to choose.
+        expect(loop[0]!.x).toBe(320);
+        expect(loop[loop.length - 1]!.y).toBe(200);
+    });
+
+    test('nests two loops on one class rather than crossing them', () => {
+        const svg = drawnWith(['Thing'],
+            [relation('one', 'Thing', 'Thing'), relation('two', 'Thing', 'Thing')],
+            { Thing: { x: 200, y: 200 } });
+        const [inner, outer] = [points(paths(svg).one!), points(paths(svg).two!)]
+            .sort((a, b) => Math.abs(a[1]!.x - a[0]!.x) - Math.abs(b[1]!.x - b[0]!.x));
+        // Both ends of each have to sit in the same order out from the corner
+        // they turn, or the wider one's return leg crosses the narrower one's.
+        expect(Math.abs(outer![2]!.y - 242)).toBeGreaterThan(Math.abs(inner![2]!.y - 242));
+        expect(outer![4]!.x).toBeLessThan(inner![4]!.x);
+    });
+
     test('gathers specializations of one class into a single tree', () => {
         const svg = drawnWith(['Person', 'Child', 'Adult', 'Elder'],
             [generalization('Child', 'Person'), generalization('Adult', 'Person'), generalization('Elder', 'Person')],
@@ -84,6 +123,24 @@ describe('telling one line from another', () => {
         expect(svg.match(/class="tv-edge tv-tree"/g)).toHaveLength(1);
         expect(Object.keys(paths(svg))).toHaveLength(0);
         expect(svg.match(/class="tv-marker"/g)).toHaveLength(1);
+    });
+
+    test('anchors lines to one class in the order they leave in', () => {
+        // Three classes on one rank, as a layered layout leaves them, reached
+        // from the right side of one class. Every far centre has the same y, so
+        // ordering the ends by that y decided nothing and they were ordered by
+        // edge id instead -- which here is the wrong way round.
+        const svg = drawnWith(['Person', 'Near', 'Middle', 'Far'],
+            [relation('a-near', 'Person', 'Near'),
+                relation('b-middle', 'Person', 'Middle'),
+                relation('c-far', 'Person', 'Far')],
+            { Person: { x: 0, y: 0 }, Near: { x: 400, y: 30 }, Middle: { x: 700, y: 30 }, Far: { x: 1000, y: 30 } });
+        const at = Object.fromEntries(Object.entries(paths(svg))
+            .map(([id, d]) => [id, Number(/^M ?([-\d.]+) ([-\d.]+)/.exec(d)![2])]));
+        // The steeper the line, the lower down the side it leaves: a fan, which
+        // is the one order in which none of the three crosses another.
+        expect(at['a-near']).toBeGreaterThan(at['b-middle']!);
+        expect(at['b-middle']).toBeGreaterThan(at['c-far']!);
     });
 
     test('leaves them as separate arrows when they are not all on one side', () => {

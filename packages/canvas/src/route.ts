@@ -72,7 +72,7 @@ export function routeEdge(source: Rect, target: Rect, request: RouteRequest = {}
         return request.stored;
     }
     if (source === target || (source.x === target.x && source.y === target.y && source.width === target.width)) {
-        return selfLoop(source, request.loop?.index ?? 0);
+        return selfLoop(source, request.loop?.index ?? 0, request.ends);
     }
     const offset = spreadOf(request.spread);
     if (request.ends) {
@@ -394,24 +394,34 @@ function orthogonal(source: Rect, target: Rect, offset: number): Point[] {
 }
 
 /**
- * A relation from a class to itself: out of the right side and back into the
- * top, each loop wider than the last.
+ * A relation from a class to itself: out of one side, round the corner, and back
+ * into the next -- each loop wider than the last.
+ *
+ * Which corner is decided with the rest of the anchoring, because a loop drawn
+ * over whatever else leaves that side crosses it for no reason. Its two ends
+ * arrive here as ports like any other line's; the fixed corner below is what a
+ * loop is drawn as when there are none, which is only a class drawn on its own.
  *
  * A class with two of them -- gUFO's `ConcreteIndividual` has constitution and
  * historical dependence, both to itself -- drew the same rectangle twice, which
- * reads as one relation with two labels stacked on it.
+ * reads as one relation with two labels stacked on it. The ports keep the two
+ * apart on the border; `reach` keeps them apart out in the open.
  */
-function selfLoop(rect: Rect, index: number): Point[] {
+function selfLoop(rect: Rect, index: number, ends?: { source: Point; target: Point }): Point[] {
     const reach = LOOP + index * 16;
-    const right = rect.x + rect.width;
-    const y = Math.round(rect.y + rect.height / 3 + index * 6);
-    const x = Math.round(rect.x + rect.width / 2 + index * 10);
+    const centre = centerOf(rect);
+    const from = ends?.source ?? { x: rect.x + rect.width, y: Math.round(rect.y + rect.height / 3) };
+    const to = ends?.target ?? { x: Math.round(centre.x), y: rect.y };
+    // Out past the side it leaves by, and past the side it comes back into: the
+    // corner of the loop is where those two clearances meet.
+    const out = from.x > centre.x ? from.x + reach : from.x - reach;
+    const over = to.y > centre.y ? to.y + reach : to.y - reach;
     return [
-        { x: right, y },
-        { x: right + reach, y },
-        { x: right + reach, y: rect.y - reach },
-        { x, y: rect.y - reach },
-        { x, y: rect.y }
+        round(from),
+        round({ x: out, y: from.y }),
+        round({ x: out, y: over }),
+        round({ x: to.x, y: over }),
+        round(to)
     ];
 }
 
