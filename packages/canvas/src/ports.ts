@@ -10,8 +10,8 @@
  * belongs to which.
  *
  * So the ends that arrive at one side of a box are spread along it, in the order
- * of where they come from -- which keeps them from crossing each other on the
- * way in, and gives every line a corridor of its own to be labelled in.
+ * of the angle each line leaves at -- which keeps them from crossing each other
+ * on the way in, and gives every line a corridor of its own to be labelled in.
  *
  * A relator is the exception. It is a reified relationship, and its mediations
  * are the relationship: the drawing should read as one line from one relatum to
@@ -120,12 +120,10 @@ function place(
             bySide.set(side, [...(bySide.get(side) ?? []), arrival]);
         }
         for (const [side, group] of bySide) {
-            // Ordered by where each line comes from, so lines fan out without
-            // crossing one another between the border and their first bend.
+            // Ordered by the angle each line leaves at, so they fan out without
+            // crossing one another between the border and open space.
             const ordered = [...group].sort((one, other) =>
-                (side === 'top' || side === 'bottom'
-                    ? one.from.x - other.from.x
-                    : one.from.y - other.from.y)
+                fanAngle(rect, side, one.from) - fanAngle(rect, side, other.from)
                 || one.edge.localeCompare(other.edge));
             // A line to be read through the box asks for the point its own ray
             // crosses; the rest take their share of the side, as they always
@@ -148,6 +146,43 @@ function place(
         }
     }
     return ends;
+}
+
+/**
+ * Where an arrival belongs in the fan of lines leaving one side of a box.
+ *
+ * The ends have to be placed along a side in the order the lines leave in, or
+ * two of them cross each other on the way out -- a crossing the reader has to
+ * untangle to see which class each line reaches, and one the arrangement never
+ * asked for.
+ *
+ * That order was taken from the far box's x on a top or bottom side and its y on
+ * a left or right one, which is the same order only while the far boxes differ
+ * on that axis. A layered layout puts a whole rank at one y: three lines leaving
+ * the right side of a class for three classes on the rank below had the same y,
+ * the comparison tied, and the tiebreak ordered them by edge id -- alphabetically,
+ * which on `boats` came out exactly reversed and crossed two of the three.
+ *
+ * The angle is the order in every case, and ties only for two lines that really
+ * do leave in the same direction. Measured against the outward normal of the
+ * side so that it grows the way ends are placed along it: rightwards on a top or
+ * bottom side, downwards on a left or right one.
+ */
+function fanAngle(rect: Rect, side: Side, towards: Point): number {
+    const centre = centerOf(rect);
+    const dx = towards.x - centre.x;
+    const dy = towards.y - centre.y;
+    switch (side) {
+        case 'top':
+            return Math.atan2(dx, -dy);
+        case 'bottom':
+            return Math.atan2(dx, dy);
+        case 'left':
+            return Math.atan2(dy, -dx);
+        case 'right':
+        default:
+            return Math.atan2(dy, dx);
+    }
 }
 
 function lengthOf(rect: Rect, side: Side): number {
