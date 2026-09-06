@@ -73,13 +73,24 @@ export interface LayoutOptions {
     nodeSpacing: number;
     /** Between one rank and the next -- a supertype and its subtypes. */
     rankSpacing: number;
+    /**
+     * Lay each package out as a unit, so its classes stay together.
+     *
+     * What a package box is for, and not free: a class that would sit beside the
+     * one it specializes has to stay inside its own package instead, and the
+     * line between them crosses whatever is in the way. Turning it off lays the
+     * model out as one graph; the boxes, if drawn, are then drawn around
+     * wherever the classes ended up.
+     */
+    groupByPackage: boolean;
 }
 
 export const defaultLayoutOptions: LayoutOptions = {
     algorithm: 'layered',
     direction: 'DOWN',
     nodeSpacing: 60,
-    rankSpacing: 100
+    rankSpacing: 100,
+    groupByPackage: true
 };
 
 export const defaultContentOptions: ContentOptions = {

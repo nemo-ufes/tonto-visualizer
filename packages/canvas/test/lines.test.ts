@@ -95,3 +95,68 @@ describe('telling one line from another', () => {
         expect(Object.keys(paths(svg))).toHaveLength(2);
     });
 });
+
+describe('what a line must not do', () => {
+
+    /** Whether any part of a drawn path runs through a box. */
+    function crosses(path: string, box: { x: number; y: number }): boolean {
+        const points = [...path.matchAll(/[ML] ([-\d.]+) ([-\d.]+)/g)]
+            .map(match => ({ x: Number(match[1]), y: Number(match[2]) }));
+        return points.slice(1).some((point, index) => {
+            const previous = points[index]!;
+            for (let step = 0; step <= 60; step += 1) {
+                const x = previous.x + (point.x - previous.x) * step / 60;
+                const y = previous.y + (point.y - previous.y) * step / 60;
+                if (x > box.x + 2 && x < box.x + 118 && y > box.y + 2 && y < box.y + 40) {
+                    return true;
+                }
+            }
+            return false;
+        });
+    }
+
+    test('goes round a class in the way rather than behind it', () => {
+        const svg = drawnWith(['Left', 'Right', 'Wall'],
+            [relation('across', 'Left', 'Right')],
+            { Left: { x: 0, y: 200 }, Right: { x: 600, y: 200 }, Wall: { x: 300, y: 200 } });
+        // A line that disappears behind a class it has nothing to do with is
+        // read as ending there.
+        expect(crosses(paths(svg).across!, { x: 300, y: 200 })).toBe(false);
+    });
+
+    test('takes two bends when one will not clear the way', () => {
+        // A wall two classes deep: no single bend gets round both.
+        const svg = drawnWith(['Left', 'Right', 'Near', 'Far'],
+            [relation('across', 'Left', 'Right')],
+            {
+                Left: { x: 0, y: 200 }, Right: { x: 700, y: 200 },
+                Near: { x: 250, y: 200 }, Far: { x: 250, y: 150 }
+            });
+        const path = paths(svg).across!;
+        expect(crosses(path, { x: 250, y: 200 })).toBe(false);
+        expect(crosses(path, { x: 250, y: 150 })).toBe(false);
+    });
+
+    test('draws a package box only where it holds nothing but its own', () => {
+        const view: ViewModel = {
+            groups: [
+                { id: 'pkg:A', name: 'A', isExternal: false, nodes: ['Sample::One', 'Sample::Three'] },
+                { id: 'pkg:B', name: 'B', isExternal: false, nodes: ['Sample::Two'] }
+            ],
+            gensets: [],
+            nodes: ['One', 'Two', 'Three'].map(classNode),
+            edges: []
+        };
+        // Two lies either side of the box A would be drawn as.
+        const positions = {
+            'Sample::One': { x: 0, y: 0, width: 120, height: 42 },
+            'Sample::Two': { x: 0, y: 100, width: 120, height: 42 },
+            'Sample::Three': { x: 0, y: 200, width: 120, height: 42 }
+        };
+        const svg = render({ view, positions, display }).svg;
+        // A box that says a class is in a package it is not in is worse than no
+        // box: the reader believes it.
+        expect(svg).toContain('>B</text>');
+        expect(svg).not.toContain('>A</text>');
+    });
+});
