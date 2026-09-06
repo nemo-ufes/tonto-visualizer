@@ -7,11 +7,11 @@
  */
 
 import * as vscode from 'vscode';
-import type { DisplayOptions, ViewModel } from 'tonto-view';
+import type { ContentOptions, DisplayOptions, ViewModel } from 'tonto-view';
 import { derive, reconcile } from 'tonto-view';
 import { ViewSession } from 'tonto-view/session';
 import { autoLayout } from 'tonto-canvas';
-import { darkTheme, lightTheme, placeNewNodes, render, sizeOf } from 'tonto-canvas/draw';
+import { darkTheme, lightTheme, placeNewNodes, render, segmentHitsRect, sizeOf } from 'tonto-canvas/draw';
 import type { FromPanel, Rect, ToPanel } from './protocol.js';
 import { ViewStore } from './view-store.js';
 
@@ -28,12 +28,21 @@ export class DiagramPanel {
     private positions: Record<string, Rect> = {};
     private pending: NodeJS.Timeout | undefined;
     private ready = false;
+    /** Invalidates asynchronous work started for an editor that is no longer current. */
+    private generation = 0;
+    /** Only the newest arrangement request may replace positions or routes. */
+    private layoutRequest = 0;
+    private refreshes: Promise<void> = Promise.resolve();
+    private availablePackages: string[] = [];
+    private focusPackages: string[] = [];
+    private selected = new Set<string>();
+    private disposal: Promise<void> | undefined;
     /** The last message built, so a panel that becomes ready late still gets it. */
     private last: ToPanel | undefined;
 
     private constructor(private readonly panel: vscode.WebviewPanel, private readonly extensionUri: vscode.Uri) {
         panel.webview.html = this.html();
-        panel.onDidDispose(() => this.dispose(), undefined, this.disposables);
+        panel.onDidDispose(() => void this.dispose(), undefined, this.disposables);
         panel.webview.onDidReceiveMessage(
             (message: FromPanel) => void this.receive(message), undefined, this.disposables);
 
@@ -88,16 +97,30 @@ export class DiagramPanel {
 
     /** Points the diagram at a document, loading its arrangement. */
     async show(document: vscode.TextDocument): Promise<void> {
+        const generation = ++this.generation;
+        this.layoutRequest += 1;
+        clearTimeout(this.pending);
+        this.pending = undefined;
         if (this.document === document) {
             this.schedule();
             return;
         }
+        const folder = modelRootOf(document.uri);
+        const session = new ViewSession({ workspace: [folder] });
+        const store = await ViewStore.open(document.uri, undefined, saveArrangement());
+        if (generation !== this.generation) {
+            await store.dispose();
+            return;
+        }
+        await this.store?.dispose();
+        if (generation !== this.generation) {
+            await store.dispose();
+            return;
+        }
         this.document = document;
         this.panel.title = `Diagram: ${nameOf(document.uri)}`;
-        const folder = modelRootOf(document.uri);
-        this.session = new ViewSession({ workspace: [folder] });
-        this.store?.dispose();
-        this.store = await ViewStore.open(document.uri, undefined, saveArrangement());
+        this.session = session;
+        this.store = store;
         await this.refresh();
     }
 
@@ -106,21 +129,52 @@ export class DiagramPanel {
         if (!store) {
             return;
         }
+        const request = ++this.layoutRequest;
+        const view = this.view;
+        const previous = this.positions;
         const sizes = this.sizes(store.state.display);
-        const laid = await autoLayout(this.view, sizes, this.positions, {
+        const laid = await autoLayout(view, sizes, this.positions, {
             ...store.state.layout,
             routing: store.state.display.routing,
             ...(only ? { only } : {})
         });
+        if (request !== this.layoutRequest || store !== this.store || view !== this.view) {
+            return;
+        }
         this.positions = laid.positions;
         store.move(Object.fromEntries(Object.entries(laid.positions).map(([id, rect]) => [id, rect])));
         // Only an orthogonal drawing has routes to keep; a straight one is
         // recomputed from the boxes, so what is on screen after an arrange is
         // the same kind of line as after a drag.
-        for (const edge of this.view.edges) {
-            store.reroute(edge.id, laid.routes[edge.id] ? { points: laid.routes[edge.id]! } : undefined);
+        const subject = only ? new Set(only) : undefined;
+        const replaced = new Set<string>();
+        for (const edge of view.edges) {
+            if (!subject || subject.has(edge.source) || subject.has(edge.target)) {
+                const route = subject && (!subject.has(edge.source) || !subject.has(edge.target))
+                    ? undefined
+                    : laid.routes[edge.id] ? { points: laid.routes[edge.id]! } : undefined;
+                store.reroute(edge.id, route);
+                if (route) {
+                    replaced.add(edge.id);
+                }
+            }
+        }
+        if (subject) {
+            const moved = new Set([...subject].filter(id => {
+                const before = previous[id];
+                const after = laid.positions[id];
+                return before !== undefined && after !== undefined
+                    && (before.x !== after.x || before.y !== after.y
+                        || before.width !== after.width || before.height !== after.height);
+            }));
+            this.dropRoutesAffectedBy(moved, store, replaced);
         }
         this.send();
+    }
+
+    async autoLayoutSelectedOrAll(): Promise<void> {
+        const only = [...this.selected].filter(id => this.positions[id] !== undefined);
+        await this.autoLayoutNow(only.length > 0 ? only : undefined);
     }
 
     async exportSvg(): Promise<void> {
@@ -159,7 +213,18 @@ export class DiagramPanel {
      * in that state, and blanking the diagram for each of them would make the
      * panel useless exactly when it is being watched.
      */
-    private async refresh(): Promise<void> {
+    private refresh(): Promise<void> {
+        this.layoutRequest += 1;
+        const generation = this.generation;
+        const refresh = this.refreshes.then(async () => this.refreshNow(generation));
+        this.refreshes = refresh.catch(() => undefined);
+        return refresh;
+    }
+
+    private async refreshNow(generation: number): Promise<void> {
+        if (generation !== this.generation) {
+            return;
+        }
         const session = this.session;
         const store = this.store;
         const document = this.document;
@@ -168,6 +233,10 @@ export class DiagramPanel {
         }
 
         await session.update(document.uri.toString(), document.getText());
+        if (generation !== this.generation
+            || session !== this.session || store !== this.store || document !== this.document) {
+            return;
+        }
         const errors = await session.parseErrors(document.uri.toString());
         if (errors.length > 0 && this.view.nodes.length > 0) {
             this.send(errors[0]);
@@ -175,17 +244,39 @@ export class DiagramPanel {
         }
 
         const models = await session.models();
+        if (generation !== this.generation
+            || session !== this.session || store !== this.store || document !== this.document) {
+            return;
+        }
+        const focused = await session.modelsOf(document.uri.toString(), models);
+        this.availablePackages = [...new Set(models
+            .flatMap(model => model.packages.map(one => one.name))
+            .filter((name): name is string => name !== undefined))].sort();
+        this.focusPackages = [...new Set(focused
+            .flatMap(model => model.packages.map(one => one.name))
+            .filter((name): name is string => name !== undefined))];
+        const content = this.effectiveContent(store.state.content);
         this.view = derive({
             models,
+            ...(this.focusPackages[0] ? { focus: this.focusPackages[0] } : {}),
             documentation: session.documentation(),
-            options: store.state.content
+            options: content
         });
 
         const reconciled = reconcile(store.state, this.view);
         const sizes = this.sizes(store.state.display);
         const placed = placeNewNodes(this.view, sizes, reconciled.placed);
+        const resized = new Set(this.view.nodes
+            .filter(node => {
+                const before = this.positions[node.id] ?? reconciled.placed[node.id];
+                const after = placed[node.id];
+                return before !== undefined && after !== undefined
+                    && (before.width !== after.width || before.height !== after.height);
+            })
+            .map(node => node.id));
         const isFirstDraw = Object.keys(reconciled.placed).length === 0 && this.view.nodes.length > 0;
         this.positions = placed;
+        this.dropRoutesAffectedBy(resized, store);
         if (isFirstDraw) {
             // Nothing has been arranged yet, so this is the one time the diagram
             // may lay itself out completely.
@@ -199,6 +290,41 @@ export class DiagramPanel {
         return Object.fromEntries(this.view.nodes.map(node => [node.id, sizeOf(node, display)]));
     }
 
+    private effectiveContent(content: ContentOptions): ContentOptions {
+        return content.includedPackages === undefined
+            ? { ...content, includedPackages: this.focusPackages }
+            : content;
+    }
+
+    /**
+     * Drops every route whose endpoint moved, plus routes now crossed by one of
+     * the changed boxes. A stored route depends on its whole corridor, not only
+     * on the two boxes it joins.
+     */
+    private dropRoutesAffectedBy(
+        nodes: ReadonlySet<string>, store: ViewStore, preserve: ReadonlySet<string> = new Set()
+    ): void {
+        if (nodes.size === 0) {
+            return;
+        }
+        const changed = [...nodes];
+        for (const edge of this.view.edges) {
+            if (preserve.has(edge.id)) {
+                continue;
+            }
+            const incident = nodes.has(edge.source) || nodes.has(edge.target);
+            const points = store.state.edges[edge.id]?.points;
+            const obstructed = points !== undefined && changed.some(id => {
+                const rect = this.positions[id];
+                return rect !== undefined && points.slice(1).some((point, index) =>
+                    segmentHitsRect(points[index]!, point, rect, 4));
+            });
+            if (incident || obstructed) {
+                store.reroute(edge.id, undefined);
+            }
+        }
+    }
+
     private send(stale?: string): void {
         const store = this.store;
         if (!store) {
@@ -210,9 +336,9 @@ export class DiagramPanel {
             positions: this.positions,
             routes: store.state.edges,
             display: store.state.display,
-            content: store.state.content,
+            content: this.effectiveContent(store.state.content),
             layout: store.state.layout,
-            packages: [...new Set(this.view.nodes.map(node => node.package ?? ''))].filter(Boolean).sort(),
+            packages: this.availablePackages,
             title: this.document ? nameOf(this.document.uri) : 'Tonto',
             ...(stale ? { stale } : {})
         };
@@ -240,6 +366,7 @@ export class DiagramPanel {
                 if (!store) {
                     return;
                 }
+                this.layoutRequest += 1;
                 store.move(message.positions);
                 for (const [id, placement] of Object.entries(message.positions)) {
                     const current = this.positions[id];
@@ -250,15 +377,13 @@ export class DiagramPanel {
                         height: placement.height ?? current?.height ?? 60
                     };
                 }
-                // A route belongs to the two boxes it joins. Once one of them has
-                // moved, the line someone drew no longer goes where they drew it,
-                // so it is dropped and the edge routes itself again.
-                for (const edge of message.rerouted) {
-                    store.reroute(edge, undefined);
-                }
+                this.dropRoutesAffectedBy(new Set(Object.keys(message.positions)), store);
                 return;
             case 'rerouted':
-                store?.reroute(message.edge, message.route);
+                if (store) {
+                    this.layoutRequest += 1;
+                    store.reroute(message.edge, message.route);
+                }
                 return;
             case 'reveal':
                 await this.reveal(message.id);
@@ -274,9 +399,18 @@ export class DiagramPanel {
                         for (const edge of this.view.edges) {
                             store.reroute(edge.id, undefined);
                         }
-                        await this.autoLayoutNow();
+                        this.layoutRequest += 1;
+                        this.send();
                         return;
                     }
+                    const previous = this.positions;
+                    this.positions = placeNewNodes(this.view, this.sizes(store.state.display), previous);
+                    const resized = new Set(this.view.nodes
+                        .filter(node => previous[node.id]?.width !== this.positions[node.id]?.width
+                            || previous[node.id]?.height !== this.positions[node.id]?.height)
+                        .map(node => node.id));
+                    this.layoutRequest += 1;
+                    this.dropRoutesAffectedBy(resized, store);
                     this.send();
                 }
                 return;
@@ -314,6 +448,7 @@ export class DiagramPanel {
                 await this.exportSvg();
                 return;
             case 'selected':
+                this.selected = new Set(message.ids);
                 return;
         }
     }
@@ -347,6 +482,7 @@ export class DiagramPanel {
                 && position.line >= node.source.line
                 && position.line <= node.source.endLine)
             .map(node => node.id);
+        this.selected = new Set(ids);
         this.post({ type: 'select', ids });
     }
 
@@ -390,14 +526,22 @@ export class DiagramPanel {
 </html>`;
     }
 
-    dispose(): void {
+    dispose(): Promise<void> {
+        this.disposal ??= this.disposeNow();
+        return this.disposal;
+    }
+
+    private async disposeNow(): Promise<void> {
         DiagramPanel.current = undefined;
+        this.generation += 1;
         vscode.commands.executeCommand('setContext', 'tontoVizOpen', false);
         clearTimeout(this.pending);
-        this.store?.dispose();
+        const store = this.store;
+        this.store = undefined;
         for (const disposable of this.disposables) {
             disposable.dispose();
         }
+        await store?.dispose();
     }
 }
 

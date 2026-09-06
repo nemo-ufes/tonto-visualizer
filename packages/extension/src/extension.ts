@@ -14,7 +14,7 @@ export function activate(context: vscode.ExtensionContext): void {
             await DiagramPanel.open(context.extensionUri, document);
         }),
         vscode.commands.registerCommand('tonto.viz.autoLayout', async () => {
-            await DiagramPanel.current?.autoLayoutNow();
+            await DiagramPanel.current?.autoLayoutSelectedOrAll();
         }),
         vscode.commands.registerCommand('tonto.viz.exportSvg', async () => {
             await DiagramPanel.current?.exportSvg();
@@ -22,6 +22,6 @@ export function activate(context: vscode.ExtensionContext): void {
     );
 }
 
-export function deactivate(): void {
-    DiagramPanel.current?.dispose();
+export async function deactivate(): Promise<void> {
+    await DiagramPanel.current?.dispose();
 }

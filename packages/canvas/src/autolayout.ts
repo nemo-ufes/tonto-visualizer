@@ -32,9 +32,15 @@ import * as elkModule from 'elkjs/lib/elk.bundled.js';
 import type { LayoutOptions, ViewModel } from 'tonto-view';
 import { defaultLayoutOptions } from 'tonto-view';
 import type { Point, Rect, Size } from './geometry.js';
-import { overlaps } from './geometry.js';
+import { boundsOf, overlaps } from './geometry.js';
 import type { Positions } from './place.js';
 import type { RoutingStyle } from './route.js';
+import { routeEdge } from './route.js';
+
+const GROUP_PADDING = 18;
+const GROUP_HEADER = 20;
+const PARTIAL_GAP = 24;
+const PARTIAL_STEP = 40;
 
 /**
  * ELK ships one bundle for CommonJS and for the browser, so the constructor
@@ -154,6 +160,71 @@ function supportsGroups(algorithm: LayoutOptions['algorithm']): boolean {
 }
 
 /**
+ * Keeps an arranged selection where it was, and out of everything that was not
+ * selected. ELK cannot do that by itself when it is handed only the selection:
+ * an unselected box does not exist in its graph, so the most natural answer is
+ * often the exact coordinates that box already occupies.
+ */
+function placePartialLayout(positions: Positions, current: Positions, subject: ReadonlySet<string>): void {
+    const ids = [...subject].filter(id => positions[id] !== undefined);
+    const laid = ids.map(id => positions[id]!);
+    const fixed = Object.entries(current).filter(([id]) => !subject.has(id)).map(([, rect]) => rect);
+    if (laid.length === 0 || fixed.length === 0) {
+        return;
+    }
+
+    const laidBounds = boundsOf(laid);
+    const previous = ids.map(id => current[id]).filter((rect): rect is Rect => rect !== undefined);
+    const previousBounds = previous.length > 0 ? boundsOf(previous) : laidBounds;
+    const anchor = { x: previousBounds.x - laidBounds.x, y: previousBounds.y - laidBounds.y };
+    const fits = (dx: number, dy: number) => laid.every(rect => {
+        const moved = { ...rect, x: rect.x + dx, y: rect.y + dy };
+        return !fixed.some(obstacle => overlaps(moved, obstacle, PARTIAL_GAP));
+    });
+
+    let translation: Point | undefined;
+    for (let ring = 0; ring < 80 && !translation; ring += 1) {
+        const offsets = ring === 0 ? [{ x: 0, y: 0 }] : partialRing(ring);
+        for (const offset of offsets) {
+            const candidate = {
+                x: anchor.x + offset.x * PARTIAL_STEP,
+                y: anchor.y + offset.y * PARTIAL_STEP
+            };
+            if (fits(candidate.x, candidate.y)) {
+                translation = candidate;
+                break;
+            }
+        }
+    }
+    if (!translation) {
+        const fixedBounds = boundsOf(fixed);
+        translation = {
+            x: anchor.x,
+            y: fixedBounds.y + fixedBounds.height + PARTIAL_GAP - laidBounds.y
+        };
+    }
+    for (const id of ids) {
+        const rect = positions[id]!;
+        positions[id] = {
+            ...rect,
+            x: Math.round(rect.x + translation.x),
+            y: Math.round(rect.y + translation.y)
+        };
+    }
+}
+
+function partialRing(ring: number): Point[] {
+    const offsets: Point[] = [];
+    for (let step = -ring; step <= ring; step += 1) {
+        offsets.push(
+            { x: step, y: ring }, { x: ring, y: step },
+            { x: step, y: -ring }, { x: -ring, y: step }
+        );
+    }
+    return offsets;
+}
+
+/**
  * Moves each relator towards the middle of what it mediates, where there is room.
  *
  * The layering can only put it in a rank between its relata; how far along that
@@ -163,8 +234,8 @@ function supportsGroups(algorithm: LayoutOptions['algorithm']): boolean {
  * takes as much of the way there as is free -- never overlapping anything, and
  * never moving unless the move is an improvement.
  */
-function settleRelators(view: ViewModel, positions: Positions): void {
-    const relators = view.nodes.filter(node => node.stereotype === 'relator');
+function settleRelators(view: ViewModel, positions: Positions, only: ReadonlySet<string>): void {
+    const relators = view.nodes.filter(node => node.stereotype === 'relator' && only.has(node.id));
     if (relators.length === 0) {
         return;
     }
@@ -308,7 +379,10 @@ export async function autoLayout(
                 // root, a grouped diagram silently ran at ELK's 20px default --
                 // ranks close enough to touch, and no room between them for the
                 // labels that belong there.
-                layoutOptions: { ...algorithmOptions, 'elk.padding': '[top=30,left=18,bottom=18,right=18]' },
+                layoutOptions: {
+                    ...algorithmOptions,
+                    'elk.padding': `[top=${GROUP_PADDING + GROUP_HEADER},left=${GROUP_PADDING},bottom=${GROUP_PADDING},right=${GROUP_PADDING}]`
+                },
                 children: group.nodes
                     .filter(id => subject.has(id))
                     .map(id => ({ id, ...sizeOf(id) }))
@@ -379,10 +453,18 @@ export async function autoLayout(
         }
     };
     walk(laid, 0, 0);
-    settleRelators(view, positions);
+    const elkPositions = Object.fromEntries([...subject]
+        .filter(id => positions[id] !== undefined)
+        .map(id => [id, { ...positions[id]! }]));
+    settleRelators(view, positions, subject);
+    if (request.only) {
+        placePartialLayout(positions, current, subject);
+    }
 
     const routes: Record<string, Point[]> = {};
     if (routing === 'orthogonal') {
+        const edgeById = new Map(view.edges.map(edge => [edge.id, edge]));
+        const obstacles = Object.values(positions);
         const collectEdges = (node: ElkNode) => {
             for (const edge of node.edges ?? []) {
                 const section = edge.sections?.[0];
@@ -391,10 +473,34 @@ export async function autoLayout(
                 }
                 const points = [section.startPoint, ...(section.bendPoints ?? []), section.endPoint]
                     .map(point => ({ x: Math.round(point.x), y: Math.round(point.y) }));
-                // Generalizations were handed over reversed so the supertype
-                // would rank above; the route comes back the same way round.
-                const reversed = view.edges.find(candidate => candidate.id === edge.id)?.kind === 'generalization';
-                routes[edge.id] = reversed ? points.reverse() : points;
+                const definition = edgeById.get(edge.id);
+                if (!definition) {
+                    continue;
+                }
+                // Generalizations and selected mediations may both be handed to
+                // ELK backwards for ranking. Stored routes always follow the
+                // view model's source -> target direction.
+                const reversed = definition.kind === 'generalization' || turnedMediations.has(edge.id);
+                const ordered = reversed ? points.reverse() : points;
+                const oldSource = elkPositions[definition.source];
+                const oldTarget = elkPositions[definition.target];
+                const source = positions[definition.source];
+                const target = positions[definition.target];
+                if (!oldSource || !oldTarget || !source || !target) {
+                    continue;
+                }
+                const sourceShift = { x: source.x - oldSource.x, y: source.y - oldSource.y };
+                const targetShift = { x: target.x - oldTarget.x, y: target.y - oldTarget.y };
+                routes[edge.id] = sourceShift.x === targetShift.x && sourceShift.y === targetShift.y
+                    ? ordered.map(point => ({
+                        x: Math.round(point.x + sourceShift.x),
+                        y: Math.round(point.y + sourceShift.y)
+                    }))
+                    // A post-layout adjustment moved one end independently. The
+                    // old bends no longer belong to the final boxes, so route
+                    // again from the final geometry rather than saving a
+                    // detached polyline.
+                    : routeEdge(source, target, { style: 'orthogonal', obstacles });
             }
             for (const child of node.children ?? []) {
                 collectEdges(child);
@@ -412,7 +518,7 @@ export async function autoLayout(
     // relators it strands are worth turning -- and the turn is kept only if it
     // seats more of them.
     const plain = await attempt(new Set());
-    const stranded = strandedRelators(view, plain.positions);
+    const stranded = strandedRelators(view, plain.positions, subject);
     if (stranded.size === 0) {
         return plain;
     }
@@ -421,14 +527,14 @@ export async function autoLayout(
         return plain;
     }
     const turned = await attempt(turnedMediations);
-    return strandedRelators(view, turned.positions).size < stranded.size ? turned : plain;
+    return strandedRelators(view, turned.positions, subject).size < stranded.size ? turned : plain;
 }
 
 /** The relators that did not land between the classes they mediate. */
-function strandedRelators(view: ViewModel, positions: Positions): Set<string> {
+function strandedRelators(view: ViewModel, positions: Positions, only: ReadonlySet<string>): Set<string> {
     const centre = (rect: Rect) => ({ x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 });
     const stranded = new Set<string>();
-    for (const relator of view.nodes.filter(node => node.stereotype === 'relator')) {
+    for (const relator of view.nodes.filter(node => node.stereotype === 'relator' && only.has(node.id))) {
         const rect = positions[relator.id];
         const relata = [...new Set(view.edges
             .filter(edge => edge.kind === 'relation' && edge.stereotype === 'mediation'

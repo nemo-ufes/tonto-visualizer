@@ -77,11 +77,11 @@ export function routeEdge(source: Rect, target: Rect, request: RouteRequest = {}
     const offset = spreadOf(request.spread);
     if (request.ends) {
         return request.style === 'orthogonal'
-            ? orthogonalBetween(source, target, request.ends)
+            ? orthogonalBetween(source, target, request.ends, request.obstacles)
             : straightBetween(request.ends, source, target, request.obstacles, request.avoid);
     }
     return request.style === 'orthogonal'
-        ? orthogonal(source, target, offset)
+        ? orthogonalAround(orthogonal(source, target, offset), source, target, request.obstacles)
         : straight(source, target, offset, request.obstacles, request.avoid);
 }
 
@@ -123,7 +123,12 @@ function straightBetween(
  * Out of each port at right angles, then one turn -- or two, when both ends
  * leave the same way and the line has to cross between them.
  */
-function orthogonalBetween(source: Rect, target: Rect, ends: { source: Point; target: Point }): Point[] {
+function orthogonalBetween(
+    source: Rect,
+    target: Rect,
+    ends: { source: Point; target: Point },
+    obstacles?: Rect[]
+): Point[] {
     const from = stub(source, ends.source);
     const to = stub(target, ends.target);
     const points = [round(ends.source), round(from.at)];
@@ -136,7 +141,68 @@ function orthogonalBetween(source: Rect, target: Rect, ends: { source: Point; ta
         points.push(round(from.vertical ? { x: from.at.x, y: to.at.y } : { x: to.at.x, y: from.at.y }));
     }
     points.push(round(to.at), round(ends.target));
-    return points;
+    return orthogonalAround(compact(points), source, target, obstacles);
+}
+
+/**
+ * Moves a square route into a clear horizontal or vertical corridor.
+ *
+ * The direct Manhattan path is usually best, but a card between its ends turns
+ * it into a line that appears to terminate at the wrong class. Trying the clear
+ * sides of every obstacle is enough to find the outside corridor even when
+ * several cards form one block, while keeping every segment axis-aligned.
+ */
+function orthogonalAround(points: Point[], source: Rect, target: Rect, obstacles?: Rect[]): Point[] {
+    const others = obstacles?.filter(rect => rect !== source && rect !== target) ?? [];
+    if (others.length === 0 || pathIsClear(points, others)) {
+        return points;
+    }
+
+    const start = points[0]!;
+    const end = points[points.length - 1]!;
+    const from = points.length > 2 ? points[1]! : start;
+    const to = points.length > 2 ? points[points.length - 2]! : end;
+    const candidates: Point[][] = [
+        [start, from, { x: from.x, y: to.y }, to, end],
+        [start, from, { x: to.x, y: from.y }, to, end]
+    ];
+    for (const rect of others) {
+        for (const y of [rect.y - CLEARANCE, rect.y + rect.height + CLEARANCE]) {
+            candidates.push([start, from, { x: from.x, y }, { x: to.x, y }, to, end]);
+        }
+        for (const x of [rect.x - CLEARANCE, rect.x + rect.width + CLEARANCE]) {
+            candidates.push([start, from, { x, y: from.y }, { x, y: to.y }, to, end]);
+        }
+    }
+
+    const clear = candidates
+        .map(compact)
+        .filter(candidate => pathIsClear(candidate, others))
+        .sort((one, other) => pathLength(one) - pathLength(other) || one.length - other.length);
+    return clear[0] ?? points;
+}
+
+function pathIsClear(points: Point[], obstacles: Rect[]): boolean {
+    return points.slice(1).every((point, index) =>
+        obstacles.every(rect => !segmentHitsRect(points[index]!, point, rect, 4)));
+}
+
+function pathLength(points: Point[]): number {
+    return points.slice(1).reduce((total, point, index) => {
+        const previous = points[index]!;
+        return total + Math.abs(point.x - previous.x) + Math.abs(point.y - previous.y);
+    }, 0);
+}
+
+function compact(points: Point[]): Point[] {
+    const result: Point[] = [];
+    for (const point of points.map(round)) {
+        const previous = result[result.length - 1];
+        if (!previous || previous.x !== point.x || previous.y !== point.y) {
+            result.push(point);
+        }
+    }
+    return result;
 }
 
 /** A short step straight out of the border, so the line leaves the box squarely. */

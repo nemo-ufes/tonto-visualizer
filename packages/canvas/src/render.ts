@@ -181,7 +181,9 @@ export function render(input: RenderInput): Rendered {
     // that could not find room near its line ends up some way from it, and a
     // drawing sized to the boxes alone cropped it -- a relation's name half off
     // the left edge, in an export nobody could correct.
-    const bounds = boundsOf([...rects, ...groups.map(group => group.rect), ...placer.boxes()]);
+    const pathPoints = Object.values(paths).flat()
+        .map(point => ({ ...point, width: 0, height: 0 }));
+    const bounds = boundsOf([...rects, ...groups.map(group => group.rect), ...placer.boxes(), ...pathPoints]);
     const origin = { x: bounds.x - padding, y: bounds.y - padding };
     const width = Math.max(bounds.width + padding * 2, 1);
     const height = Math.max(bounds.height + padding * 2, 1);

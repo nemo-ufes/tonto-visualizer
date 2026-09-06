@@ -63,12 +63,16 @@ export class ViewSession {
 
     /** Forgets an editor buffer, so the file on disk is read again. */
     async revert(uri: string): Promise<void> {
+        await this.open();
         this.dirty.delete(uri);
         const parsed = URI.parse(uri);
         const documents = this.services.shared.workspace.LangiumDocuments;
         if (documents.hasDocument(parsed)) {
             documents.deleteDocument(parsed);
         }
+        documents.addDocument(
+            await this.services.shared.workspace.LangiumDocumentFactory.fromUri(parsed)
+        );
     }
 
     /**
@@ -81,7 +85,11 @@ export class ViewSession {
      */
     async models(): Promise<Model[]> {
         await this.open();
-        const documents = this.services.shared.workspace.LangiumDocuments.all.toArray();
+        // Replacing an editor buffer removes and re-adds its document. Sorting by
+        // URI keeps package order, relation occurrence ids and saved routes from
+        // changing merely because that file was the last one typed in.
+        const documents = this.services.shared.workspace.LangiumDocuments.all.toArray()
+            .sort((one, other) => one.uri.toString().localeCompare(other.uri.toString()));
         for (const document of documents) {
             this.services.shared.workspace.DocumentBuilder.resetToState(document, DocumentState.Parsed);
         }
@@ -97,8 +105,8 @@ export class ViewSession {
     }
 
     /** The models of one document only, for a view that follows a single file. */
-    async modelsOf(uri: string): Promise<Model[]> {
-        const all = await this.models();
+    async modelsOf(uri: string, models?: Model[]): Promise<Model[]> {
+        const all = models ?? await this.models();
         const parsed = URI.parse(uri).toString();
         return all.filter(model => documentUri(model) === parsed);
     }

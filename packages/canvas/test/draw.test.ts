@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import type { ViewModel } from 'tonto-view';
 import { defaultDisplayOptions } from 'tonto-view';
 import { placeNewNodes } from '../src/place.js';
+import { segmentHitsRect } from '../src/geometry.js';
 import { render } from '../src/render.js';
 import { routeEdge } from '../src/route.js';
 import { multiplicityLabel, sizeOf } from '../src/measure.js';
@@ -75,6 +76,41 @@ describe('drawing', () => {
         expect(employee.x).toBeGreaterThan(-200);
     });
 
+    test('remeasures a saved card when what it displays changes', () => {
+        const view = model();
+        const person = view.nodes[0]!;
+        const compact = sizeOf(person, { ...display, showAttributes: false });
+        const expanded = sizeOf(person, display);
+        const positions = placeNewNodes(view, { [person.id]: expanded }, {
+            [person.id]: { x: 100, y: 100, ...compact }
+        });
+        expect(positions[person.id]).toEqual({ x: 100, y: 100, ...expanded });
+    });
+
+    test('uses a guaranteed free fallback when the local placement search is full', () => {
+        const clazz = (id: string) => ({
+            id, kind: 'class' as const, name: id, package: 'Sample', stereotype: 'kind',
+            color: '#FF99A3', isExternal: false, attributes: []
+        });
+        const view: ViewModel = {
+            groups: [],
+            nodes: [clazz('Blocker'), clazz('Anchor'), clazz('New')],
+            edges: [{ kind: 'relation', id: 'new-anchor', source: 'New', target: 'Anchor' }],
+            gensets: []
+        };
+        const positions = placeNewNodes(view, {
+            Blocker: { width: 5000, height: 5000 },
+            Anchor: { width: 100, height: 60 },
+            New: { width: 100, height: 60 }
+        }, {
+            Blocker: { x: -2000, y: -2000 },
+            Anchor: { x: 0, y: 0 }
+        });
+
+        expect(positions.New!.y).toBeGreaterThanOrEqual(3040);
+        expect(positions.New!.y).toBeGreaterThan(positions.Blocker!.y + positions.Blocker!.height);
+    });
+
     test('draws a line straight from border to border, by default', () => {
         const points = routeEdge(
             { x: 0, y: 0, width: 100, height: 60 },
@@ -94,6 +130,22 @@ describe('drawing', () => {
             { style: 'orthogonal' }
         );
         expect(points).toEqual([{ x: 50, y: 60 }, { x: 50, y: 200 }]);
+    });
+
+    test('takes an orthogonal route around an intervening card', () => {
+        const source = { x: 0, y: 0, width: 100, height: 60 };
+        const between = { x: 250, y: 0, width: 100, height: 60 };
+        const target = { x: 500, y: 0, width: 100, height: 60 };
+        const points = routeEdge(source, target, {
+            style: 'orthogonal',
+            ends: { source: { x: 100, y: 30 }, target: { x: 500, y: 30 } },
+            obstacles: [source, between, target]
+        });
+        expect(points.some(point => point.y < between.y || point.y > between.y + between.height)).toBe(true);
+        for (let index = 0; index + 1 < points.length; index += 1) {
+            expect(points[index]!.x === points[index + 1]!.x || points[index]!.y === points[index + 1]!.y).toBe(true);
+            expect(segmentHitsRect(points[index]!, points[index + 1]!, between, 4)).toBe(false);
+        }
     });
 
     test('runs parallel edges beside one another', () => {
@@ -303,6 +355,33 @@ describe('drawing', () => {
             expect(Number(y)).toBeGreaterThan(box[2]!);
             expect(Number(y)).toBeLessThan(box[2]! + box[4]!);
         }
+    });
+
+    test('sizes the drawing around self-relation loops', () => {
+        const node = model().nodes[0]!;
+        const view: ViewModel = {
+            groups: [],
+            nodes: [node],
+            edges: Array.from({ length: 4 }, (_, index) => ({
+                kind: 'relation' as const,
+                id: `loop-${index}`,
+                source: node.id,
+                target: node.id,
+                sourceEnd: { isConst: true, isAddOnly: false },
+                targetEnd: { isConst: true, isAddOnly: false }
+            })),
+            gensets: []
+        };
+        const rendered = render({
+            view,
+            positions: { [node.id]: { x: 0, y: 0, width: 120, height: 42 } },
+            display,
+            padding: 40
+        });
+        const points = Object.values(rendered.paths).flat();
+        expect(Math.min(...points.map(point => point.y))).toBeGreaterThanOrEqual(rendered.bounds.y);
+        expect(Math.max(...points.map(point => point.x)))
+            .toBeLessThanOrEqual(rendered.bounds.x + rendered.bounds.width);
     });
 
     test('goes monochrome when colours are turned off', () => {

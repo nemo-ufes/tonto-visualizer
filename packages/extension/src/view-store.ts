@@ -14,6 +14,10 @@ import { emptyViewFile, readViewFile } from 'tonto-view';
 export class ViewStore {
     private file: ViewFile;
     private saving: NodeJS.Timeout | undefined;
+    private dirty = false;
+    /** Serializes snapshots so an older, slower write cannot overwrite a newer one. */
+    private writes: Promise<void> = Promise.resolve();
+    private disposal: Promise<void> | undefined;
 
     private constructor(private readonly uri: vscode.Uri, file: ViewFile, private enabled: boolean) {
         this.file = file;
@@ -64,17 +68,48 @@ export class ViewStore {
         if (!this.enabled) {
             return;
         }
+        this.dirty = true;
         clearTimeout(this.saving);
-        this.saving = setTimeout(() => void this.write(), 600);
+        this.saving = setTimeout(() => {
+            void this.write().catch(error => {
+                const message = error instanceof Error ? error.message : String(error);
+                void vscode.window.showErrorMessage(`Could not save the diagram arrangement: ${message}`);
+            });
+        }, 600);
     }
 
     async write(): Promise<void> {
+        clearTimeout(this.saving);
+        this.saving = undefined;
+        if (!this.enabled || !this.dirty) {
+            await this.writes;
+            return;
+        }
         const text = JSON.stringify(this.file, undefined, 2) + '\n';
-        await vscode.workspace.fs.writeFile(this.uri, Buffer.from(text, 'utf8'));
+        this.dirty = false;
+        const write = this.writes.then(async () => {
+            await vscode.workspace.fs.writeFile(this.uri, Buffer.from(text, 'utf8'));
+        });
+        // Keep the queue usable after a reported write failure; callers still
+        // receive the original rejection from `write`.
+        this.writes = write.catch(() => undefined);
+        try {
+            await write;
+        } catch (error) {
+            this.dirty = true;
+            throw error;
+        }
     }
 
-    dispose(): void {
+    dispose(): Promise<void> {
+        this.disposal ??= this.flush();
+        return this.disposal;
+    }
+
+    private async flush(): Promise<void> {
         clearTimeout(this.saving);
+        this.saving = undefined;
+        await this.write();
     }
 }
 
