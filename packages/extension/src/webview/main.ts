@@ -323,6 +323,7 @@ function fillOptions(): void {
         ['showRoleNames', 'Role names'],
         ['showEndDecorations', 'End decorations'],
         ['showColors', 'Nature colours'],
+        ['showLegend', 'Nature colour legend'],
         ['showPackageGroups', 'Package boxes'],
         ['qualifyNames', 'Qualified names'],
         ['showDocumentation', 'Documentation on hover']
@@ -351,10 +352,9 @@ function fillOptions(): void {
         arrangement.push(
             choice('Direction', [['DOWN', 'Top to bottom'], ['RIGHT', 'Left to right']], layout?.direction ?? 'DOWN',
                 value => host.postMessage({ type: 'layout', layout: { direction: value as LayoutOptions['direction'] } })),
-            // Not free: a class that would sit beside the one it specializes has
-            // to stay inside its own package instead. Worth offering both ways
-            // round, since which reads better depends on the model.
-            toggle('Keep packages together', layout?.groupByPackage ?? true,
+            // A package is a neighbourhood preference. Keeping it enabled may
+            // leave a hierarchy across package boundaries staggered.
+            toggle('Cluster packages', layout?.groupByPackage ?? true,
                 value => host.postMessage({ type: 'layout', layout: { groupByPackage: value } }))
         );
     }
@@ -388,7 +388,7 @@ function fillOptions(): void {
 }
 
 function fillLegend(): void {
-    legendPanel.hidden = !display?.showColors;
+    legendPanel.hidden = !display?.showColors || !display.showLegend;
     legendPanel.replaceChildren(...natureLegend.map(entry => {
         const row = document.createElement('div');
         row.className = 'legend-row';

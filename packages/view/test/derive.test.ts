@@ -93,8 +93,19 @@ role Student specializes Missing
 `);
         const ghost = node(view, 'Missing');
         expect(ghost.kind).toBe('unresolved');
+        expect(ghost.name).toBe('Missing');
         expect(view.edges).toContainEqual(
             expect.objectContaining({ kind: 'generalization', source: 'Sample::Student', target: 'Missing' }));
+    });
+
+    test('keeps the first letter of an unresolved unqualified class name', async () => {
+        const view = await viewOfText(`
+package Sample
+kind Animal {
+    -- hunts -- Lion
+}
+`);
+        expect(node(view, 'Lion')).toMatchObject({ kind: 'unresolved', name: 'Lion' });
     });
 
     test('drops what external references bring in when they are turned off', async () => {

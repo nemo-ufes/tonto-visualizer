@@ -11,13 +11,12 @@
  * general, which is how the language writes it and the opposite of how the
  * picture reads.
  *
- * Generalizations also outrank associations. Every edge pulls its ends into
- * different layers, and an ontology has as many associations as taxonomy: left
- * alone, a mediation between a relator and a role drags the role a rank away
- * from the kind it specializes, and the taxonomy stops lining up. So
- * generalizations are given the layering priority and associations almost none,
- * which is the closest ELK comes to "rank by this edge, then place for that
- * one".
+ * ELK first sees the whole graph, because associations carry useful information
+ * about which classes belong near one another and in which order. Its direction
+ * priority only affects cycle breaking, though; it cannot stop associations
+ * from inventing hierarchy levels. After that pass, each independent taxonomy
+ * is therefore put back into ranks computed only from generalizations, around
+ * the location and cross-rank order ELK chose for it.
  *
  * Packages become compound nodes when they are drawn as boxes, so a package's
  * classes stay together instead of scattering and leaving the box drawn around
@@ -32,7 +31,7 @@ import * as elkModule from 'elkjs/lib/elk.bundled.js';
 import type { LayoutOptions, ViewModel } from 'tonto-view';
 import { defaultLayoutOptions, inversePairs } from 'tonto-view';
 import type { Point, Rect, Size } from './geometry.js';
-import { boundsOf, overlaps } from './geometry.js';
+import { borderPoint, boundsOf, centerOf, overlaps } from './geometry.js';
 import type { Positions } from './place.js';
 import type { RoutingStyle } from './route.js';
 import { routeEdge } from './route.js';
@@ -234,7 +233,13 @@ function partialRing(ring: number): Point[] {
  * takes as much of the way there as is free -- never overlapping anything, and
  * never moving unless the move is an improvement.
  */
-function settleRelators(view: ViewModel, positions: Positions, only: ReadonlySet<string>): void {
+function settleRelators(
+    view: ViewModel,
+    positions: Positions,
+    only: ReadonlySet<string>,
+    rankDirection?: LayoutOptions['direction'],
+    ranked?: ReadonlySet<string>
+): void {
     const relators = view.nodes.filter(node => node.stereotype === 'relator' && only.has(node.id));
     if (relators.length === 0) {
         return;
@@ -264,9 +269,10 @@ function settleRelators(view: ViewModel, positions: Positions, only: ReadonlySet
             .filter(([id]) => id !== relator.id)
             .map(([, one]) => one);
         for (const share of [1, 0.8, 0.6, 0.4, 0.2]) {
+            const locked = ranked?.has(relator.id) ?? false;
             const candidate = {
-                x: Math.round(rect.x + (middle.x - rect.x) * share),
-                y: Math.round(rect.y + (middle.y - rect.y) * share),
+                x: locked && rankDirection === 'RIGHT' ? rect.x : Math.round(rect.x + (middle.x - rect.x) * share),
+                y: locked && rankDirection === 'DOWN' ? rect.y : Math.round(rect.y + (middle.y - rect.y) * share),
                 width: rect.width,
                 height: rect.height
             };
@@ -276,6 +282,166 @@ function settleRelators(view: ViewModel, positions: Positions, only: ReadonlySet
             }
         }
     }
+}
+
+/**
+ * Restores the ontology's hierarchy after ELK has optimized the whole graph.
+ *
+ * The first layout remains useful: associations and packages decide where each
+ * independent taxonomy belongs and the order across a rank. They must not
+ * decide the ranks inside a taxonomy, however. Each hierarchy component is
+ * regularized around the place ELK chose for it; unrelated hierarchies are not
+ * forced into one diagram-wide row.
+ */
+function enforceTaxonomyRanks(
+    view: ViewModel,
+    positions: Positions,
+    subject: ReadonlySet<string>,
+    settings: LayoutOptions
+): Set<string> | undefined {
+    const generalizations = view.edges.filter(edge => edge.kind === 'generalization'
+        && subject.has(edge.source) && subject.has(edge.target));
+    if (generalizations.length === 0) {
+        return undefined;
+    }
+
+    const parents = new Map<string, Set<string>>();
+    const children = new Map<string, Set<string>>();
+    for (const edge of generalizations) {
+        parents.set(edge.source, new Set([...(parents.get(edge.source) ?? []), edge.target]));
+        children.set(edge.target, new Set([...(children.get(edge.target) ?? []), edge.source]));
+        parents.set(edge.target, parents.get(edge.target) ?? new Set());
+        children.set(edge.source, children.get(edge.source) ?? new Set());
+    }
+
+    // Parent -> child topological walk. A temporarily cyclic model is left in
+    // rank zero rather than making arrangement fail while it is being edited.
+    const pending = new Map([...parents].map(([id, values]) => [id, values.size]));
+    const ranks = new Map<string, number>();
+    const queue = [...pending].filter(([, count]) => count === 0).map(([id]) => id).sort();
+    while (queue.length > 0) {
+        const parent = queue.shift()!;
+        const parentRank = ranks.get(parent) ?? 0;
+        ranks.set(parent, parentRank);
+        for (const child of children.get(parent) ?? []) {
+            ranks.set(child, Math.max(ranks.get(child) ?? 0, parentRank + 1));
+            const left = (pending.get(child) ?? 1) - 1;
+            pending.set(child, left);
+            if (left === 0) {
+                queue.push(child);
+                queue.sort();
+            }
+        }
+    }
+    for (const id of parents.keys()) {
+        if (!ranks.has(id)) {
+            ranks.set(id, 0);
+        }
+    }
+
+    const primary = settings.direction === 'DOWN' ? 'y' as const : 'x' as const;
+    const primarySize = settings.direction === 'DOWN' ? 'height' as const : 'width' as const;
+    const cross = settings.direction === 'DOWN' ? 'x' as const : 'y' as const;
+    const crossSize = settings.direction === 'DOWN' ? 'width' as const : 'height' as const;
+    const rankedRects = [...ranks.keys()].map(id => positions[id]).filter((rect): rect is Rect => rect !== undefined);
+    if (rankedRects.length === 0) {
+        return undefined;
+    }
+
+    const unseen = new Set(ranks.keys());
+    const components: string[][] = [];
+    const packageOf = new Map(view.nodes.map(node => [node.id, node.package]));
+    while (unseen.size > 0) {
+        const first = unseen.values().next().value as string;
+        const component: string[] = [];
+        const visit = [first];
+        unseen.delete(first);
+        while (visit.length > 0) {
+            const id = visit.pop()!;
+            component.push(id);
+            for (const neighbour of [...(parents.get(id) ?? []), ...(children.get(id) ?? [])]) {
+                if (settings.groupByPackage && packageOf.get(neighbour) !== packageOf.get(id)) {
+                    continue;
+                }
+                if (unseen.delete(neighbour)) {
+                    visit.push(neighbour);
+                }
+            }
+        }
+        components.push(component);
+    }
+
+    const proposed = components.map(ids => {
+        const originals = ids.map(id => positions[id]!).filter((rect): rect is Rect => rect !== undefined);
+        const crossLow = Math.min(...originals.map(rect => rect[cross]));
+        const crossHigh = Math.max(...originals.map(rect => rect[cross] + rect[crossSize]));
+        const crossMiddle = (crossLow + crossHigh) / 2;
+        const rows = new Map<number, string[]>();
+        for (const id of ids) {
+            if (positions[id]) {
+                const rank = ranks.get(id)!;
+                rows.set(rank, [...(rows.get(rank) ?? []), id]);
+            }
+        }
+        const rects = new Map<string, Rect>();
+        let at = Math.min(...originals.map(rect => rect[primary]));
+        for (const rank of [...rows.keys()].sort((one, other) => one - other)) {
+            const rowIds = rows.get(rank)!.sort((one, other) => {
+                const oneRect = positions[one]!;
+                const otherRect = positions[other]!;
+                return oneRect[cross] + oneRect[crossSize] / 2 - (otherRect[cross] + otherRect[crossSize] / 2)
+                    || one.localeCompare(other);
+            });
+            const rowRects = rowIds.map(id => positions[id]!);
+            const length = rowRects.reduce((sum, rect) => sum + rect[crossSize], 0)
+                + settings.nodeSpacing * Math.max(rowIds.length - 1, 0);
+            let along = crossMiddle - length / 2;
+            const thickness = Math.max(...rowRects.map(rect => rect[primarySize]));
+            for (const id of rowIds) {
+                const rect = positions[id]!;
+                rects.set(id, {
+                    ...rect,
+                    [primary]: Math.round(at),
+                    [cross]: Math.round(along)
+                });
+                along += rect[crossSize] + settings.nodeSpacing;
+            }
+            at += thickness + settings.rankSpacing;
+        }
+        return { ids, rects, original: boundsOf(originals) };
+    }).sort((one, other) => one.original.y - other.original.y || one.original.x - other.original.x);
+
+    // Re-ranking can make a hierarchy wider than the space ELK gave it. Move
+    // each hierarchy as one rigid piece to the nearest clear position, leaving
+    // association-only nodes where the whole-graph layout put them.
+    const taxonomy = new Set(ranks.keys());
+    const occupied = [...subject]
+        .filter(id => !taxonomy.has(id) && positions[id] !== undefined)
+        .map(id => positions[id]!);
+    for (const component of proposed) {
+        const rects = [...component.rects.values()];
+        const fits = (dx: number, dy: number) => rects.every(rect => {
+            const moved = { ...rect, x: rect.x + dx, y: rect.y + dy };
+            return !occupied.some(obstacle => overlaps(moved, obstacle, Math.min(settings.nodeSpacing / 3, 20)));
+        });
+        let translation: Point | undefined;
+        for (let ring = 0; ring < 80 && !translation; ring += 1) {
+            for (const offset of ring === 0 ? [{ x: 0, y: 0 }] : partialRing(ring)) {
+                const candidate = { x: offset.x * PARTIAL_STEP, y: offset.y * PARTIAL_STEP };
+                if (fits(candidate.x, candidate.y)) {
+                    translation = candidate;
+                    break;
+                }
+            }
+        }
+        translation ??= { x: 0, y: boundsOf(occupied).y + boundsOf(occupied).height + settings.rankSpacing };
+        for (const [id, rect] of component.rects) {
+            const moved = { ...rect, x: rect.x + translation.x, y: rect.y + translation.y };
+            positions[id] = moved;
+            occupied.push(moved);
+        }
+    }
+    return taxonomy;
 }
 
 /**
@@ -361,6 +527,8 @@ export async function autoLayout(
     const routing = request.routing ?? 'straight';
     const subject = new Set(request.only ?? view.nodes.map(node => node.id));
     const inverses = inversePairs(view.edges);
+    const hasTaxonomy = view.edges.some(edge => edge.kind === 'generalization'
+        && subject.has(edge.source) && subject.has(edge.target));
     const nodes = view.nodes.filter(node => subject.has(node.id));
     if (nodes.length === 0) {
         return { positions: current, routes: {} };
@@ -458,7 +626,12 @@ export async function autoLayout(
     const elkPositions = Object.fromEntries([...subject]
         .filter(id => positions[id] !== undefined)
         .map(id => [id, { ...positions[id]! }]));
-    settleRelators(view, positions, subject);
+    if (settings.algorithm === 'layered' && !request.only) {
+        const ranked = enforceTaxonomyRanks(view, positions, subject, settings);
+        settleRelators(view, positions, subject, ranked ? settings.direction : undefined, ranked);
+    } else {
+        settleRelators(view, positions, subject);
+    }
     if (request.only) {
         placePartialLayout(positions, current, subject);
     }
@@ -479,10 +652,28 @@ export async function autoLayout(
                 if (!definition) {
                     continue;
                 }
-                // Generalizations and selected mediations may both be handed to
-                // ELK backwards for ranking. Stored routes always follow the
-                // view model's source -> target direction.
-                const reversed = definition.kind === 'generalization' || turnedMediations.has(edge.id);
+                // Generalization ports belong at the centre ray of their
+                // classes. Keeping ELK's route would retain the displaced port
+                // it chose when an association joins the same pair.
+                if (definition.kind === 'generalization') {
+                    const source = positions[definition.source];
+                    const target = positions[definition.target];
+                    if (source && target) {
+                        routes[edge.id] = routeEdge(source, target, {
+                            style: 'orthogonal',
+                            obstacles,
+                            ends: {
+                                source: borderPoint(source, centerOf(target)),
+                                target: borderPoint(target, centerOf(source))
+                            }
+                        });
+                    }
+                    continue;
+                }
+                // Selected mediations may be handed to ELK backwards for
+                // ranking. Stored routes always follow the view model's
+                // source -> target direction.
+                const reversed = turnedMediations.has(edge.id);
                 const ordered = reversed ? points.reverse() : points;
                 const oldSource = elkPositions[definition.source];
                 const oldTarget = elkPositions[definition.target];
@@ -520,6 +711,9 @@ export async function autoLayout(
     // relators it strands are worth turning -- and the turn is kept only if it
     // seats more of them.
     const plain = await attempt(new Set());
+    if (settings.algorithm === 'layered' && hasTaxonomy && !request.only) {
+        return plain;
+    }
     const stranded = strandedRelators(view, plain.positions, subject);
     if (stranded.size === 0) {
         return plain;

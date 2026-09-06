@@ -5,6 +5,7 @@ import { autoLayout } from '../src/autolayout.js';
 import type { Point, Rect } from '../src/geometry.js';
 import { overlaps } from '../src/geometry.js';
 import { sizeOf } from '../src/measure.js';
+import { render } from '../src/render.js';
 
 const display = { ...defaultDisplayOptions };
 
@@ -56,6 +57,77 @@ describe('arranging a model', () => {
         for (const node of view.nodes.filter(candidate => candidate.id !== 'Sample::Root')) {
             expect(positions[node.id]!.y).toBeGreaterThan(root.y);
         }
+    });
+
+    test('does not let an association change the taxonomy rank spacing', async () => {
+        const baseline = await arrange(taxonomy(1), false);
+        const view = taxonomy(1);
+        view.nodes.push({
+            id: 'Sample::Neighbour', kind: 'class', name: 'Neighbour', package: 'Sample',
+            stereotype: 'kind', color: '#FF99A3', isExternal: false, attributes: []
+        });
+        view.groups[0]!.nodes.push('Sample::Neighbour');
+        view.edges.push({
+            kind: 'relation', id: 'associated', source: 'Sample::Sub0', target: 'Sample::Neighbour',
+            sourceEnd: { isConst: false, isAddOnly: false },
+            targetEnd: { isConst: false, isAddOnly: false }
+        });
+
+        const positions = await arrange(view, false);
+        const distance = (placed: typeof positions) => placed['Sample::Sub0']!.y - placed['Sample::Root']!.y;
+        expect(distance(positions)).toBe(distance(baseline));
+        expect(distance(positions)).toBeGreaterThan(0);
+    });
+
+    test('centres a generalization when an association joins the same classes', async () => {
+        const clazz = (id: string, stereotype: string) => ({
+            id, kind: 'class' as const, name: id.replace('Sample::', ''), package: 'Sample',
+            stereotype, color: '#FF99A3', isExternal: false, attributes: []
+        });
+        const plainEnd = { isConst: false, isAddOnly: false };
+        const view: ViewModel = {
+            groups: [{
+                id: 'pkg:Sample', name: 'Sample', isExternal: false,
+                nodes: ['Sample::Object', 'Sample::PhysicalObject', 'Sample::ComplexPhysicalObject']
+            }],
+            nodes: [
+                clazz('Sample::Object', 'class'),
+                clazz('Sample::PhysicalObject', 'category'),
+                clazz('Sample::ComplexPhysicalObject', 'mixin')
+            ],
+            edges: [
+                {
+                    kind: 'generalization', id: 'physical-object',
+                    source: 'Sample::PhysicalObject', target: 'Sample::Object'
+                },
+                {
+                    kind: 'generalization', id: 'complex-physical',
+                    source: 'Sample::ComplexPhysicalObject', target: 'Sample::PhysicalObject'
+                },
+                {
+                    kind: 'relation', id: 'has-part', stereotype: 'componenthood',
+                    source: 'Sample::ComplexPhysicalObject', target: 'Sample::PhysicalObject',
+                    sourceEnd: { ...plainEnd }, targetEnd: { ...plainEnd }
+                }
+            ],
+            gensets: []
+        };
+        const sizes = Object.fromEntries(view.nodes.map(node => [node.id, sizeOf(node, display)]));
+        const laid = await autoLayout(view, sizes, {}, {
+            ...defaultLayoutOptions, groupByPackage: false, routing: 'orthogonal'
+        });
+        const output = render({
+            view,
+            positions: laid.positions,
+            routes: Object.fromEntries(Object.entries(laid.routes).map(([id, points]) => [id, { points }])),
+            display: { ...display, routing: 'orthogonal' }
+        });
+        const centres = view.nodes.map(node => {
+            const rect = laid.positions[node.id]!;
+            return rect.x + rect.width / 2;
+        });
+        expect([...new Set(centres)]).toHaveLength(1);
+        expect([...new Set(output.paths['complex-physical']!.map(point => point.x))]).toHaveLength(1);
     });
 
     test('lays out an inverse pair as the one association that is drawn', async () => {
@@ -163,8 +235,8 @@ describe('packages and the layout', () => {
         // Kept together, a package's classes occupy one band; ignored, they
         // interleave -- which is the whole point of the option, and why the
         // package boxes stop being drawn when they would enclose a stranger.
-        const bandOf = (positions: Record<string, { y: number }>, pkg: string) =>
-            view.nodes.filter(node => node.package === pkg).map(node => positions[node.id]!.y);
+        const bandOf = (positions: Record<string, { x: number }>, pkg: string) =>
+            view.nodes.filter(node => node.package === pkg).map(node => positions[node.id]!.x);
         const overlapping = (one: number[], other: number[]) =>
             Math.min(...one) < Math.max(...other) && Math.min(...other) < Math.max(...one);
         expect(overlapping(bandOf(together.positions, 'A'), bandOf(together.positions, 'B'))).toBe(false);
