@@ -7,12 +7,13 @@
  * rather than by re-rendering the diagram on every pointer move.
  */
 
-import type { EdgeRoute, ViewEdge, ViewGenset, ViewModel, ViewNode, ViewRelation } from 'tonto-view';
+import type { EdgeRoute, ViewEdge, ViewModel, ViewNode, ViewRelation } from 'tonto-view';
 import type { DisplayOptions } from 'tonto-view';
 import type { Point, Rect } from './geometry.js';
-import { alongPath, boundsOf, centerOf } from './geometry.js';
+import { alongPath, boundsOf, centerOf, distanceToPath } from './geometry.js';
 import { attributeLines, FONT, multiplicityLabel, NODE, nodeLabel, stereotypeLabel, textWidth } from './measure.js';
 import type { Positions } from './place.js';
+import { assignPorts } from './ports.js';
 import { routeEdge } from './route.js';
 import type { Theme } from './theme.js';
 import { lightTheme } from './theme.js';
@@ -48,13 +49,41 @@ export function render(input: RenderInput): Rendered {
         .filter((rect): rect is Rect => rect !== undefined);
     const groups = display.showPackageGroups ? groupBoxes(view, positions) : [];
 
+    // Where each line meets each box, spread along the border so that two
+    // associations between the same neighbours do not arrive as one line.
+    const ports = assignPorts(view.edges, positions);
+    const loops = loopIndex(view);
+
+    // Every route is computed before any label is placed. A label belongs to one
+    // line and has to be read against it, so the placer has to know where all of
+    // them run -- including the ones drawn after it.
+    // Decided before anything is routed: the edges a tree takes over are not
+    // lines of their own.
+    const trees = planTrees(view, positions);
     const paths: Record<string, Point[]> = {};
-    const drawnByGenset = new Set<string>();
-    const placer = new LabelPlacer(rects, groups.map(group => group.rect));
-    const spreads = spreadIndex(view);
-    const gensetMarkup = view.gensets
-        .map(genset => drawGenset(genset, view, positions, theme, drawnByGenset, placer))
-        .join('');
+    const bends: Point[] = [];
+    for (const edge of view.edges) {
+        if (trees.covered.has(edge.id)) {
+            continue;
+        }
+        const source = positions[edge.source];
+        const target = positions[edge.target];
+        if (!source || !target) {
+            continue;
+        }
+        paths[edge.id] = routeEdge(source, target, {
+            avoid: bends,
+            ...(input.routes?.[edge.id]?.points ? { stored: input.routes[edge.id]!.points! } : {}),
+            ...(ports.get(edge.id) ? { ends: ports.get(edge.id)! } : {}),
+            ...(loops.get(edge.id) ? { loop: loops.get(edge.id)! } : {}),
+            style: display.routing,
+            obstacles: rects
+        });
+        // Whatever this line bent around, the next one goes round elsewhere.
+        bends.push(...paths[edge.id]!.slice(1, -1));
+    }
+    const placer = new LabelPlacer(rects, groups.map(group => group.rect), paths);
+    const treeMarkup = trees.plans.map(plan => drawTree(plan, positions, theme, placer)).join('');
 
     // Labels are drawn last, over the boxes. A line may pass behind a class --
     // that reads as a line -- but a cardinality hidden behind one has simply
@@ -62,7 +91,7 @@ export function render(input: RenderInput): Rendered {
     let labelMarkup = '';
     const edgeMarkup = view.edges
         .map(edge => {
-            if (edge.kind === 'generalization' && drawnByGenset.has(edge.id)) {
+            if (trees.covered.has(edge.id)) {
                 return '';
             }
             const source = positions[edge.source];
@@ -70,13 +99,7 @@ export function render(input: RenderInput): Rendered {
             if (!source || !target) {
                 return '';
             }
-            const points = routeEdge(source, target, {
-                ...(input.routes?.[edge.id]?.points ? { stored: input.routes[edge.id]!.points! } : {}),
-                style: display.routing,
-                spread: spreads.get(edge.id) ?? { index: 0, count: 1 },
-                obstacles: rects
-            });
-            paths[edge.id] = points;
+            const points = paths[edge.id]!;
             labelMarkup += drawEdgeLabels(edge, points, display, theme, placer);
             return drawEdge(edge, points, theme, selected.has(edge.id));
         })
@@ -132,31 +155,24 @@ text {
 .tv-external rect { stroke-dasharray: 2 2; }
 </style>
 <rect x="${origin.x}" y="${origin.y}" width="${width}" height="${height}" fill="${theme.background}"/>
-${groups.map(group => drawGroup(group)).join('')}${edgeMarkup}${gensetMarkup}${nodeMarkup}<g class="tv-labels">${labelMarkup}</g></svg>`;
+${groups.map(group => drawGroup(group)).join('')}${edgeMarkup}${treeMarkup}${nodeMarkup}<g class="tv-labels">${labelMarkup}</g></svg>`;
 
     return { svg, bounds: { x: origin.x, y: origin.y, width, height }, paths };
 }
 
-/**
- * Which of the edges between a pair of boxes each edge is.
- *
- * Two relations between the same relator and class are one line drawn twice
- * unless they are told to run apart -- invisible with orthogonal corridors,
- * where the jog happens to differ, and unmissable with straight lines. The pair
- * is unordered: an edge drawn back the other way is still beside the first, not
- * on top of it.
- */
-function spreadIndex(view: ViewModel): Map<string, { index: number; count: number }> {
-    const groups = new Map<string, string[]>();
+/** Which of a class's loops each self-relation is, so no two are drawn alike. */
+function loopIndex(view: ViewModel): Map<string, { index: number; count: number }> {
+    const byNode = new Map<string, string[]>();
     for (const edge of view.edges) {
-        const key = [edge.source, edge.target].sort().join('\u0000');
-        groups.set(key, [...(groups.get(key) ?? []), edge.id]);
+        if (edge.source === edge.target) {
+            byNode.set(edge.source, [...(byNode.get(edge.source) ?? []), edge.id]);
+        }
     }
-    const spreads = new Map<string, { index: number; count: number }>();
-    for (const ids of groups.values()) {
-        ids.forEach((id, index) => spreads.set(id, { index, count: ids.length }));
+    const loops = new Map<string, { index: number; count: number }>();
+    for (const ids of byNode.values()) {
+        ids.forEach((id, index) => loops.set(id, { index, count: ids.length }));
     }
-    return spreads;
+    return loops;
 }
 
 function drawNode(node: ViewNode, rect: Rect, display: DisplayOptions, theme: Theme, isSelected: boolean): string {
@@ -217,7 +233,7 @@ function drawEdgeLabels(
         return relationLabels(edge, points, display, theme, placer);
     }
     if (edge.kind === 'instantiation') {
-        return centreLabel(points, { stereotype: '«instanceOf»' }, theme, placer);
+        return centreLabel(points, { stereotype: '«instanceOf»' }, theme, placer, false, edge.id);
     }
     return '';
 }
@@ -233,11 +249,15 @@ function drawEdgeLabels(
  * which is why one of these is made per drawing and not per edge.
  */
 /**
- * What one step away from the preferred position costs, in the same units as an
- * overlap: about the area of a small label. Enough that a label will cross a
- * line to stay near its own, and not enough to make it sit on a class name.
+ * What being far from home costs, per pixel, in the same units as an overlap.
+ *
+ * Charged by distance rather than by position in the candidate list. The list is
+ * ordered by preference, but its steps are not equal: with the candidates
+ * ordered so that a label slides along its line before stepping off it, the
+ * seventh entry was a few pixels away and cost seven times the first. A label
+ * could not afford to move aside and stayed where it was misread instead.
  */
-const DISPLACEMENT = 150;
+const DISPLACEMENT = 5;
 
 class LabelPlacer {
     private readonly taken: Rect[] = [];
@@ -247,8 +267,16 @@ class LabelPlacer {
      * @param groups the package boxes, which it should rather not cross -- a
      *   dashed border under a multiplicity is untidy where a class name under
      *   one is unreadable, so they weigh less than a class and more than nothing
+     * @param lines every routed edge, so a label can be kept nearer the line it
+     *   belongs to than to any other. A multiplicity that sits closer to the
+     *   neighbouring association than to its own is read against the wrong one,
+     *   and nothing about the drawing says otherwise
      */
-    constructor(private readonly nodes: Rect[], private readonly groups: Rect[] = []) {}
+    constructor(
+        private readonly nodes: Rect[],
+        private readonly groups: Rect[] = [],
+        private readonly lines: Record<string, Point[]> = {}
+    ) {}
 
     /**
      * The best of the candidates: what it would cover, plus what it costs to be
@@ -263,11 +291,12 @@ class LabelPlacer {
      * as much of it as it liked. Candidates arrive in order of preference, so
      * position in the list is what being far from home costs.
      */
-    place(candidates: Point[], text: string): Point {
+    place(candidates: Point[], text: string, owner?: string): Point {
+        const home = candidates[0];
         let best: { at: Point; box: Rect; score: number } | undefined;
-        for (const [index, candidate] of candidates.entries()) {
+        for (const candidate of candidates) {
             const box = boxOf(candidate, text);
-            const score = this.penaltyOf(box) + index * DISPLACEMENT;
+            const score = this.penaltyOf(box, owner) + displacementFrom(home, candidate);
             if (!best || score < best.score) {
                 best = { at: candidate, box, score };
             }
@@ -285,11 +314,12 @@ class LabelPlacer {
      * label of more than one line, where the text alone does not say how tall it
      * is. Scored like `place`, and it claims what it takes.
      */
-    placeBox(candidates: Point[], width: number, height: number): Point {
+    placeBox(candidates: Point[], width: number, height: number, owner?: string): Point {
+        const home = candidates[0];
         let best: { at: Point; box: Rect; score: number } | undefined;
-        for (const [index, candidate] of candidates.entries()) {
+        for (const candidate of candidates) {
             const box = { x: candidate.x - width / 2, y: candidate.y - height / 2, width, height };
-            const score = this.penaltyOf(box) + index * DISPLACEMENT;
+            const score = this.penaltyOf(box, owner) + displacementFrom(home, candidate);
             if (!best || score < best.score) {
                 best = { at: candidate, box, score };
             }
@@ -307,8 +337,8 @@ class LabelPlacer {
     }
 
     /** What this box would cover, without claiming it. */
-    cost(box: Rect): number {
-        return this.penaltyOf(box);
+    cost(box: Rect, owner?: string): number {
+        return this.penaltyOf(box, owner);
     }
 
     /** Claims a box, so whatever is placed next avoids it. */
@@ -332,7 +362,7 @@ class LabelPlacer {
      * would rather sit on a box than take four steps, which is how they came to
      * be printed across SeniorStaff and EmploymentContract.
      */
-    private penaltyOf(box: Rect): number {
+    private penaltyOf(box: Rect, owner?: string): number {
         let penalty = 0;
         for (const rect of this.nodes) {
             penalty += overlapArea(box, rect) * 6;
@@ -345,7 +375,35 @@ class LabelPlacer {
             // label inside one is where labels belong.
             penalty += borderOverlap(box, rect) * 0.6;
         }
+        if (owner) {
+            penalty += this.misreading(box, owner);
+        }
         return penalty;
+    }
+
+    /**
+     * What it costs to sit nearer somebody else's line than one's own.
+     *
+     * The reader has nothing but distance to go on: a multiplicity is read
+     * against whichever line it is closest to, and on a busy diagram that is
+     * regularly not the line it belongs to. Charged by how much closer the wrong
+     * line is, so a label that is merely near two lines pays little and one that
+     * has plainly settled on the wrong line pays a great deal.
+     */
+    private misreading(box: Rect, owner: string): number {
+        const own = this.lines[owner];
+        if (!own) {
+            return 0;
+        }
+        const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+        const mine = distanceToPath(centre, own);
+        let nearest = Infinity;
+        for (const [id, path] of Object.entries(this.lines)) {
+            if (id !== owner) {
+                nearest = Math.min(nearest, distanceToPath(centre, path));
+            }
+        }
+        return nearest < mine ? 260 + (mine - nearest) * 14 : 0;
     }
 }
 
@@ -355,6 +413,10 @@ function borderOverlap(box: Rect, frame: Rect): number {
         x: frame.x + 2, y: frame.y + 2, width: Math.max(frame.width - 4, 0), height: Math.max(frame.height - 4, 0)
     });
     return overlapArea(box, frame) - inside;
+}
+
+function displacementFrom(home: Point | undefined, candidate: Point): number {
+    return home ? Math.hypot(candidate.x - home.x, candidate.y - home.y) * DISPLACEMENT : 0;
 }
 
 function overlapArea(one: Rect, other: Rect): number {
@@ -394,7 +456,7 @@ function relationLabels(
         ? centreLabel(
             points,
             { ...(middle[0] ? { stereotype: middle[0] } : {}), ...(named && edge.name ? { name: edge.name } : {}) },
-            theme, placer, named)
+            theme, placer, named, edge.id)
         : '';
     markup += endLabel(edge, points, true, display, theme, placer);
     markup += endLabel(edge, points, false, display, theme, placer);
@@ -459,7 +521,7 @@ function endLabel(
     const roleWidth = textOnly + (lock ? LOCK.width + LOCK.gap : 0);
 
     let best: { multiplicity?: Placed; role?: Placed; cost: number } | undefined;
-    for (const [step, distance] of [13, 19, 27, 37, 50].entries()) {
+    for (const distance of [13, 18, 24, 32, 42, 54]) {
         const at = Math.min(distance, reach);
         for (const side of [1, -1]) {
             const placedMultiplicity = multiplicity
@@ -468,13 +530,14 @@ function endLabel(
             const placedRole = roleWidth > 0
                 ? placedAt(besideLine(forwards, at, roleWidth, [-side])[0]!, roleWidth)
                 : undefined;
-            // Turning the group over is worth doing only when the usual way
-            // round is much worse: which side the multiplicity is on says
-            // something, and says less if it changes from line to line.
-            const cost = (placedMultiplicity ? placer.cost(placedMultiplicity.box) : 0)
-                + (placedRole ? placer.cost(placedRole.box) : 0)
-                + step * DISPLACEMENT
-                + (side === 1 ? 0 : 260);
+            // Turning the group over has a price, since which side the
+            // multiplicity is on says something and says less if it changes from
+            // line to line -- but less of a price than being read against the
+            // wrong line, which is what the other side is often the way out of.
+            const cost = (placedMultiplicity ? placer.cost(placedMultiplicity.box, edge.id) : 0)
+                + (placedRole ? placer.cost(placedRole.box, edge.id) : 0)
+                + (at - 13) * DISPLACEMENT
+                + (side === 1 ? 0 : 120);
             if (!best || cost < best.cost) {
                 best = {
                     ...(placedMultiplicity ? { multiplicity: placedMultiplicity } : {}),
@@ -494,7 +557,7 @@ function endLabel(
     let markup = '';
     if (best.multiplicity && multiplicity) {
         placer.take(best.multiplicity.box);
-        markup += label(best.multiplicity.at.x, best.multiplicity.at.y, multiplicity, theme, 'middle', 'tv-end');
+        markup += label(best.multiplicity.at.x, best.multiplicity.at.y, multiplicity, theme, 'middle', 'tv-end', edge.id);
     }
     if (best.role) {
         placer.take(best.role.box);
@@ -504,10 +567,10 @@ function endLabel(
         // however wide the name is.
         const left = at.x - roleWidth / 2;
         if (roleText) {
-            markup += label(left + textOnly / 2, at.y, roleText, theme, 'middle', 'tv-end');
+            markup += label(left + textOnly / 2, at.y, roleText, theme, 'middle', 'tv-end', edge.id);
         }
         if (lock) {
-            markup += padlock({ x: left + textOnly + (roleText ? LOCK.gap : 0), y: at.y - LOCK.height + 3 }, theme);
+            markup += padlock({ x: left + textOnly + (roleText ? LOCK.gap : 0), y: at.y - LOCK.height + 3 }, theme, edge.id);
         }
     }
     return markup;
@@ -533,8 +596,9 @@ const LOCK = { width: 11, height: 11, gap: 4 } as const;
  * is read as a property of the end, which is where UML puts `{addOnly}` and the
  * rest.
  */
-function padlock(at: Point, theme: Theme): string {
-    return `<g class="tv-lock" transform="translate(${round(at.x)}, ${round(at.y)})" aria-label="not const">`
+function padlock(at: Point, theme: Theme, owner: string): string {
+    return `<g class="tv-lock" data-for="${escape(owner)}" `
+        + `transform="translate(${round(at.x)}, ${round(at.y)})" aria-label="not const">`
         + `<title>this end may change (not const)</title>`
         + `<path d="M 1.4 4.6 V 2.9 a 2.5 2.5 0 0 1 5 0"/>`
         + `<rect x="2.8" y="4.6" width="6.8" height="5.4" rx="1.3" stroke="${theme.muted}"/>`
@@ -555,7 +619,8 @@ function centreLabel(
     parts: { stereotype?: string; name?: string },
     theme: Theme,
     placer: LabelPlacer,
-    reading = false
+    reading = false,
+    owner?: string
 ): string {
     const length = pathLength(points);
     // A margin over the estimate, since the triangle is placed off the end of
@@ -574,12 +639,12 @@ function centreLabel(
     const fractions = [0.5, 0.42, 0.58, 0.34, 0.66, 0.26, 0.74];
     const candidates = [0, 1, -1, 2, -2].flatMap(step =>
         fractions.map(fraction => besideLine(points, length * fraction, { width, height }, [step])[0]!));
-    const at = placer.placeBox(candidates, width, height);
+    const at = placer.placeBox(candidates, width, height, owner);
 
     let markup = '';
     let top = at.y - height / 2;
     if (parts.stereotype) {
-        markup += label(at.x, top + LINE.stereotype - 2, parts.stereotype, theme, 'middle', 'tv-edge-stereotype');
+        markup += label(at.x, top + LINE.stereotype - 2, parts.stereotype, theme, 'middle', 'tv-edge-stereotype', owner);
         top += LINE.stereotype;
     }
     if (parts.name) {
@@ -587,7 +652,7 @@ function centreLabel(
         // is where a reader expects the arrow of "A has B ▶" to be.
         const baseline = top + LINE.name - 3;
         const centre = at.x - marker / 2;
-        markup += label(centre, baseline, parts.name, theme, 'middle');
+        markup += label(centre, baseline, parts.name, theme, 'middle', undefined, owner);
         if (reading) {
             const tip = { x: centre + nameWidth / 2 + marker, y: baseline - 3.5 };
             markup += readingTriangle(tip, directionNear(points, at));
@@ -672,85 +737,148 @@ function pathLength(points: Point[]): number {
  * the one way to outline text without doubling the markup.
  */
 function label(
-    x: number, y: number, text: string, theme: Theme, anchor: 'middle' | 'start', className?: string
+    x: number, y: number, text: string, theme: Theme, anchor: 'middle' | 'start',
+    className?: string, owner?: string
 ): string {
-    return `<text${className ? ` class="${className}"` : ''} x="${round(x)}" y="${round(y)}" `
+    return `<text${className ? ` class="${className}"` : ''}${owner ? ` data-for="${escape(owner)}"` : ''} `
+        + `x="${round(x)}" y="${round(y)}" `
         + `text-anchor="${anchor}" paint-order="stroke" stroke="${theme.background}" stroke-width="3" `
         + `stroke-linejoin="round">${escape(text)}</text>`;
 }
 
 /**
- * A generalization set: one triangle, shared.
+ * Several specializations of one class, drawn as one tree.
  *
- * Drawn only when the specialization all runs the same way -- every subtype
- * below the supertype, or every one above it -- because a shared triangle says
- * *these together partition that*, and a triangle with legs going three
- * directions says it less clearly than three separate arrows do. When the
- * arrangement does not allow it, the edges are left to draw themselves and the
- * set is named on each of them instead.
+ * A generalization set has always been drawn this way -- one triangle, a bus,
+ * a leg to each subtype -- because that is what the notation means. Plain
+ * generalizations get it too, which UML allows and a taxonomy badly needs: four
+ * subtypes each drawing its own line to a supertype across the diagram produce
+ * four lines that converge, and two of them will run within a few pixels of each
+ * other for hundreds of them. The reader cannot tell such a pair apart, and
+ * nothing in the picture says there are two.
+ *
+ * Only when every subtype is on the same side of the supertype. A tree with legs
+ * going three ways says less than three arrows do, so in that case the edges are
+ * left to draw themselves.
  */
-function drawGenset(
-    genset: ViewGenset,
-    view: ViewModel,
-    positions: Positions,
-    theme: Theme,
-    drawn: Set<string>,
-    placer: LabelPlacer
-): string {
-    const general = genset.general ? positions[genset.general] : undefined;
-    const specifics = genset.specifics
+function drawTree(plan: TreePlan, positions: Positions, theme: Theme, placer: LabelPlacer): string {
+    const general = positions[plan.general];
+    const children = plan.children
         .map(id => ({ id, rect: positions[id] }))
         .filter((entry): entry is { id: string; rect: Rect } => entry.rect !== undefined);
-    if (!general || specifics.length < 2) {
+    if (!general || children.length < 2) {
         return '';
     }
 
-    const generalCentre = centerOf(general);
-    const below = specifics.every(entry => entry.rect.y >= general.y + general.height);
-    const above = specifics.every(entry => entry.rect.y + entry.rect.height <= general.y);
-    if (!below && !above) {
-        return '';
-    }
+    const below = children.every(entry => entry.rect.y >= general.y + general.height);
 
     const direction = below ? 1 : -1;
-    const apex = { x: generalCentre.x, y: below ? general.y + general.height : general.y };
+    const apex = { x: centerOf(general).x, y: below ? general.y + general.height : general.y };
     const base = { x: apex.x, y: apex.y + 14 * direction };
     const nearest = below
-        ? Math.min(...specifics.map(entry => entry.rect.y))
-        : Math.max(...specifics.map(entry => entry.rect.y + entry.rect.height));
+        ? Math.min(...children.map(entry => entry.rect.y))
+        : Math.max(...children.map(entry => entry.rect.y + entry.rect.height));
     const bus = Math.round((base.y + nearest) / 2);
 
-    let markup = `<g class="tv-edge tv-genset" data-genset="${escape(genset.id)}">`;
+    let markup = `<g class="tv-edge tv-tree"${plan.marker ? ` data-genset="${escape(plan.marker)}"` : ''}>`;
     markup += `<polygon class="tv-marker" points="${apex.x},${apex.y} ${base.x - 9},${base.y} ${base.x + 9},${base.y}"/>`;
     markup += `<path d="M ${base.x} ${base.y} L ${base.x} ${bus}"/>`;
-    const left = Math.min(...specifics.map(entry => centerOf(entry.rect).x), base.x);
-    const right = Math.max(...specifics.map(entry => centerOf(entry.rect).x), base.x);
+    const left = Math.min(...children.map(entry => centerOf(entry.rect).x), base.x);
+    const right = Math.max(...children.map(entry => centerOf(entry.rect).x), base.x);
     markup += `<path d="M ${round(left)} ${bus} L ${round(right)} ${bus}"/>`;
-    for (const entry of specifics) {
+    for (const entry of children) {
         const centre = centerOf(entry.rect);
-        const top = below ? entry.rect.y : entry.rect.y + entry.rect.height;
-        markup += `<path d="M ${round(centre.x)} ${bus} L ${round(centre.x)} ${round(top)}"/>`;
+        const edge = below ? entry.rect.y : entry.rect.y + entry.rect.height;
+        markup += `<path d="M ${round(centre.x)} ${bus} L ${round(centre.x)} ${round(edge)}"/>`;
     }
 
-    const constraints = [genset.disjoint ? 'disjoint' : '', genset.complete ? 'complete' : ''].filter(Boolean);
-    const setLabel = constraints.length > 0 ? `${genset.name} {${constraints.join(', ')}}` : genset.name;
-    const width = textWidth(setLabel, FONT.edge);
-    const at = placer.place([
-        { x: base.x + width / 2 + 14, y: bus - 6 },
-        { x: base.x - width / 2 - 14, y: bus - 6 },
-        { x: base.x + width / 2 + 14, y: bus + 16 },
-        { x: base.x, y: bus - 20 }
-    ], setLabel);
-    markup += `<text x="${round(at.x)}" y="${round(at.y)}" fill="${theme.muted}" text-anchor="middle" `
-        + `paint-order="stroke" stroke="${theme.background}" stroke-width="3" stroke-linejoin="round">${escape(setLabel)}</text>`;
-    markup += '</g>';
+    if (plan.label) {
+        const label = plan.label;
+        const width = textWidth(label, FONT.edge);
+        const at = placer.place([
+            { x: base.x + width / 2 + 14, y: bus - 6 },
+            { x: base.x - width / 2 - 14, y: bus - 6 },
+            { x: base.x + width / 2 + 14, y: bus + 16 },
+            { x: base.x, y: bus - 20 }
+        ], label);
+        markup += `<text x="${round(at.x)}" y="${round(at.y)}" fill="${theme.muted}" text-anchor="middle" `
+            + `paint-order="stroke" stroke="${theme.background}" stroke-width="3" stroke-linejoin="round">`
+            + `${escape(label)}</text>`;
+    }
+    return markup + '</g>';
+}
 
-    for (const edge of view.edges) {
-        if (edge.kind === 'generalization' && edge.genset === genset.id) {
-            drawn.add(edge.id);
+interface TreePlan {
+    general: string;
+    children: string[];
+    edges: string[];
+    label?: string;
+    marker?: string;
+}
+
+/**
+ * Which specializations are drawn as trees, decided before anything is routed.
+ *
+ * The edges a tree takes over are not routed at all, and must not be: a line
+ * nobody draws still counts as one to the label placer, which would then keep
+ * multiplicities away from lines that are not there.
+ */
+function planTrees(view: ViewModel, positions: Positions): { plans: TreePlan[]; covered: Set<string> } {
+    const plans: TreePlan[] = [];
+    const covered = new Set<string>();
+
+    for (const genset of view.gensets) {
+        if (!genset.general || !canDrawTree(genset.general, genset.specifics, positions)) {
+            continue;
+        }
+        const constraints = [genset.disjoint ? 'disjoint' : '', genset.complete ? 'complete' : ''].filter(Boolean);
+        plans.push({
+            general: genset.general,
+            children: genset.specifics,
+            edges: view.edges
+                .filter(edge => edge.kind === 'generalization' && edge.genset === genset.id)
+                .map(edge => edge.id),
+            label: constraints.length > 0 ? `${genset.name} {${constraints.join(', ')}}` : genset.name,
+            marker: genset.id
+        });
+    }
+    for (const plan of plans) {
+        for (const id of plan.edges) {
+            covered.add(id);
         }
     }
-    return markup;
+
+    const byParent = new Map<string, string[]>();
+    for (const edge of view.edges) {
+        if (edge.kind === 'generalization' && !covered.has(edge.id)) {
+            byParent.set(edge.target, [...(byParent.get(edge.target) ?? []), edge.id]);
+        }
+    }
+    for (const [parent, edgeIds] of byParent) {
+        const children = edgeIds
+            .map(id => view.edges.find(edge => edge.id === id)?.source)
+            .filter((id): id is string => id !== undefined);
+        if (children.length < 2 || !canDrawTree(parent, children, positions)) {
+            continue;
+        }
+        plans.push({ general: parent, children, edges: edgeIds });
+        for (const id of edgeIds) {
+            covered.add(id);
+        }
+    }
+
+    return { plans, covered };
+}
+
+/** A tree reads as one only where every subtype is on the same side. */
+function canDrawTree(generalId: string, childIds: string[], positions: Positions): boolean {
+    const general = positions[generalId];
+    const children = childIds.map(id => positions[id]).filter((rect): rect is Rect => rect !== undefined);
+    if (!general || children.length < 2) {
+        return false;
+    }
+    return children.every(rect => rect.y >= general.y + general.height)
+        || children.every(rect => rect.y + rect.height <= general.y);
 }
 
 function groupBoxes(view: ViewModel, positions: Positions): Array<{ id: string; name: string; rect: Rect }> {
