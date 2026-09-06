@@ -321,7 +321,11 @@ function loopIndex(view: ViewModel): Map<string, { index: number; count: number 
     }
     const loops = new Map<string, { index: number; count: number }>();
     for (const ids of byNode.values()) {
-        ids.forEach((id, index) => loops.set(id, { index, count: ids.length }));
+        // By id, which is the order the ports were given out in. The index sets
+        // how far out a loop runs, so if the two disagree the loop with the
+        // wider berth can start from the inner port and cross the other.
+        [...ids].sort((one, other) => one.localeCompare(other))
+            .forEach((id, index) => loops.set(id, { index, count: ids.length }));
     }
     return loops;
 }
