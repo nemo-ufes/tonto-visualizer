@@ -7,6 +7,7 @@
  */
 
 export * from './geometry.js';
+export * from './handles.js';
 export * from './measure.js';
 export * from './place.js';
 export * from './route.js';

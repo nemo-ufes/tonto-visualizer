@@ -39,7 +39,8 @@ export type ToPanel =
 export type FromPanel =
     | { type: 'ready' }
     | { type: 'moved'; positions: Record<string, Placement>; rerouted: string[] }
-    | { type: 'rerouted'; edge: string; route: EdgeRoute }
+    /** A route the modeller drew, or nothing to give the line back to the router. */
+    | { type: 'rerouted'; edge: string; route?: EdgeRoute }
     | { type: 'selected'; ids: string[] }
     | { type: 'reveal'; id: string }
     | { type: 'display'; display: Partial<DisplayOptions> }

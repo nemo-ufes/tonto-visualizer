@@ -225,7 +225,7 @@ why its generator can only be exercised through the extension.
 |---|---|
 | select | click, shift-click, marquee |
 | move | drag, arrow-key nudge, snap to an 8px grid |
-| route | drag a waypoint onto an edge; double-click a waypoint to drop it |
+| route | select a line, drag a handle to bend it; double-click a bend to drop it |
 | resize | drag a node's corner; double-click to fit the content |
 | hide | hide an element or a whole package, and a panel to bring it back |
 | layout | auto-layout everything, or just the selection |
@@ -316,7 +316,7 @@ Parity *and* the notation the redesign can express, in the first release:
 | M1 | `packages/view`: AST → view model, golden tests, `tonto-view` CLI dumping JSON | done |
 | M2 | `packages/canvas`: elkjs layout, sizes, routing, SVG; `--svg` from the command line | done |
 | M3 | The extension: panel, live redraw on type, last-good render, follow-active-editor, options panel, legend, package filter, SVG export | done |
-| M4 | Interaction: select, drag, snap, hide, auto-layout — and the `.tontoview` file that makes it stick | done, less waypoint handles, resizing, marquee and undo |
+| M4 | Interaction: select, drag, snap, hide, route handles, auto-layout — and the `.tontoview` file that makes it stick | done, less resizing, marquee and undo |
 | M5 | The rest of the notation: gensets, relation stereotypes, MLT, end decorations, datatypes, documentation | done |
 | M6 | Packaging: bundled `.vsix`, README, CI, nightly build against `tontoredesign@main` | CI and the bundle done; the marketplace listing is not |
 
@@ -334,11 +334,23 @@ had been running at ELK's 20px default, which is what left labels with nowhere
 to go. Measured over the four models, lines through unrelated boxes fell from
 10, 2, 3 and 17 to 1, 0, 0 and 1.
 
-What is left, in the order it is worth doing: dragging a route by hand (the file
-format holds routes already, the panel draws no handles), undo/redo over view
-changes, resizing a card, marquee selection, PNG export, and better label
-placement on dense models -- the placer walks its own line and settles for the
-least-bad spot rather than pushing its neighbours aside.
+A route can now be taken hold of. Selecting a line offers a handle on every bend
+it has and a smaller one on every stretch between them; dragging either makes the
+route the modeller's, and double-clicking a bend drops it -- the last one gives
+the line back to the router rather than leaving a two-point route, which would
+keep the ends it was given and lose the ports and the way round anything in
+between. Two things had to be fixed to make it usable at all, both invisible in
+the markup: every `pointerdown` takes pointer capture, which retargets the click
+that follows to the viewport, so `dblclick` never saw what was under it (and
+double-clicking a class had been fitting the diagram to the window rather than
+opening its declaration); and a line is a stroke a pixel wide with its own label
+over the middle of it, so what the pointer is over decides only for boxes and
+handles -- a line is chosen by measuring the pointer against the polylines.
+
+What is left, in the order it is worth doing: undo/redo over view changes,
+resizing a card, marquee selection, PNG export, and better label placement on
+dense models -- the placer walks its own line and settles for the least-bad spot
+rather than pushing its neighbours aside.
 
 ## 12. Risks
 
