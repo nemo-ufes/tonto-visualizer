@@ -18,7 +18,8 @@
         "build": "tsc -b tsconfig.json"
     },
     "dependencies": {
-        "tonto-view": "*"
+        "tonto-view": "*",
+        "tonto-canvas": "*"
     },
     "devDependencies": {
         "shx": "^0.3.4",
