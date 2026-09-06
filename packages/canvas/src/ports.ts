@@ -29,7 +29,7 @@
  */
 
 import type { Point, Rect, Side } from './geometry.js';
-import { centerOf, sideOf } from './geometry.js';
+import { borderPoint, centerOf, sideOf } from './geometry.js';
 
 export interface EdgeEnds {
     source: Point;
@@ -124,7 +124,7 @@ export function endKey(edge: string, node: string): string {
 }
 
 export function assignPorts(
-    edges: Array<{ id: string; source: string; target: string }>,
+    edges: Array<{ id: string; source: string; target: string; kind?: string }>,
     positions: Record<string, Rect>,
     /** The ends to aim through the centre of the box, by `endKey`. */
     through: ReadonlySet<string> = new Set()
@@ -199,6 +199,22 @@ export function assignPorts(
     for (const [edge, pair] of ends) {
         if (pair.source && pair.target) {
             complete.set(edge, { source: pair.source, target: pair.target });
+        }
+    }
+    // Taxonomy is read through the centre of each class. Associations sharing
+    // the same pair may fan out along the border, but they must not push the
+    // generalization triangle away from that centre line.
+    for (const edge of edges) {
+        if (edge.kind !== 'generalization') {
+            continue;
+        }
+        const source = positions[edge.source];
+        const target = positions[edge.target];
+        if (source && target) {
+            complete.set(edge.id, {
+                source: borderPoint(source, centerOf(target)),
+                target: borderPoint(target, centerOf(source))
+            });
         }
     }
     return complete;

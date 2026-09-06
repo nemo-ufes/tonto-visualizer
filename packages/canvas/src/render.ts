@@ -939,19 +939,11 @@ function label(
 }
 
 /**
- * Several specializations of one class, drawn as one tree.
+ * The shared triangle and bus of an explicit generalization set.
  *
- * A generalization set has always been drawn this way -- one triangle, a bus,
- * a leg to each subtype -- because that is what the notation means. Plain
- * generalizations get it too, which UML allows and a taxonomy badly needs: four
- * subtypes each drawing its own line to a supertype across the diagram produce
- * four lines that converge, and two of them will run within a few pixels of each
- * other for hundreds of them. The reader cannot tell such a pair apart, and
- * nothing in the picture says there are two.
- *
- * Only when every subtype is on the same side of the supertype. A tree with legs
- * going three ways says less than three arrows do, so in that case the edges are
- * left to draw themselves.
+ * Ordinary specializations always keep their own lines and triangles. Sharing
+ * those lines merely because several classes specialize the same parent invents
+ * a set that the model never declared.
  */
 interface BusLine {
     y: number;
@@ -1063,28 +1055,8 @@ function planTrees(view: ViewModel, positions: Positions): { plans: TreePlan[]; 
         }
     }
 
-    const byParent = new Map<string, string[]>();
-    for (const edge of view.edges) {
-        if (edge.kind === 'generalization' && !covered.has(edge.id)) {
-            byParent.set(edge.target, [...(byParent.get(edge.target) ?? []), edge.id]);
-        }
-    }
-    for (const [parent, edgeIds] of byParent) {
-        const children = edgeIds
-            .map(id => view.edges.find(edge => edge.id === id)?.source)
-            .filter((id): id is string => id !== undefined);
-        if (children.length < 2 || !canDrawTree(parent, children, positions)) {
-            continue;
-        }
-        plans.push({ general: parent, children, edges: edgeIds, lane: { index: 0, count: 1 } });
-        for (const id of edgeIds) {
-            covered.add(id);
-        }
-    }
-
-    // A class with a generalization set and other subtypes besides has two
-    // trees, and both drew their triangle at the middle of its border and their
-    // bus at the same depth: one tree on top of another, which says there is one.
+    // A class may be the general of several declared sets. Each set needs its
+    // own lane so their triangles and buses do not lie on top of one another.
     const byGeneral = new Map<string, TreePlan[]>();
     for (const plan of plans) {
         byGeneral.set(plan.general, [...(byGeneral.get(plan.general) ?? []), plan]);

@@ -38,4 +38,11 @@ describe('the view store', () => {
             'Sample::Person': { x: 24, y: 48 }
         });
     });
+
+    test('starts with the nature-colour legend hidden', async () => {
+        const store = await ViewStore.open(modelUri() as never, 'Sample', true);
+
+        expect(store.state.display.showLegend).toBe(false);
+        await store.dispose();
+    });
 });

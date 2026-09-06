@@ -20,12 +20,13 @@ function relation(id: string, source: string, target: string): ViewEdge {
     };
 }
 
-function generalization(child: string, parent: string): ViewEdge {
+function generalization(child: string, parent: string, genset?: string): ViewEdge {
     return {
         kind: 'generalization',
         id: `gen:Sample::${child}->Sample::${parent}`,
         source: `Sample::${child}`,
-        target: `Sample::${parent}`
+        target: `Sample::${parent}`,
+        ...(genset ? { genset } : {})
     };
 }
 
@@ -114,13 +115,43 @@ describe('telling one line from another', () => {
         expect(outer![4]!.x).toBeLessThan(inner![4]!.x);
     });
 
-    test('gathers specializations of one class into a single tree', () => {
+    test('keeps ordinary sibling specializations as independent lines', () => {
         const svg = drawnWith(['Person', 'Child', 'Adult', 'Elder'],
             [generalization('Child', 'Person'), generalization('Adult', 'Person'), generalization('Elder', 'Person')],
             { Person: { x: 200, y: 0 }, Child: { x: 0, y: 200 }, Adult: { x: 200, y: 200 }, Elder: { x: 400, y: 200 } });
-        // One triangle, one bus, a leg each: three separate lines to one class
-        // converge, and two of them will run within a few pixels of each other.
+        // A shared triangle asserts a generalization set. A common parent alone
+        // does not make one, so every declaration remains visible as its own
+        // specialization line and marker.
+        expect(svg).not.toContain('tv-tree');
+        expect(Object.keys(paths(svg))).toHaveLength(3);
+        expect(svg.match(/class="tv-marker"/g)).toHaveLength(3);
+    });
+
+    test('shares a tree only for an explicit generalization set', () => {
+        const genset = 'set:Sample::PersonAges';
+        const view: ViewModel = {
+            groups: [],
+            nodes: ['Person', 'Child', 'Adult'].map(classNode),
+            edges: [generalization('Child', 'Person', genset), generalization('Adult', 'Person', genset)],
+            gensets: [{
+                id: genset,
+                name: 'PersonAges',
+                disjoint: true,
+                complete: true,
+                general: 'Sample::Person',
+                specifics: ['Sample::Child', 'Sample::Adult'],
+                categorizers: []
+            }]
+        };
+        const positions = {
+            'Sample::Person': { x: 100, y: 0, width: 120, height: 42 },
+            'Sample::Child': { x: 0, y: 200, width: 120, height: 42 },
+            'Sample::Adult': { x: 200, y: 200, width: 120, height: 42 }
+        };
+        const svg = render({ view, positions, display }).svg;
+
         expect(svg.match(/class="tv-edge tv-tree"/g)).toHaveLength(1);
+        expect(svg).toContain(`data-genset="${genset}"`);
         expect(Object.keys(paths(svg))).toHaveLength(0);
         expect(svg.match(/class="tv-marker"/g)).toHaveLength(1);
     });

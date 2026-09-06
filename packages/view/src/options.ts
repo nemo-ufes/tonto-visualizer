@@ -44,6 +44,8 @@ export interface DisplayOptions {
     showRoleNames: boolean;
     /** Fill elements with their nature colour; off is monochrome. */
     showColors: boolean;
+    /** Show the nature-colour key beside the canvas. */
+    showLegend: boolean;
     /** Box each package. */
     showPackageGroups: boolean;
     /** Write `University::Room` rather than `Room` on the card. */
@@ -74,13 +76,9 @@ export interface LayoutOptions {
     /** Between one rank and the next -- a supertype and its subtypes. */
     rankSpacing: number;
     /**
-     * Lay each package out as a unit, so its classes stay together.
-     *
-     * What a package box is for, and not free: a class that would sit beside the
-     * one it specializes has to stay inside its own package instead, and the
-     * line between them crosses whatever is in the way. Turning it off lays the
-     * model out as one graph; the boxes, if drawn, are then drawn around
-     * wherever the classes ended up.
+     * Prefer classes from one package beside one another while sharing the
+     * taxonomy's ranks across packages. Turning it off lets association and
+     * generalization order alone decide which classes are neighbours.
      */
     groupByPackage: boolean;
 }
@@ -108,6 +106,7 @@ export const defaultDisplayOptions: DisplayOptions = {
     showEndDecorations: true,
     showRoleNames: true,
     showColors: true,
+    showLegend: false,
     showPackageGroups: true,
     qualifyNames: false,
     showDocumentation: true

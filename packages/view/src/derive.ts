@@ -400,6 +400,7 @@ class Derivation {
             return undefined;
         }
         const id = refText.replaceAll('.', '::');
+        const separator = id.lastIndexOf('::');
         if (this.hidden.has(id)) {
             return undefined;
         }
@@ -407,7 +408,7 @@ class Derivation {
             this.put({
                 id,
                 kind: 'unresolved',
-                name: id.slice(id.lastIndexOf('::') + 2),
+                name: separator >= 0 ? id.slice(separator + 2) : id,
                 ...(id.includes('::') ? { package: id.slice(0, id.lastIndexOf('::')) } : {}),
                 color: UNRESOLVED_COLOR,
                 isExternal: true,
