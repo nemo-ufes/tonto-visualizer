@@ -26,8 +26,9 @@ Working end to end, and rough in places.
   disappears behind a class it has nothing to do with is read as ending there.
   Specializations of one class are gathered into a shared tree. Right angles are
   available as an alternative. Automatic layout (ELK, layered) places only what
-  has not been placed by hand, and can be told to ignore the packages and lay
-  the model out as one graph.
+  has not been placed by hand, seats a relator between the classes it mediates
+  -- it is a reified relationship, and that is where a reader looks for it --
+  and can be told to ignore the packages and lay the model out as one graph.
 - `packages/cli` — `tonto-view <file-or-directory> [--svg]`.
 - `packages/extension` — the panel: live redraw as the model is typed, the last
   good picture kept while it does not parse, drag to arrange, double-click to
