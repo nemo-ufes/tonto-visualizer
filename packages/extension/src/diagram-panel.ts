@@ -108,13 +108,18 @@ export class DiagramPanel {
         }
         const sizes = this.sizes(store.state.display);
         const laid = await autoLayout(this.view, sizes, this.positions, {
+            ...store.state.layout,
+            routing: store.state.display.routing,
             grouped: store.state.display.showPackageGroups,
             ...(only ? { only } : {})
         });
         this.positions = laid.positions;
         store.move(Object.fromEntries(Object.entries(laid.positions).map(([id, rect]) => [id, rect])));
-        for (const [id, points] of Object.entries(laid.routes)) {
-            store.reroute(id, { points });
+        // Only an orthogonal drawing has routes to keep; a straight one is
+        // recomputed from the boxes, so what is on screen after an arrange is
+        // the same kind of line as after a drag.
+        for (const edge of this.view.edges) {
+            store.reroute(edge.id, laid.routes[edge.id] ? { points: laid.routes[edge.id]! } : undefined);
         }
         this.send();
     }
@@ -207,6 +212,7 @@ export class DiagramPanel {
             routes: store.state.edges,
             display: store.state.display,
             content: store.state.content,
+            layout: store.state.layout,
             packages: [...new Set(this.view.nodes.map(node => node.package ?? ''))].filter(Boolean).sort(),
             title: this.document ? nameOf(this.document.uri) : 'Tonto',
             ...(stale ? { stale } : {})
@@ -260,8 +266,25 @@ export class DiagramPanel {
                 return;
             case 'display':
                 if (store) {
+                    const before = store.state.display.routing;
                     store.update({ display: { ...store.state.display, ...message.display } });
+                    if (message.display.routing && message.display.routing !== before) {
+                        // The routes belong to the style that made them: an
+                        // orthogonal drawing's bends are nonsense as straight
+                        // lines, and a straight drawing has none to keep.
+                        for (const edge of this.view.edges) {
+                            store.reroute(edge.id, undefined);
+                        }
+                        await this.autoLayoutNow();
+                        return;
+                    }
                     this.send();
+                }
+                return;
+            case 'layout':
+                if (store) {
+                    store.update({ layout: { ...store.state.layout, ...message.layout } });
+                    await this.autoLayoutNow();
                 }
                 return;
             case 'content':

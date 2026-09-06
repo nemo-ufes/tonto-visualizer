@@ -10,7 +10,7 @@
 import type { EdgeRoute, ViewEdge, ViewGenset, ViewModel, ViewNode, ViewRelation } from 'tonto-view';
 import type { DisplayOptions } from 'tonto-view';
 import type { Point, Rect } from './geometry.js';
-import { alongPath, boundsOf, centerOf, overlaps } from './geometry.js';
+import { alongPath, boundsOf, centerOf } from './geometry.js';
 import { attributeLines, FONT, NODE, nodeLabel, stereotypeLabel, textWidth } from './measure.js';
 import type { Positions } from './place.js';
 import { routeEdge } from './route.js';
@@ -54,14 +54,15 @@ export function render(input: RenderInput): Rendered {
 
     const paths: Record<string, Point[]> = {};
     const drawnByGenset = new Set<string>();
+    const placer = new LabelPlacer(rects);
+    const spreads = spreadIndex(view);
     const gensetMarkup = view.gensets
-        .map(genset => drawGenset(genset, view, positions, theme, drawnByGenset))
+        .map(genset => drawGenset(genset, view, positions, theme, drawnByGenset, placer))
         .join('');
 
     // Labels are drawn last, over the boxes. A line may pass behind a class --
     // that reads as a line -- but a cardinality hidden behind one has simply
     // gone missing, and the reader has no way to know it was there.
-    const placer = new LabelPlacer(rects);
     let labelMarkup = '';
     const edgeMarkup = view.edges
         .map(edge => {
@@ -73,7 +74,12 @@ export function render(input: RenderInput): Rendered {
             if (!source || !target) {
                 return '';
             }
-            const points = routeEdge(source, target, input.routes?.[edge.id]?.points);
+            const points = routeEdge(source, target, {
+                ...(input.routes?.[edge.id]?.points ? { stored: input.routes[edge.id]!.points! } : {}),
+                style: display.routing,
+                spread: spreads.get(edge.id) ?? { index: 0, count: 1 },
+                obstacles: rects
+            });
             paths[edge.id] = points;
             labelMarkup += drawEdgeLabels(edge, points, display, theme, placer);
             return drawEdge(edge, points, theme, selected.has(edge.id));
@@ -110,6 +116,28 @@ export function render(input: RenderInput): Rendered {
 ${groups.map(group => drawGroup(group)).join('')}${edgeMarkup}${gensetMarkup}${nodeMarkup}<g class="tv-labels">${labelMarkup}</g></svg>`;
 
     return { svg, bounds: { x: origin.x, y: origin.y, width, height }, paths };
+}
+
+/**
+ * Which of the edges between a pair of boxes each edge is.
+ *
+ * Two relations between the same relator and class are one line drawn twice
+ * unless they are told to run apart -- invisible with orthogonal corridors,
+ * where the jog happens to differ, and unmissable with straight lines. The pair
+ * is unordered: an edge drawn back the other way is still beside the first, not
+ * on top of it.
+ */
+function spreadIndex(view: ViewModel): Map<string, { index: number; count: number }> {
+    const groups = new Map<string, string[]>();
+    for (const edge of view.edges) {
+        const key = [edge.source, edge.target].sort().join('\u0000');
+        groups.set(key, [...(groups.get(key) ?? []), edge.id]);
+    }
+    const spreads = new Map<string, { index: number; count: number }>();
+    for (const ids of groups.values()) {
+        ids.forEach((id, index) => spreads.set(id, { index, count: ids.length }));
+    }
+    return spreads;
 }
 
 function drawNode(node: ViewNode, rect: Rect, display: DisplayOptions, theme: Theme, isSelected: boolean): string {
@@ -190,19 +218,51 @@ class LabelPlacer {
 
     constructor(private readonly nodes: Rect[]) {}
 
-    /** The first candidate whose box is clear, or the first candidate. */
+    /**
+     * The first clear candidate, or -- in a corner of the diagram where nothing
+     * is clear -- the one that covers least.
+     *
+     * Taking the first candidate when all of them collide is what left
+     * "«componenthood» has" printed across a class: the label had nowhere good
+     * to go, and nowhere good was read as "anywhere". Least-bad still lands on
+     * something, but on the smallest something, and usually on a line rather
+     * than on a name.
+     */
     place(candidates: Point[], text: string): Point {
+        let best: { at: Point; box: Rect; penalty: number } | undefined;
         for (const candidate of candidates) {
             const box = boxOf(candidate, text);
-            if (!this.nodes.some(rect => overlaps(box, rect)) && !this.taken.some(rect => overlaps(box, rect))) {
+            const penalty = this.penaltyOf(box);
+            if (penalty === 0) {
                 this.taken.push(box);
                 return candidate;
             }
+            if (!best || penalty < best.penalty) {
+                best = { at: candidate, box, penalty };
+            }
         }
-        const fallback = candidates[0] ?? { x: 0, y: 0 };
-        this.taken.push(boxOf(fallback, text));
-        return fallback;
+        const fallback = best ?? { at: candidates[0] ?? { x: 0, y: 0 }, box: boxOf(candidates[0] ?? { x: 0, y: 0 }, text), penalty: 0 };
+        this.taken.push(fallback.box);
+        return fallback.at;
     }
+
+    /** How much of what is already drawn this label would cover. A class counts double. */
+    private penaltyOf(box: Rect): number {
+        let penalty = 0;
+        for (const rect of this.nodes) {
+            penalty += overlapArea(box, rect) * 2;
+        }
+        for (const rect of this.taken) {
+            penalty += overlapArea(box, rect);
+        }
+        return penalty;
+    }
+}
+
+function overlapArea(one: Rect, other: Rect): number {
+    const width = Math.min(one.x + one.width, other.x + other.width) - Math.max(one.x, other.x);
+    const height = Math.min(one.y + one.height, other.y + other.height) - Math.max(one.y, other.y);
+    return width > 0 && height > 0 ? width * height : 0;
 }
 
 function boxOf(anchor: Point, text: string): Rect {
@@ -272,19 +332,11 @@ function endLabel(
     // became "[11*]".
     const text = parts.join(' ');
     const width = textWidth(text, FONT.edge);
+    const total = pathLength(points);
+    const forwards = atSource ? points : [...points].reverse();
     const candidates: Point[] = [];
-    for (const distance of [16, 28, 42, 58]) {
-        const anchor = alongPath(points, atSource, distance);
-        const next = alongPath(points, atSource, distance + 10);
-        const horizontal = Math.abs(next.x - anchor.x) >= Math.abs(next.y - anchor.y);
-        if (horizontal) {
-            candidates.push({ x: anchor.x, y: anchor.y - 7 }, { x: anchor.x, y: anchor.y + 15 });
-        } else {
-            candidates.push(
-                { x: anchor.x + width / 2 + 6, y: anchor.y + 4 },
-                { x: anchor.x - width / 2 - 6, y: anchor.y + 4 }
-            );
-        }
+    for (const distance of [18, 30, 46, 64]) {
+        candidates.push(...besideLine(forwards, Math.min(distance, total), width, [1, -1, 2, -2]));
     }
     const at = placer.place(candidates, text);
     return label(at.x, at.y, text, theme, 'middle', 'tv-end');
@@ -295,12 +347,39 @@ function centreLabel(points: Point[], text: string, theme: Theme, placer: LabelP
     // Outwards from the middle: the middle reads as "this whole line", and the
     // further a label sits from it the more it looks like it belongs to one end.
     const fractions = [0.5, 0.42, 0.58, 0.34, 0.66, 0.26, 0.74];
+    const width = textWidth(text, FONT.edge);
     const candidates = fractions.flatMap(fraction => {
-        const point = alongPath(points, true, length * fraction);
-        return [{ x: point.x, y: point.y - 6 }, { x: point.x, y: point.y + 14 }];
+        const at = length * fraction;
+        return besideLine(points, at, width, [0, 1, -1, 2, -2]);
     });
     const at = placer.place(candidates, text);
     return label(at.x, at.y, text, theme, 'middle');
+}
+
+/**
+ * Places beside the line at a point along it, stepped off along the line's own
+ * perpendicular.
+ *
+ * Offsetting downwards is right for a horizontal edge and useless for a vertical
+ * one, where it slides the label along the line it is trying to get off. On a
+ * taxonomy -- where nearly every edge is vertical -- that was every label
+ * landing on its own line or on the box below.
+ */
+function besideLine(points: Point[], at: number, width: number, steps: number[]): Point[] {
+    const here = alongPath(points, true, at);
+    const ahead = alongPath(points, true, at + 12);
+    const dx = ahead.x - here.x;
+    const dy = ahead.y - here.y;
+    const length = Math.hypot(dx, dy) || 1;
+    const vertical = Math.abs(dy) > Math.abs(dx);
+    // Off a vertical line by half the label's width plus a margin, off a
+    // horizontal one by a line's height: what it takes to clear it either way.
+    const reach = vertical ? width / 2 + 8 : 13;
+    const normal = { x: -(dy / length), y: dx / length };
+    return steps.map(step => ({
+        x: here.x + normal.x * reach * step,
+        y: here.y + normal.y * reach * step + (vertical ? 4 : step === 0 ? -6 : 0)
+    }));
 }
 
 function pathLength(points: Point[]): number {
@@ -338,7 +417,8 @@ function drawGenset(
     view: ViewModel,
     positions: Positions,
     theme: Theme,
-    drawn: Set<string>
+    drawn: Set<string>,
+    placer: LabelPlacer
 ): string {
     const general = genset.general ? positions[genset.general] : undefined;
     const specifics = genset.specifics
@@ -377,7 +457,14 @@ function drawGenset(
 
     const constraints = [genset.disjoint ? 'disjoint' : '', genset.complete ? 'complete' : ''].filter(Boolean);
     const setLabel = constraints.length > 0 ? `${genset.name} {${constraints.join(', ')}}` : genset.name;
-    markup += `<text x="${round(base.x + 12)}" y="${round(bus - 6)}" fill="${theme.muted}" `
+    const width = textWidth(setLabel, FONT.edge);
+    const at = placer.place([
+        { x: base.x + width / 2 + 14, y: bus - 6 },
+        { x: base.x - width / 2 - 14, y: bus - 6 },
+        { x: base.x + width / 2 + 14, y: bus + 16 },
+        { x: base.x, y: bus - 20 }
+    ], setLabel);
+    markup += `<text x="${round(at.x)}" y="${round(at.y)}" fill="${theme.muted}" text-anchor="middle" `
         + `paint-order="stroke" stroke="${theme.background}" stroke-width="3" stroke-linejoin="round">${escape(setLabel)}</text>`;
     markup += '</g>';
 

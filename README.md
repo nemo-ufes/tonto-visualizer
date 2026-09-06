@@ -20,8 +20,10 @@ Working end to end, and rough in places.
   package groups and generalization sets, with ids stable across edits, colours
   from the natures a class actually classifies, and unresolved names drawn
   rather than dropped.
-- `packages/canvas` — sizes, placement, orthogonal routing and SVG. Automatic
-  layout (ELK) places only what has not been placed by hand.
+- `packages/canvas` — sizes, placement, routing and SVG. Lines are straight by
+  default, spread apart where several join the same pair, and bent round a class
+  they would otherwise cross; right angles are available for taxonomies.
+  Automatic layout (ELK, layered) places only what has not been placed by hand.
 - `packages/cli` — `tonto-view <file-or-directory> [--svg]`.
 - `packages/extension` — the panel: live redraw as the model is typed, the last
   good picture kept while it does not parse, drag to arrange, double-click to

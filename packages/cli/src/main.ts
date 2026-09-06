@@ -9,7 +9,8 @@
 import { statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { derive, defaultDisplayOptions } from 'tonto-view';
+import type { DisplayOptions, LayoutOptions } from 'tonto-view';
+import { defaultDisplayOptions, defaultLayoutOptions, derive } from 'tonto-view';
 import { ViewSession } from 'tonto-view/session';
 import { autoLayout, darkTheme, placeNewNodes, render, sizeOf } from 'tonto-canvas';
 
@@ -20,6 +21,9 @@ diagram of the model would hold.
 
   --svg              draw it, rather than describing it
   --dark             the dark theme, with --svg
+  --layout <name>    layered (default), stress, mrtree, radial, force
+  --routing <name>   straight (default) or orthogonal
+  --direction <dir>  DOWN (default) or RIGHT
   --package <name>   restrict the view to this package; repeatable
   --no-external      leave out elements from packages outside the view
   --no-datatypes     leave out datatypes and enumerations
@@ -36,6 +40,9 @@ export async function run(argv: string[]): Promise<number> {
     let showDatatypes = true;
     let asSvg = false;
     let dark = false;
+    let algorithm: LayoutOptions['algorithm'] = defaultLayoutOptions.algorithm;
+    let routing: DisplayOptions['routing'] = defaultDisplayOptions.routing;
+    let direction: LayoutOptions['direction'] = defaultLayoutOptions.direction;
     const paths: string[] = [];
     for (let index = 0; index < argv.length; index += 1) {
         const argument = argv[index]!;
@@ -55,6 +62,12 @@ export async function run(argv: string[]): Promise<number> {
             asSvg = true;
         } else if (argument === '--dark') {
             dark = true;
+        } else if (argument === '--layout') {
+            algorithm = argv[++index] as LayoutOptions['algorithm'];
+        } else if (argument === '--routing') {
+            routing = argv[++index] as DisplayOptions['routing'];
+        } else if (argument === '--direction') {
+            direction = argv[++index] as LayoutOptions['direction'];
         } else {
             paths.push(argument);
         }
@@ -86,9 +99,13 @@ export async function run(argv: string[]): Promise<number> {
     // Nothing is placed here -- a command line has no saved arrangement -- so
     // this is the picture a view gets the first time it is opened: laid out
     // automatically, and afterwards the modeller's to move.
-    const display = { ...defaultDisplayOptions };
+    const display: DisplayOptions = { ...defaultDisplayOptions, routing };
     const sizes = Object.fromEntries(view.nodes.map(node => [node.id, sizeOf(node, display)]));
     const laid = await autoLayout(view, sizes, placeNewNodes(view, sizes, {}), {
+        ...defaultLayoutOptions,
+        algorithm,
+        direction,
+        routing,
         grouped: display.showPackageGroups
     });
     const drawn = render({

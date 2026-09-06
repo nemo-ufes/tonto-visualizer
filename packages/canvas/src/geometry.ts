@@ -72,6 +72,43 @@ export function sideOf(rect: Rect, point: Point): Side {
     return dy >= 0 ? 'bottom' : 'top';
 }
 
+/**
+ * Whether a segment passes through a rectangle.
+ *
+ * Liang-Barsky: clip the segment against each of the four edges in turn and see
+ * whether any of it is left. Exact, allocation-free, and the inner loop of every
+ * route that goes round a box rather than through it.
+ */
+export function segmentHitsRect(from: Point, to: Point, rect: Rect, margin = 0): boolean {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    let enter = 0;
+    let leave = 1;
+    const clip = (direction: number, distance: number): boolean => {
+        if (direction === 0) {
+            // Parallel to this pair of edges: outside them means never inside.
+            return distance >= 0;
+        }
+        const ratio = distance / direction;
+        if (direction < 0) {
+            if (ratio > leave) {
+                return false;
+            }
+            enter = Math.max(enter, ratio);
+        } else {
+            if (ratio < enter) {
+                return false;
+            }
+            leave = Math.min(leave, ratio);
+        }
+        return true;
+    };
+    return clip(-dx, from.x - (rect.x - margin))
+        && clip(dx, rect.x + rect.width + margin - from.x)
+        && clip(-dy, from.y - (rect.y - margin))
+        && clip(dy, rect.y + rect.height + margin - from.y);
+}
+
 export function distance(one: Point, other: Point): number {
     return Math.hypot(one.x - other.x, one.y - other.y);
 }

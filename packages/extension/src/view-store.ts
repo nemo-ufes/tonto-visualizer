@@ -51,7 +51,7 @@ export class ViewStore {
         this.schedule();
     }
 
-    update(patch: Partial<Pick<ViewFile, 'content' | 'display'>>): void {
+    update(patch: Partial<Pick<ViewFile, 'content' | 'display' | 'layout'>>): void {
         this.file = { ...this.file, ...patch };
         this.schedule();
     }
