@@ -10,7 +10,9 @@ supplies the grammar, the checks and the language server. This repository
 supplies the picture, and draws it itself: no PlantUML, no Graphviz, no
 rendering server, nothing sent anywhere.
 
-See [docs/PLAN.md](docs/PLAN.md) for what is being built and why.
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) is how it is put together,
+[`AGENTS.md`](AGENTS.md) is how to work on it, and [`docs/PLAN.md`](docs/PLAN.md)
+is what was being built and why.
 
 ## Status
 

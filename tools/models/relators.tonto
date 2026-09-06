@@ -1,0 +1,39 @@
+// Four relators, for tools/relators.mjs and tools/through.py.
+//
+// A relator is a reified relationship, so a reader looks for it between the
+// classes it mediates, with the two mediations reading as one line through it.
+// The four cover what makes that hard: two relata, three relata, relata that
+// are roles under a common kind, and relata that are the kinds themselves.
+package Relators
+
+kind Person
+kind Organization
+kind Car
+kind Building
+
+role Employee specializes Person
+role Employer specializes Organization
+role Owner specializes Person
+role Tenant specializes Person
+role Landlord specializes Person
+
+relator Employment {
+    @mediation [1..*] -- [1] (const) Employee
+    @mediation [1..*] -- [1] (const) Employer
+}
+
+relator CarOwnership {
+    @mediation [1..*] -- [1] (const) Owner
+    @mediation [1..*] -- [1] (const) Car
+}
+
+relator Tenancy {
+    @mediation [1..*] -- [1] (const) Tenant
+    @mediation [1..*] -- [1] (const) Landlord
+    @mediation [1..*] -- [1] (const) Building
+}
+
+relator Enrolment {
+    @mediation [1..*] -- [1] (const) Person
+    @mediation [1..*] -- [1] (const) Organization
+}

@@ -14,6 +14,12 @@ picture. Neither that repository nor
 The functionality being replicated is the PlantUML preview in `nemo-ufes/Tonto`.
 The *feature* carries over; the *engine* does not — see §4.
 
+> **This is the plan, written before any of it existed**, and it is kept for the
+> reasoning: why the generator could not be copied, why the engine is here, what
+> the notation has to cover. For how the code is actually put together now, read
+> [`ARCHITECTURE.md`](ARCHITECTURE.md); for how to work on it,
+> [`../AGENTS.md`](../AGENTS.md).
+
 ---
 
 ## 1. What the feature is today
@@ -192,28 +198,18 @@ Four packages, npm workspaces, ESM, the conventions of the redesign repo
 (4-space indent, `tsc -b`, vitest, eslint):
 
     tonto-visualizer/
-      vendor/tontoredesign/          git submodule, pinned
+      vendor/tontoredesign/    git submodule, pinned
       packages/
-        view/                        AST → view model. Pure; no DOM, no vscode.
-          src/derive.ts              the walk over Package/ClassDeclaration/Relation/GeneralizationSet
-          src/ids.ts                 stable ids for nodes, edges and gensets
-          src/natures.ts             nature → color, and the legend
-          src/options.ts             the display options and their defaults
-          src/viewfile.ts            the *.tontoview format: read, merge, migrate
-          test/                      golden view models over the example models
-        canvas/                      the webview app
-          src/layout.ts              elkjs, with pinned positions
-          src/render/                shapes, edges, labels, markers
-          src/interact/              select, drag, waypoints, marquee, undo
-          src/main.ts                the message protocol with the host
-        extension/                   the host side
-          src/extension.ts           activation, commands
-          src/model/session.ts       Langium workspace, dirty buffers, debounce
-          src/panel.ts               the webview panel and its messages
-          src/exports.ts             SVG / PNG / view file
-          esbuild.mjs
-        cli/                         headless: model → SVG, for CI and for docs
-          bin/tonto-view.js
+        view/                  AST → view model. Pure; no DOM, no vscode.
+        canvas/                sizes, placement, routing, SVG
+        extension/             the host side, and the webview app under src/webview
+        cli/                   headless: model → SVG, for CI and for docs
+
+> The file-by-file tree that stood here was the plan, and the code went another
+> way in several places — layout, rendering and interaction are not the three
+> directories it named, and the webview app lives in `packages/extension`
+> rather than in `canvas`. [`ARCHITECTURE.md`](ARCHITECTURE.md) describes what
+> is actually there and is the one to keep true.
 
 `view/` never imports `vscode` or touches the DOM, so the derivation is testable
 from a terminal and reusable by the CLI. The old code mixes all three, which is
@@ -334,11 +330,34 @@ had been running at ELK's 20px default, which is what left labels with nowhere
 to go. Measured over the four models, lines through unrelated boxes fell from
 10, 2, 3 and 17 to 1, 0, 0 and 1.
 
-What is left, in the order it is worth doing: dragging a route by hand (the file
-format holds routes already, the panel draws no handles), undo/redo over view
-changes, resizing a card, marquee selection, PNG export, and better label
-placement on dense models -- the placer walks its own line and settles for the
-least-bad spot rather than pushing its neighbours aside.
+Readability was then worked the same way, and the measurements it produced are
+now `tools/` -- run them before and after anything that draws. What came out of
+it: a line bends round a box in its way rather than passing behind it (one bend,
+then two); specializations of one class are gathered into a shared tree with its
+own lane, so two trees at one rank cannot be drawn on top of each other; every
+end of every edge gets its own place on the border; labels are placed against
+*all* the routes rather than only the ones drawn so far, and pay for the
+distance from where they belong, so none is flung into empty space; the packages
+can be ignored for layout, which some models want and others do not; a relator
+is seated between the classes it mediates; and a mediation meets a relator on
+the ray out of its centre, so the pair reads as one line through it. Lines
+behind a class went from 4 to 0 over the five examples, and superimposed pixels
+from 3486 to 1097 over the four that had any. Misread labels are not comparable
+across the whole span -- the metric was made stricter twice on the way -- and
+stand at 75 of 372 labels; `tools/README.md` has the current figures per model.
+
+What is left, in the order it is worth doing:
+
+1. **`gufo` and `boats`.** They hold every remaining superimposed pixel (750
+   and 347) and 65 of the 75 misread labels. Both are dense taxonomies with
+   many self-loops and many relations between the same pair, which is what the
+   drawing is worst at.
+2. **Label placement that pushes back.** The placer walks its own line and
+   settles for the least-bad spot rather than moving a neighbour that has a
+   better one available.
+3. **Dragging a route by hand.** The file format holds routes already; the
+   panel draws no handles.
+4. Undo/redo over view changes, resizing a card, marquee selection, PNG export.
 
 ## 12. Risks
 
