@@ -159,4 +159,47 @@ describe('what a line must not do', () => {
         expect(svg).toContain('>B</text>');
         expect(svg).not.toContain('>A</text>');
     });
+
+    /**
+     * A relator is a reified relationship, and the reader follows the two
+     * mediations through it as one line. Anchored on their share of the border,
+     * both met the middle of a side -- one arriving from the left, the other
+     * leaving to the right, which reads as two lines meeting at a box.
+     */
+    test('anchors a relator\'s mediations so that the line reads through it', () => {
+        const mediation = (id: string, source: string, target: string): ViewEdge =>
+            ({ ...relation(id, source, target), stereotype: 'mediation' });
+        const view: ViewModel = {
+            groups: [], gensets: [],
+            nodes: [
+                classNode('Employee'), classNode('Employer'),
+                { ...classNode('Employment'), stereotype: 'relator', color: '#99FF99' }
+            ],
+            edges: [
+                mediation('toEmployee', 'Employment', 'Employee'),
+                mediation('toEmployer', 'Employment', 'Employer')
+            ]
+        };
+        // The three on one diagonal, the relator squarely between the other two.
+        const positions = {
+            'Sample::Employee': { x: 0, y: 0, width: 120, height: 42 },
+            'Sample::Employment': { x: 300, y: 200, width: 120, height: 42 },
+            'Sample::Employer': { x: 600, y: 400, width: 120, height: 42 }
+        };
+        const drawn = paths(render({ view, positions, display }).svg);
+        const at = (path: string, end: 'first' | 'last') => {
+            const points = [...path.matchAll(/[ML] ([-\d.]+) ([-\d.]+)/g)]
+                .map(match => ({ x: Number(match[1]), y: Number(match[2]) }));
+            return (end === 'first' ? points[0] : points[points.length - 1])!;
+        };
+        // Each mediation is written from the relator, so its path starts there.
+        const into = at(drawn.toEmployee!, 'first');
+        const outOf = at(drawn.toEmployer!, 'first');
+        expect(into.y).toBe(200);
+        expect(outOf.y).toBe(242);
+        // Aimed through the box: the end towards the class up and to the left
+        // sits left of the end towards the class down and to the right, and the
+        // two are far enough apart to be seen as one line crossing the box.
+        expect(outOf.x - into.x).toBeGreaterThan(30);
+    });
 });

@@ -13,7 +13,7 @@ import type { Point, Rect } from './geometry.js';
 import { alongPath, boundsOf, centerOf, distanceToPath, segmentHitsRect } from './geometry.js';
 import { attributeLines, FONT, multiplicityLabel, NODE, nodeLabel, stereotypeLabel, textWidth } from './measure.js';
 import type { Positions } from './place.js';
-import { assignPorts } from './ports.js';
+import { assignPorts, endKey } from './ports.js';
 import { routeEdge } from './route.js';
 import type { Theme } from './theme.js';
 import { lightTheme } from './theme.js';
@@ -39,6 +39,73 @@ export interface Rendered {
 const GROUP_HEADER = 20;
 const GROUP_PADDING = 18;
 
+/** Whether the straight line between two boxes has anything else in the way. */
+function isClear(positions: Record<string, Rect>, one: string, other: string, view: ViewModel): boolean {
+    const from = positions[one];
+    const to = positions[other];
+    if (!from || !to) {
+        return false;
+    }
+    const start = centerOf(from);
+    const end = centerOf(to);
+    return !view.nodes.some(node => {
+        const rect = node.id === one || node.id === other ? undefined : positions[node.id];
+        return rect !== undefined && segmentHitsRect(start, end, rect, 6);
+    });
+}
+
+/**
+ * The mediation ends that meet a relator.
+ *
+ * A relator is a reified relationship: the mediations are what it relates by,
+ * and the reader follows them through it, from one relatum to the other. It is
+ * the nature that decides, not the stereotype -- a role played by a relator, an
+ * employment under contract, is as much the relationship as the relator it
+ * specializes.
+ */
+function mediationsThrough(view: ViewModel, positions: Record<string, Rect>): Set<string> {
+    const relators = new Set(view.nodes
+        .filter(node => node.stereotype === 'relator' || node.natures?.natures.includes('relators'))
+        .map(node => node.id));
+    const mediations = view.edges.filter(edge =>
+        edge.kind === 'relation' && edge.stereotype === 'mediation' && edge.source !== edge.target);
+
+    // A relator that mediates one class twice -- a marriage and its two spouses
+    // -- cannot be read through: both lines leave for the same place, and aiming
+    // them both at the centre points them along each other. Those keep their
+    // share of the border, which is what tells them apart.
+    const twice = new Set<string>();
+    const seen = new Set<string>();
+    for (const edge of mediations) {
+        for (const end of [edge.source, edge.target]) {
+            if (!relators.has(end)) {
+                continue;
+            }
+            const pair = endKey(end === edge.source ? edge.target : edge.source, end);
+            if (seen.has(pair)) {
+                twice.add(pair);
+            }
+            seen.add(pair);
+        }
+    }
+
+    const through = new Set<string>();
+    for (const edge of mediations) {
+        for (const end of [edge.source, edge.target]) {
+            const far = end === edge.source ? edge.target : edge.source;
+            const pair = endKey(far, end);
+            // A line that has to go round something is not read through the
+            // relator whatever it is anchored on: it leaves for its detour long
+            // before the reader can follow it across. Those keep their share of
+            // the border, which is at least where the labels expect them.
+            if (relators.has(end) && !twice.has(pair) && isClear(positions, end, far, view)) {
+                through.add(endKey(edge.id, end));
+            }
+        }
+    }
+    return through;
+}
+
 export function render(input: RenderInput): Rendered {
     const { view, positions, display } = input;
     const theme = input.theme ?? lightTheme;
@@ -50,8 +117,10 @@ export function render(input: RenderInput): Rendered {
     const groups = display.showPackageGroups ? groupBoxes(view, positions) : [];
 
     // Where each line meets each box, spread along the border so that two
-    // associations between the same neighbours do not arrive as one line.
-    const ports = assignPorts(view.edges, positions);
+    // associations between the same neighbours do not arrive as one line --
+    // except at a relator, where a mediation is anchored on the ray out of the
+    // centre so that the pair of them reads as one line passing through it.
+    const ports = assignPorts(view.edges, positions, mediationsThrough(view, positions));
     const loops = loopIndex(view);
 
     // Every route is computed before any label is placed. A label belongs to one

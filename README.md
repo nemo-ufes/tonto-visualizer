@@ -24,11 +24,14 @@ Working end to end, and rough in places.
   default, each with its own place on the border of the classes it joins, and
   bent -- twice if it takes twice -- round any class in the way: a line that
   disappears behind a class it has nothing to do with is read as ending there.
-  Specializations of one class are gathered into a shared tree. Right angles are
-  available as an alternative. Automatic layout (ELK, layered) places only what
-  has not been placed by hand, seats a relator between the classes it mediates
-  -- it is a reified relationship, and that is where a reader looks for it --
-  and can be told to ignore the packages and lay the model out as one graph.
+  Specializations of one class are gathered into a shared tree. A mediation
+  meets a relator on the ray out of its centre, so that the two of them read as
+  one line passing through the relator rather than as two lines meeting at a
+  box. Right angles are available as an alternative. Automatic layout (ELK,
+  layered) places only what has not been placed by hand, seats a relator between
+  the classes it mediates -- it is a reified relationship, and that is where a
+  reader looks for it -- and can be told to ignore the packages and lay the
+  model out as one graph.
 - `packages/cli` — `tonto-view <file-or-directory> [--svg]`.
 - `packages/extension` — the panel: live redraw as the model is typed, the last
   good picture kept while it does not parse, drag to arrange, double-click to
