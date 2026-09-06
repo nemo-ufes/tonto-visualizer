@@ -16,10 +16,15 @@ jobs:
       # scoped to this one, so it cannot clone the submodule: checkout stops on
       # a bare "Repository not found" that reads like the repository is gone.
       # Say what is actually missing before spending a runner on it.
-      - if: ${{ !secrets.LANGUAGE_TOKEN }}
+      # The secrets context is not one a step's `if` may read, so the check is
+      # made in the shell over an environment variable, which may.
+      - env:
+          LANGUAGE_TOKEN: ${{ secrets.LANGUAGE_TOKEN }}
         run: |
-          echo "::error::vendor/tontoredesign is private and the LANGUAGE_TOKEN secret is not set, so the submodule cannot be cloned. Set a token with read access to jpalmeida/tontoredesign as the LANGUAGE_TOKEN repository secret, or make that repository public and drop the secret from this workflow."
-          exit 1
+          if [ -z "$LANGUAGE_TOKEN" ]; then
+            echo "::error::vendor/tontoredesign is private and the LANGUAGE_TOKEN secret is not set, so the submodule cannot be cloned. Set a token with read access to jpalmeida/tontoredesign as the LANGUAGE_TOKEN repository secret, or make that repository public and drop the secret from this workflow."
+            exit 1
+          fi
       - uses: actions/checkout@v4
         with:
           submodules: recursive
