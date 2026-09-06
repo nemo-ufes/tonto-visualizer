@@ -273,15 +273,21 @@ Parity *and* the notation the redesign can express, in the first release:
 
 ## 11. Milestones
 
-| | |
-|---|---|
-| M0 | Scaffold: workspaces, tsconfig, eslint, vitest, submodule, and a build of `tonto-language` proven to work |
-| M1 | `packages/view`: AST → view model, golden tests, `tonto-view` CLI dumping JSON |
-| M2 | `packages/canvas` read-only: elkjs layout, SVG for classes, generalizations, relations; zoom/pan |
-| M3 | The extension: panel, live preview on type, last-good render, follow-active-editor, options panel, legend, package filter, exports |
-| M4 | Interaction: select, drag, snap, waypoints, hide, auto-layout, undo — and the `.tontoview` file that makes it stick |
-| M5 | The rest of the notation: gensets, relation stereotypes, MLT, end decorations, datatypes, documentation |
-| M6 | Packaging: bundled `.vsix`, README, CI, nightly build against `tontoredesign@main` |
+| | | |
+|---|---|---|
+| M0 | Scaffold: workspaces, tsconfig, vitest, submodule, and a build of `tonto-language` proven to work | done |
+| M1 | `packages/view`: AST → view model, golden tests, `tonto-view` CLI dumping JSON | done |
+| M2 | `packages/canvas`: elkjs layout, sizes, routing, SVG; `--svg` from the command line | done |
+| M3 | The extension: panel, live redraw on type, last-good render, follow-active-editor, options panel, legend, package filter, SVG export | done |
+| M4 | Interaction: select, drag, snap, hide, auto-layout — and the `.tontoview` file that makes it stick | done, less waypoint handles, resizing, marquee and undo |
+| M5 | The rest of the notation: gensets, relation stereotypes, MLT, end decorations, datatypes, documentation | done |
+| M6 | Packaging: bundled `.vsix`, README, CI, nightly build against `tontoredesign@main` | CI and the bundle done; the marketplace listing is not |
+
+What is left, in the order it is worth doing: dragging a route by hand (the file
+format holds routes already, the panel draws no handles), undo/redo over view
+changes, resizing a card, marquee selection, PNG export, and better label
+placement on dense models -- the placer walks its own line and gives up rather
+than pushing its neighbours aside.
 
 ## 12. Risks
 
