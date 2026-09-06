@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { derive } from '../src/index.js';
@@ -106,10 +107,36 @@ role Student specializes Missing
             .toEqual(['Parties::Employee', 'Parties::Organization']);
     });
 
+    test('centres a file view on its packages and keeps imports external', async () => {
+        const session = new ViewSession({ workspace: [parties] });
+        const uri = pathToFileURL(resolve(parties, 'employment.tonto')).toString();
+        const models = await session.models();
+        const focused = await session.modelsOf(uri, models);
+        const includedPackages = focused.flatMap(model => model.packages.map(one => one.name));
+        const view = derive({ models, options: { includedPackages } });
+        expect(view.groups.filter(group => !group.isExternal).map(group => group.name)).toEqual(['Employment']);
+        expect(view.groups.filter(group => group.isExternal).map(group => group.name)).toEqual(['Parties']);
+    });
+
+    test('drops datatype nodes and the attributes typed by them together', async () => {
+        const view = await viewOfFixture({ showDatatypes: false });
+        expect(view.nodes.some(node => node.kind === 'datatype' || node.kind === 'enumeration')).toBe(false);
+        expect(view.nodes.flatMap(node => node.attributes)).toEqual([]);
+    });
+
     test('hides an element and every edge that touched it', async () => {
         const view = await viewOfFixture({ hidden: ['Parties::Person'] });
         expect(view.nodes.map(node => node.id)).not.toContain('Parties::Person');
         expect(view.edges.some(edge => edge.source === 'Parties::Person' || edge.target === 'Parties::Person')).toBe(false);
+    });
+
+    test('hides an edge without renaming the other edges', async () => {
+        const before = await viewOfFixture();
+        const hidden = before.edges.find(edge => edge.kind === 'relation');
+        expect(hidden).toBeDefined();
+        const after = await viewOfFixture({ hidden: [hidden!.id] });
+        expect(after.edges.map(edge => edge.id)).toEqual(
+            before.edges.filter(edge => edge.id !== hidden!.id).map(edge => edge.id));
     });
 
     test('gives an element the same id after the text around it moves', async () => {
@@ -127,6 +154,27 @@ role Employee specializes Person
         const kept = (ids: string[]) => ids.filter(id => id !== 'Sample::Organization');
         expect(kept(after.nodes.map(node => node.id))).toEqual(before.nodes.map(node => node.id));
         expect(kept(after.edges.map(edge => edge.id))).toEqual(before.edges.map(edge => edge.id));
+    });
+
+    test('reloads the file from disk when an editor buffer is reverted', async () => {
+        const session = new ViewSession({ workspace: [parties] });
+        const uri = pathToFileURL(resolve(parties, 'employment.tonto')).toString();
+        const packages = async () => (await session.models())
+            .flatMap(model => model.packages.map(one => one.name)).sort();
+        expect(await packages()).toEqual(['Employment', 'Parties']);
+        await session.update(uri, 'package Temporary\nkind Draft\n');
+        expect(await packages()).toEqual(['Parties', 'Temporary']);
+        await session.revert(uri);
+        expect(await packages()).toEqual(['Employment', 'Parties']);
+    });
+
+    test('keeps view order stable after replacing an editor buffer', async () => {
+        const session = new ViewSession({ workspace: [parties] });
+        const uri = pathToFileURL(resolve(parties, 'employment.tonto')).toString();
+        const before = stripLocations(derive({ models: await session.models() }));
+        await session.update(uri, readFileSync(resolve(parties, 'employment.tonto'), 'utf8'));
+        const after = stripLocations(derive({ models: await session.models() }));
+        expect(after).toEqual(before);
     });
 });
 

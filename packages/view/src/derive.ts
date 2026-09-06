@@ -181,7 +181,7 @@ class Derivation {
                 ? this.reference(parent.ref)
                 : this.unresolved(parent.$refText);
             if (target) {
-                this.edges.push({ kind: 'generalization', id: generalizationId(id, target), source: id, target });
+                this.addEdge({ kind: 'generalization', id: generalizationId(id, target), source: id, target });
             }
         }
 
@@ -191,7 +191,7 @@ class Derivation {
                 ? this.reference(instantiated.ref)
                 : this.unresolved(instantiated.$refText);
             if (target) {
-                this.edges.push({ kind: 'instantiation', id: instantiationId(id, target), source: id, target });
+                this.addEdge({ kind: 'instantiation', id: instantiationId(id, target), source: id, target });
             }
         }
 
@@ -228,7 +228,7 @@ class Derivation {
         for (const parent of declaration.specializes) {
             const target = parent.ref ? this.reference(parent.ref) : this.unresolved(parent.$refText);
             if (target) {
-                this.edges.push({ kind: 'generalization', id: generalizationId(id, target), source: id, target });
+                this.addEdge({ kind: 'generalization', id: generalizationId(id, target), source: id, target });
             }
         }
         return id;
@@ -249,7 +249,7 @@ class Derivation {
         const id = this.relationIds.next(source, target, relation.stereotype, relation.name);
         this.idOf.set(relation, id);
         const whole = isParthood(relation) ? wholeEndOf(relation) : undefined;
-        this.edges.push({
+        this.addEdge({
             kind: 'relation',
             id,
             source,
@@ -383,16 +383,27 @@ class Derivation {
     }
 
     private attributesOf(attributes: Attribute[]): ViewAttribute[] {
-        return attributes.map(attribute => ({
-            name: attribute.name,
-            type: attribute.type?.ref?.name ?? attribute.type?.$refText ?? '?',
-            ...(attribute.cardinality ? { cardinality: cardinality(attribute.cardinality) } : {}),
-            stereotypes: [...attribute.stereotypes],
-            isOrdered: attribute.isOrdered,
-            isConst: attribute.isConst,
-            isAddOnly: attribute.isAddOnly,
-            isDerived: attribute.isDerived
-        }));
+        return attributes
+            .filter(attribute => this.options.showDatatypes
+                || (!isDatatype(attribute.type?.ref) && !isEnumeration(attribute.type?.ref)))
+            .map(attribute => ({
+                name: attribute.name,
+                type: attribute.type?.ref?.name ?? attribute.type?.$refText ?? '?',
+                ...(attribute.cardinality ? { cardinality: cardinality(attribute.cardinality) } : {}),
+                stereotypes: [...attribute.stereotypes],
+                isOrdered: attribute.isOrdered,
+                isConst: attribute.isConst,
+                isAddOnly: attribute.isAddOnly,
+                isDerived: attribute.isDerived
+            }));
+    }
+
+    private addEdge(edge: ViewEdge): void {
+        // Hidden edges still consume their stable id, so hiding the first of two
+        // otherwise identical relations cannot rename the second one.
+        if (!this.hidden.has(edge.id)) {
+            this.edges.push(edge);
+        }
     }
 
     private endOf(

@@ -11,7 +11,7 @@
 import type { ContentOptions, DisplayOptions, EdgeRoute, LayoutOptions, ViewModel } from 'tonto-view';
 import { natureLegend } from 'tonto-view/palette';
 import type { Rect } from 'tonto-canvas/draw';
-import { darkTheme, lightTheme, render, routeEdge } from 'tonto-canvas/draw';
+import { darkTheme, lightTheme, render, routeEdge, segmentHitsRect } from 'tonto-canvas/draw';
 
 interface HostApi {
     postMessage(message: unknown): void;
@@ -70,6 +70,7 @@ window.addEventListener('message', event => {
         staleLabel.hidden = !message.stale;
         staleLabel.textContent = message.stale ? `does not parse — showing the last good diagram` : '';
         draw();
+        updateArrangeTitle();
         if (optionsPanel.hidden === false) {
             fillOptions();
         }
@@ -77,6 +78,7 @@ window.addEventListener('message', event => {
     } else if (message.type === 'select') {
         selection = new Set(message.ids);
         applySelection();
+        updateArrangeTitle();
     } else if (message.type === 'theme') {
         dark = message.dark;
         document.body.classList.toggle('dark', dark);
@@ -141,6 +143,7 @@ viewport.addEventListener('pointerdown', event => {
         const edgeId = edgeGroup?.getAttribute('data-edge');
         selection = edgeId ? new Set([edgeId]) : new Set();
         applySelection();
+        reportSelection();
         if (!edgeId) {
             dragging = { ids: [], startX: event.clientX, startY: event.clientY, moved: false, origin: {} };
         }
@@ -150,6 +153,7 @@ viewport.addEventListener('pointerdown', event => {
     if (!selection.has(id)) {
         selection = event.shiftKey ? new Set([...selection, id]) : new Set([id]);
         applySelection();
+        reportSelection();
     }
     const ids = [...selection].filter(candidate => positions[candidate]);
     dragging = {
@@ -199,6 +203,19 @@ viewport.addEventListener('pointerup', () => {
         return;
     }
     const moved = new Set(drag.ids);
+    const rerouted = view.edges
+        .filter(edge => {
+            if (moved.has(edge.source) || moved.has(edge.target)) {
+                return true;
+            }
+            const points = routes[edge.id]?.points;
+            return points !== undefined && drag.ids.some(id => {
+                const rect = positions[id];
+                return rect !== undefined && points.slice(1).some((point, index) =>
+                    segmentHitsRect(points[index]!, point, rect, 4));
+            });
+        })
+        .map(edge => edge.id);
     host.postMessage({
         type: 'moved',
         positions: Object.fromEntries(drag.ids.map(id => [id, {
@@ -207,14 +224,10 @@ viewport.addEventListener('pointerup', () => {
             width: positions[id]!.width,
             height: positions[id]!.height
         }])),
-        rerouted: view.edges
-            .filter(edge => moved.has(edge.source) || moved.has(edge.target))
-            .map(edge => edge.id)
+        rerouted
     });
-    for (const edge of view.edges) {
-        if (moved.has(edge.source) || moved.has(edge.target)) {
-            delete routes[edge.id];
-        }
+    for (const edge of rerouted) {
+        delete routes[edge];
     }
     draw();
 });
@@ -256,6 +269,7 @@ window.addEventListener('keydown', event => {
         if (selection.size > 0) {
             host.postMessage({ type: 'hide', ids: [...selection] });
             selection = new Set();
+            reportSelection();
         }
     }
 });
@@ -267,10 +281,27 @@ function applySelection(): void {
     }
 }
 
+function reportSelection(): void {
+    host.postMessage({ type: 'selected', ids: [...selection] });
+    updateArrangeTitle();
+}
+
+function updateArrangeTitle(): void {
+    const selectedNodes = [...selection].filter(id => positions[id] !== undefined).length;
+    element('arrange').title = selectedNodes > 0
+        ? `Arrange ${selectedNodes} selected node${selectedNodes === 1 ? '' : 's'} automatically`
+        : 'Arrange the whole diagram automatically';
+}
+
 element('zoomIn').addEventListener('click', () => zoomAt(scale * 1.2, centreX(), centreY()));
 element('zoomOut').addEventListener('click', () => zoomAt(scale / 1.2, centreX(), centreY()));
 element('fit').addEventListener('click', fit);
-element('arrange').addEventListener('click', () => host.postMessage({ type: 'autoLayout' }));
+element('arrange').addEventListener('click', () => {
+    const selectedNodes = [...selection].filter(id => positions[id] !== undefined);
+    host.postMessage(selectedNodes.length > 0
+        ? { type: 'autoLayout', only: selectedNodes }
+        : { type: 'autoLayout' });
+});
 element('exportButton').addEventListener('click', () => host.postMessage({ type: 'export', format: 'svg' }));
 element('optionsButton').addEventListener('click', () => {
     optionsPanel.hidden = !optionsPanel.hidden;
@@ -303,24 +334,31 @@ function fillOptions(): void {
     ];
 
     optionsPanel.replaceChildren();
-    optionsPanel.append(section('Shape', [
+    const algorithm = layout?.algorithm ?? 'layered';
+    const arrangement = [
         choice('Lines', [['straight', 'Straight'], ['orthogonal', 'Right-angled']], display.routing,
             value => host.postMessage({ type: 'display', display: { routing: value as DisplayOptions['routing'] } })),
         choice('Arrangement', [
             ['layered', 'Layered (taxonomy)'],
             ['stress', 'Spread'],
             ['mrtree', 'Tree'],
-            ['radial', 'Radial']
-        ], layout?.algorithm ?? 'layered',
-            value => host.postMessage({ type: 'layout', layout: { algorithm: value as LayoutOptions['algorithm'] } })),
-        choice('Direction', [['DOWN', 'Top to bottom'], ['RIGHT', 'Left to right']], layout?.direction ?? 'DOWN',
-            value => host.postMessage({ type: 'layout', layout: { direction: value as LayoutOptions['direction'] } })),
-        // Not free: a class that would sit beside the one it specializes has to
-        // stay inside its own package instead. Worth offering both ways round,
-        // since which reads better depends on the model.
-        toggle('Keep packages together', layout?.groupByPackage ?? true,
-            value => host.postMessage({ type: 'layout', layout: { groupByPackage: value } }))
-    ]));
+            ['radial', 'Radial'],
+            ['force', 'Force-directed']
+        ], algorithm,
+            value => host.postMessage({ type: 'layout', layout: { algorithm: value as LayoutOptions['algorithm'] } }))
+    ];
+    if (algorithm === 'layered' || algorithm === 'mrtree') {
+        arrangement.push(
+            choice('Direction', [['DOWN', 'Top to bottom'], ['RIGHT', 'Left to right']], layout?.direction ?? 'DOWN',
+                value => host.postMessage({ type: 'layout', layout: { direction: value as LayoutOptions['direction'] } })),
+            // Not free: a class that would sit beside the one it specializes has
+            // to stay inside its own package instead. Worth offering both ways
+            // round, since which reads better depends on the model.
+            toggle('Keep packages together', layout?.groupByPackage ?? true,
+                value => host.postMessage({ type: 'layout', layout: { groupByPackage: value } }))
+        );
+    }
+    optionsPanel.append(section('Shape', arrangement));
     optionsPanel.append(section('Drawn', displayRows.map(([key, label]) =>
         toggle(label, Boolean(display?.[key]), value => host.postMessage({ type: 'display', display: { [key]: value } })))));
     optionsPanel.append(section('Included', contentRows.map(([key, label]) =>

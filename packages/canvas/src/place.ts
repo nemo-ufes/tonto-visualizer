@@ -40,8 +40,11 @@ export function placeNewNodes(
             positions[node.id] = {
                 x: placement.x,
                 y: placement.y,
-                width: placement.width ?? size.width,
-                height: placement.height ?? size.height
+                // Cards are not manually resizable yet. Width and height in an
+                // older view file describe what the card used to contain, not a
+                // choice that should make new attributes overflow their box.
+                width: size.width,
+                height: size.height
             };
         }
     }
@@ -85,7 +88,10 @@ function findSpot(size: Size, anchors: Rect[], taken: Rect[]): Rect {
             }
         }
     }
-    return candidate;
+    // A very dense or deliberately hand-packed diagram can occupy the whole
+    // search radius. Returning the last rejected candidate silently overlaps a
+    // box; below the complete occupied bounds is less local, but always free.
+    return { ...nextFreeRow(taken, size), width: size.width, height: size.height };
 }
 
 function centreBelow(anchors: Rect[], size: Size): { x: number; y: number } {

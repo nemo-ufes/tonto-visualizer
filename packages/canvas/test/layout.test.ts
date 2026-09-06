@@ -2,9 +2,25 @@ import { describe, expect, test } from 'vitest';
 import type { ViewModel } from 'tonto-view';
 import { defaultDisplayOptions, defaultLayoutOptions } from 'tonto-view';
 import { autoLayout } from '../src/autolayout.js';
+import type { Point, Rect } from '../src/geometry.js';
+import { overlaps } from '../src/geometry.js';
 import { sizeOf } from '../src/measure.js';
 
 const display = { ...defaultDisplayOptions };
+
+function onBorder(point: Point | undefined, rect: Rect): boolean {
+    if (!point) {
+        return false;
+    }
+    const tolerance = 1;
+    const inside = point.x >= rect.x - tolerance && point.x <= rect.x + rect.width + tolerance
+        && point.y >= rect.y - tolerance && point.y <= rect.y + rect.height + tolerance;
+    const atEdge = Math.abs(point.x - rect.x) <= tolerance
+        || Math.abs(point.x - (rect.x + rect.width)) <= tolerance
+        || Math.abs(point.y - rect.y) <= tolerance
+        || Math.abs(point.y - (rect.y + rect.height)) <= tolerance;
+    return inside && atEdge;
+}
 
 /** A supertype with `count` subtypes, in one package. */
 function taxonomy(count: number): ViewModel {
@@ -172,5 +188,93 @@ describe('packages and the layout', () => {
             value >= Math.min(one, other) - 24 && value <= Math.max(one, other) + 24;
         expect(within(relator.x, relata[0]!.x, relata[1]!.x)).toBe(true);
         expect(within(relator.y, relata[0]!.y, relata[1]!.y)).toBe(true);
+    });
+
+    test('does not settle an unselected relator during a partial layout', async () => {
+        const clazz = (name: string, stereotype: string) => ({
+            id: `Sample::${name}`, kind: 'class' as const, name, package: 'Sample',
+            stereotype, color: '#FF99A3', isExternal: false, attributes: []
+        });
+        const view: ViewModel = {
+            groups: [],
+            nodes: [clazz('Left', 'kind'), clazz('Right', 'kind'), clazz('Relation', 'relator')],
+            edges: [
+                { kind: 'relation', id: 'left', stereotype: 'mediation', source: 'Sample::Relation', target: 'Sample::Left' },
+                { kind: 'relation', id: 'right', stereotype: 'mediation', source: 'Sample::Relation', target: 'Sample::Right' }
+            ],
+            gensets: []
+        };
+        const sizes = Object.fromEntries(view.nodes.map(node => [node.id, sizeOf(node, display)]));
+        const positions = {
+            'Sample::Left': { x: 0, y: 0, ...sizes['Sample::Left']! },
+            'Sample::Right': { x: 0, y: 500, ...sizes['Sample::Right']! },
+            'Sample::Relation': { x: 1000, y: 250, ...sizes['Sample::Relation']! }
+        };
+        const laid = await autoLayout(view, sizes, positions, {
+            ...defaultLayoutOptions,
+            only: ['Sample::Left']
+        });
+        expect(laid.positions['Sample::Relation']).toEqual(positions['Sample::Relation']);
+    });
+
+    test('keeps a partial layout beside, rather than over, unselected nodes', async () => {
+        const clazz = (id: string) => ({
+            id, kind: 'class' as const, name: id, package: 'Sample', stereotype: 'kind',
+            color: '#FF99A3', isExternal: false, attributes: []
+        });
+        const view: ViewModel = { groups: [], nodes: [clazz('A'), clazz('B')], edges: [], gensets: [] };
+        const sizes = { A: { width: 100, height: 60 }, B: { width: 100, height: 60 } };
+        const learned = await autoLayout(view, sizes, {}, {
+            ...defaultLayoutOptions, groupByPackage: false, only: ['A']
+        });
+        const current = {
+            A: { x: 500, y: 500, ...sizes.A },
+            B: { ...learned.positions.A! }
+        };
+        const laid = await autoLayout(view, sizes, current, {
+            ...defaultLayoutOptions, groupByPackage: false, only: ['A']
+        });
+
+        expect(laid.positions.B).toEqual(current.B);
+        expect(overlaps(laid.positions.A!, laid.positions.B!)).toBe(false);
+    });
+
+    test('returns orthogonal routes attached source to target after settling relators', async () => {
+        const clazz = (id: string, stereotype = 'kind') => ({
+            id, kind: 'class' as const, name: id, package: 'Sample', stereotype,
+            color: '#FF99A3', isExternal: false, attributes: []
+        });
+        const relata = Array.from({ length: 3 }, (_, index) => `A${index}`);
+        const extras = Array.from({ length: 3 }, (_, index) => `X${index}`);
+        const nodes = [clazz('R', 'relator'), ...relata.map(id => clazz(id)), ...extras.map(id => clazz(id))];
+        const edges: ViewModel['edges'] = [];
+        for (let index = 0; index < 3; index += 1) {
+            edges.push({
+                kind: 'relation', id: `m${index}`, stereotype: 'mediation', source: 'R', target: `A${index}`
+            });
+            edges.push({
+                kind: 'relation', id: `x${index}`, stereotype: 'association', source: `A${index}`, target: `X${index}`
+            });
+            if (index > 0) {
+                edges.push({ kind: 'generalization', id: `g${index}`, source: `X${index}`, target: 'X0' });
+            }
+        }
+        const view: ViewModel = { groups: [], nodes, edges, gensets: [] };
+        const sizes = Object.fromEntries(nodes.map(node => [node.id, {
+            width: 100 + (node.id.charCodeAt(0) % 3) * 20,
+            height: 60
+        }]));
+        const laid = await autoLayout(view, sizes, {}, {
+            ...defaultLayoutOptions, groupByPackage: false, routing: 'orthogonal'
+        });
+
+        for (const edge of edges) {
+            const route = laid.routes[edge.id];
+            if (!route) {
+                continue;
+            }
+            expect(onBorder(route[0], laid.positions[edge.source]!)).toBe(true);
+            expect(onBorder(route.at(-1), laid.positions[edge.target]!)).toBe(true);
+        }
     });
 });
