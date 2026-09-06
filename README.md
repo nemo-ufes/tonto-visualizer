@@ -34,10 +34,15 @@ Working end to end, and rough in places.
 The notation covers classes with stereotypes and attributes, datatypes and
 enumerations, generalizations, generalization sets as one shared triangle with
 `{disjoint, complete}`, relations with their stereotype and UML's solid
-reading-direction triangle, cardinalities and role names on opposite sides of
+reading-direction triangle, multiplicities and role names on opposite sides of
 each end, whole-part diamonds, `instanceOf`, and an open padlock on an end that
 is not `const` -- an end that cannot change is the ordinary case, so the
 exception is what carries a mark.
+
+Multiplicities are written as a diagram writes them: no brackets, and nothing at
+all where the multiplicity is `1`, which is what an end means when it says
+nothing. Attributes keep their brackets, where UML puts them and where the
+multiplicity has a type beside it to be told apart from.
 
 Not there yet: dragging a route by hand (the file format holds them; the panel
 does not draw the handles), undo/redo, resizing a card, marquee selection, PNG

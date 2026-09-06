@@ -4,7 +4,7 @@ import { defaultDisplayOptions } from 'tonto-view';
 import { placeNewNodes } from '../src/place.js';
 import { render } from '../src/render.js';
 import { routeEdge } from '../src/route.js';
-import { sizeOf } from '../src/measure.js';
+import { multiplicityLabel, sizeOf } from '../src/measure.js';
 
 const display = { ...defaultDisplayOptions };
 
@@ -174,9 +174,31 @@ describe('drawing', () => {
         // Multiplicity on one side of the line, role name on the other: run
         // together they read as one phrase, and on a busy diagram there is no
         // telling which half belongs to which end.
-        expect(labels.length).toBeGreaterThanOrEqual(3);
-        const distinct = new Set(labels.map(one => `${one.x},${one.y}`));
-        expect(distinct.size).toEqual(labels.length);
+        expect(labels).toHaveLength(2);
+        expect(labels[0]).not.toEqual(labels[1]);
+    });
+
+    test('writes a multiplicity the way a diagram does', () => {
+        // Brackets are the textual syntax, where a multiplicity has to be told
+        // apart from what surrounds it. On a line it stands alone.
+        expect(multiplicityLabel('2..*')).toBe('2..*');
+        expect(multiplicityLabel('*')).toBe('*');
+        expect(multiplicityLabel('0..1')).toBe('0..1');
+        // `1` is what an end means when it says nothing.
+        expect(multiplicityLabel('1')).toBeUndefined();
+        expect(multiplicityLabel('1..1')).toBeUndefined();
+        // A range with one value in it is that value; `0..*` is `*`.
+        expect(multiplicityLabel('3..3')).toBe('3');
+        expect(multiplicityLabel('0..*')).toBe('*');
+        expect(multiplicityLabel(undefined)).toBeUndefined();
+    });
+
+    test('leaves the default multiplicity off the line entirely', () => {
+        const svg = drawn(related()).svg;
+        expect(svg).toContain('>1..*<');
+        expect(svg).not.toContain('[1..*]');
+        // The target end is exactly one, which is what the line already says.
+        expect(svg).not.toMatch(/>\[?1\]?</);
     });
 
     test('drops the decorations, the padlock included, when they are turned off', () => {

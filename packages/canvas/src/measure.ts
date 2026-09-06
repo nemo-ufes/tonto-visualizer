@@ -65,6 +65,32 @@ export const NODE = {
     nameHeight: 19
 } as const;
 
+/**
+ * A multiplicity as a diagram writes it, or nothing at all.
+ *
+ * Brackets are Tonto's textual syntax, where a multiplicity has to be told apart
+ * from what surrounds it; on a diagram it stands alone at the end of a line and
+ * the brackets are two more marks to read. And `1` is what an end means when it
+ * says nothing, so writing it says nothing twice -- on a model of any size that
+ * is a `1` beside almost every line, which is noise the reader has to look past
+ * to find the multiplicities that do say something.
+ */
+export function multiplicityLabel(cardinality: string | undefined): string | undefined {
+    if (!cardinality) {
+        return undefined;
+    }
+    const [lower, upper] = cardinality.split('..');
+    if (upper === undefined) {
+        return lower === '1' ? undefined : lower;
+    }
+    if (lower === upper) {
+        // `3..3` is three, and `1..1` is the default said twice.
+        return lower === '1' ? undefined : lower;
+    }
+    // `0..*` and `*` are the same range; the shorter is what a diagram uses.
+    return lower === '0' && upper === '*' ? '*' : `${lower}..${upper}`;
+}
+
 /** The lines of the attribute compartment, as they are drawn. */
 export function attributeLines(node: ViewNode, options: DisplayOptions): string[] {
     if (!options.showAttributes) {
@@ -81,7 +107,11 @@ export function attributeLines(node: ViewNode, options: DisplayOptions): string[
             attribute.isDerived ? 'derived' : undefined
         ].filter(Boolean).join(' ');
         const stereotypes = attribute.stereotypes.map(one => `@${one}`).join(' ');
-        const cardinality = attribute.cardinality ? ` [${attribute.cardinality}]` : '';
+        // Brackets stay here, where UML puts them and where the multiplicity
+        // has a type to be told apart from -- but an explicit `1` is the default
+        // written down, and says no more on an attribute than on an end.
+        const multiplicity = multiplicityLabel(attribute.cardinality);
+        const cardinality = multiplicity ? ` [${multiplicity}]` : '';
         return `${stereotypes ? `${stereotypes} ` : ''}${attribute.name}: ${flags ? `${flags} ` : ''}${attribute.type}${cardinality}`;
     });
 }
