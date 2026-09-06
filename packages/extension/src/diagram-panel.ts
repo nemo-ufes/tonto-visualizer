@@ -517,7 +517,7 @@ export class DiagramPanel {
         <div id="canvas"></div>
     </div>
     <div id="legend" class="legend" hidden></div>
-    <div id="hint" class="hint">Drag to move · double-click to open the declaration · scroll to zoom</div>
+    <div id="hint" class="hint">Drag to move · click a line to take hold of its route · double-click to open the declaration · scroll to zoom</div>
 </div>
 <script nonce="${nonce}" src="${script}"></script>
 </body>

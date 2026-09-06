@@ -19,6 +19,19 @@ describe('the panel chrome', () => {
         expect(bare).toEqual([]);
     });
 
+    /**
+     * SVG hit-tests a shape against what it is painted with, so a handle drawn
+     * as an outline is only its outline as far as the pointer is concerned --
+     * a dashed ring 1.4px wide, which the line underneath took every click
+     * aimed at. Nothing about the picture says so; it looks exactly right and
+     * cannot be grabbed.
+     */
+    test('lets the whole of a route handle be grabbed, not just what it is painted with', () => {
+        const handle = /#canvas \.tv-handle \{([^}]*)\}/.exec(stylesheet);
+        expect(handle).not.toBeNull();
+        expect(handle![1]).toContain('pointer-events: all');
+    });
+
     test('falls back to the font the diagram is drawn in', () => {
         // Chrome and drawing should agree when neither is being told what to
         // use; the stack is the one in packages/canvas/src/measure.ts.

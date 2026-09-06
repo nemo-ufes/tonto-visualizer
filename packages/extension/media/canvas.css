@@ -109,6 +109,42 @@ button:hover {
     user-select: none;
 }
 
+/*
+ * The handles on the selected line. Drawn over the diagram by the panel and
+ * never by `render`, which also draws the export.
+ *
+ * Filled with the background rather than left hollow: a handle sits on its own
+ * line, and an outline with the line running through it reads as a bead on a
+ * string rather than as something to take hold of. The one offering a bend that
+ * does not exist yet is hollow, because it is an offer.
+ */
+#canvas .tv-handle {
+    fill: var(--vscode-editor-background, #f7f6f2);
+    stroke: var(--vscode-focusBorder, #1f5c5c);
+    cursor: grab;
+    /*
+     * Hit-tested on the whole disc whatever it is painted with. SVG tests a
+     * shape against its fill, and the handle offering a bend is `fill: none` --
+     * which left a 1.4px dashed outline as the only thing the pointer could
+     * find, and the line underneath took every click aimed at it.
+     */
+    pointer-events: all;
+}
+
+/*
+ * The offer of a bend that does not exist yet, so quieter than a bend that
+ * does -- but not a dashed outline, which at this size is mush rather than a
+ * hint, and left the only affordance on the line invisible.
+ */
+#canvas .tv-handle-new {
+    opacity: 0.7;
+}
+
+#canvas .tv-handle:hover {
+    fill: var(--vscode-focusBorder, #1f5c5c);
+    opacity: 1;
+}
+
 .panel {
     position: absolute;
     top: 40px;

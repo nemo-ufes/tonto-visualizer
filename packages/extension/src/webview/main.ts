@@ -10,8 +10,11 @@
 
 import type { ContentOptions, DisplayOptions, EdgeRoute, LayoutOptions, ViewModel } from 'tonto-view';
 import { natureLegend } from 'tonto-view/palette';
-import type { Rect } from 'tonto-canvas/draw';
-import { darkTheme, lightTheme, render, routeEdge, segmentHitsRect } from 'tonto-canvas/draw';
+import type { Handle, Point, Rect } from 'tonto-canvas/draw';
+import {
+    darkTheme, distanceToPath, dropHandle, handlesFor, lightTheme, moveHandle, render, routeEdge,
+    segmentHitsRect
+} from 'tonto-canvas/draw';
 
 interface HostApi {
     postMessage(message: unknown): void;
@@ -47,6 +50,8 @@ let panY = stored.y ?? 0;
 let bounds: Rect = { x: 0, y: 0, width: 1, height: 1 };
 /** Set while a drag is in flight, so a redraw does not yank the boxes back. */
 let dragging: DragState | undefined;
+/** The polyline each edge was last drawn along, which is what a handle holds. */
+let paths: Record<string, Point[]> = {};
 
 interface DragState {
     ids: string[];
@@ -54,6 +59,8 @@ interface DragState {
     startY: number;
     moved: boolean;
     origin: Record<string, Rect>;
+    /** Set instead of `ids` when what is being dragged is a bend in a line. */
+    route?: { edge: string; handle: Handle; from: Point[] };
 }
 
 window.addEventListener('message', event => {
@@ -99,14 +106,117 @@ function draw(): void {
         selection: [...selection]
     });
     bounds = drawn.bounds;
+    paths = drawn.paths;
     canvas.innerHTML = drawn.svg;
+    drawHandles();
     applyViewport();
+}
+
+/**
+ * The handles on the selected line, over the drawing rather than in it.
+ *
+ * They are an offer to change the arrangement, not part of the picture, so they
+ * are added here and never by `render` -- which also draws the export, and an
+ * exported SVG with grab handles in it would be nobody's idea of a diagram.
+ *
+ * Only one line at a time. Every line at once is a field of dots, and the
+ * question a handle asks -- do you want this line to go round there? -- is
+ * about the line the modeller has in front of them.
+ */
+function drawHandles(): void {
+    const svg = canvas.querySelector('svg');
+    svg?.querySelector('.tv-handles')?.remove();
+    const selected = [...selection];
+    const edge = selected.length === 1 ? selected[0]! : undefined;
+    const points = edge ? paths[edge] : undefined;
+    if (!svg || !edge || !points || dragging?.ids.length) {
+        return;
+    }
+    const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    group.setAttribute('class', 'tv-handles');
+    group.setAttribute('data-handles', edge);
+    // Sized against the zoom, so a handle is the same target on screen whether
+    // the diagram is being read whole or a corner of it is filling the panel.
+    const radius = 4.5 / scale;
+    for (const [index, handle] of handlesFor(points).entries()) {
+        const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        dot.setAttribute('class', `tv-handle${handle.kind === 'new' ? ' tv-handle-new' : ''}`);
+        dot.setAttribute('data-handle', String(index));
+        dot.setAttribute('cx', String(handle.at.x));
+        dot.setAttribute('cy', String(handle.at.y));
+        dot.setAttribute('r', String(handle.kind === 'new' ? radius * 0.8 : radius));
+        dot.setAttribute('stroke-width', String(1.4 / scale));
+        group.append(dot);
+    }
+    svg.append(group);
+}
+
+/**
+ * Where the pointer is, in the coordinates the diagram is drawn in.
+ *
+ * Asked of the SVG rather than worked out from the pan and the zoom: the same
+ * two numbers derived twice drift apart, and this one is used to decide what was
+ * clicked on.
+ */
+function diagramPoint(event: { clientX: number; clientY: number }): Point | undefined {
+    const svg = canvas.querySelector('svg');
+    const matrix = svg?.getScreenCTM()?.inverse();
+    if (!svg || !matrix) {
+        return undefined;
+    }
+    const point = svg.createSVGPoint();
+    point.x = event.clientX;
+    point.y = event.clientY;
+    const at = point.matrixTransform(matrix);
+    return { x: at.x, y: at.y };
+}
+
+/**
+ * The line near enough the pointer to have been aimed at.
+ *
+ * A line is a stroke a pixel and a bit wide, which is a hard thing to hit and an
+ * impossible one where its own label sits over it -- and a line has to be
+ * selected before its route can be taken hold of. So what is under the pointer
+ * decides only when it is a box or a handle; for lines, the pointer is measured
+ * against the polylines themselves, and the nearest within reach wins.
+ */
+function nearestLine(event: { clientX: number; clientY: number }): string | undefined {
+    const at = diagramPoint(event);
+    if (!at) {
+        return undefined;
+    }
+    const reach = 6 / scale;
+    let best: { edge: string; distance: number } | undefined;
+    for (const [edge, points] of Object.entries(paths)) {
+        const distance = distanceToPath(at, points);
+        if (distance <= reach && (!best || distance < best.distance)) {
+            best = { edge, distance };
+        }
+    }
+    return best?.edge;
+}
+
+/** The handle a pointer is on, and the line it belongs to. */
+function handleAt(target: Element): { edge: string; handle: Handle } | undefined {
+    const dot = target.closest('[data-handle]');
+    const edge = dot?.parentElement?.getAttribute('data-handles') ?? undefined;
+    const points = edge ? paths[edge] : undefined;
+    const handle = points ? handlesFor(points)[Number(dot!.getAttribute('data-handle'))] : undefined;
+    return edge && handle ? { edge, handle } : undefined;
+}
+
+/** Draws one line along a polyline, without redrawing anything else. */
+function repaint(edge: string, points: Point[]): void {
+    const path = canvas.querySelector(`[data-edge="${cssEscape(edge)}"] path`) as SVGPathElement | null;
+    path?.setAttribute('d', points.map((point, index) =>
+        `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' '));
 }
 
 function applyViewport(): void {
     canvas.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
     scaleLabel.textContent = `${Math.round(scale * 100)}%`;
     host.setState({ scale, x: panX, y: panY });
+    drawHandles();
 }
 
 function fit(): void {
@@ -134,13 +244,25 @@ function zoomAt(next: number, clientX: number, clientY: number): void {
 
 viewport.addEventListener('pointerdown', event => {
     const target = event.target as Element;
+    viewport.setPointerCapture(event.pointerId);
+
+    // Before anything else: a handle sits over the line it belongs to, and the
+    // line is already selected, so neither the selection nor a pan is wanted.
+    const held = handleAt(target);
+    if (held) {
+        dragging = {
+            ids: [], startX: event.clientX, startY: event.clientY, moved: false, origin: {},
+            route: { edge: held.edge, handle: held.handle, from: paths[held.edge]! }
+        };
+        return;
+    }
+
     const nodeGroup = target.closest('[data-node]');
     const id = nodeGroup?.getAttribute('data-node') ?? undefined;
-    viewport.setPointerCapture(event.pointerId);
 
     if (!id) {
         const edgeGroup = target.closest('[data-edge]');
-        const edgeId = edgeGroup?.getAttribute('data-edge');
+        const edgeId = edgeGroup?.getAttribute('data-edge') ?? nearestLine(event);
         selection = edgeId ? new Set([edgeId]) : new Set();
         applySelection();
         reportSelection();
@@ -176,6 +298,17 @@ viewport.addEventListener('pointermove', event => {
     }
     dragging.moved = true;
 
+    const route = dragging.route;
+    if (route) {
+        // Snapped like a box is, so a bend put level with a border stays level.
+        const at = { x: snap(route.handle.at.x + dx), y: snap(route.handle.at.y + dy) };
+        const points = moveHandle(route.from, route.handle, at);
+        paths[route.edge] = points;
+        repaint(route.edge, points);
+        drawHandles();
+        return;
+    }
+
     if (dragging.ids.length === 0) {
         panX += event.clientX - dragging.startX;
         panY += event.clientY - dragging.startY;
@@ -199,6 +332,12 @@ viewport.addEventListener('pointermove', event => {
 viewport.addEventListener('pointerup', () => {
     const drag = dragging;
     dragging = undefined;
+    if (drag?.route && drag.moved) {
+        // The whole polyline, ends included: a route and the boxes it runs
+        // between are one arrangement, and half of one is a line to a corner.
+        keepRoute(drag.route.edge, paths[drag.route.edge]);
+        return;
+    }
     if (!drag || !drag.moved || drag.ids.length === 0) {
         return;
     }
@@ -232,6 +371,24 @@ viewport.addEventListener('pointerup', () => {
     draw();
 });
 
+/**
+ * Hands a route to the host, or hands the line back to the router.
+ *
+ * The host writes the view file and is the only thing that knows where it is, so
+ * the panel says what happened and redraws from what it has. It does not wait to
+ * be told again: the host answers a reroute by writing, not by re-sending, which
+ * is what keeps a drag from flickering.
+ */
+function keepRoute(edge: string, points: Point[] | undefined): void {
+    if (points) {
+        routes[edge] = { points };
+    } else {
+        delete routes[edge];
+    }
+    host.postMessage({ type: 'rerouted', edge, ...(points ? { route: { points } } : {}) });
+    draw();
+}
+
 /** While a node is being dragged its edges follow it, without a full redraw. */
 function redrawIncidentEdges(moved: Set<string>): void {
     for (const edge of view.edges) {
@@ -250,8 +407,28 @@ function redrawIncidentEdges(moved: Set<string>): void {
 }
 
 viewport.addEventListener('dblclick', event => {
-    const target = (event.target as Element).closest('[data-node]') ?? (event.target as Element).closest('[data-edge]');
-    const id = target?.getAttribute('data-node') ?? target?.getAttribute('data-edge');
+    // What is under the pointer, rather than what the event says it hit. Every
+    // pointerdown takes pointer capture -- a box being dragged has to keep
+    // receiving moves once the pointer has left it -- and a captured pointer
+    // retargets the click that follows to the element holding the capture. So
+    // `event.target` on a double-click is the viewport whatever was clicked,
+    // and asking it for a class found none: double-clicking a class fitted the
+    // diagram to the window instead of opening its declaration.
+    const under = document.elementFromPoint(event.clientX, event.clientY);
+    if (!under) {
+        fit();
+        return;
+    }
+    const held = handleAt(under);
+    if (held) {
+        // Only a bend can be dropped. A handle on a stretch is not one yet.
+        if (held.handle.kind === 'bend') {
+            keepRoute(held.edge, dropHandle(paths[held.edge]!, held.handle.index));
+        }
+        return;
+    }
+    const target = under.closest('[data-node]') ?? under.closest('[data-edge]');
+    const id = target?.getAttribute('data-node') ?? target?.getAttribute('data-edge') ?? nearestLine(event);
     if (id) {
         host.postMessage({ type: 'reveal', id });
     } else {
@@ -279,6 +456,7 @@ function applySelection(): void {
         const id = group.getAttribute('data-node') ?? group.getAttribute('data-edge');
         group.classList.toggle('tv-selected', id !== null && selection.has(id));
     }
+    drawHandles();
 }
 
 function reportSelection(): void {
