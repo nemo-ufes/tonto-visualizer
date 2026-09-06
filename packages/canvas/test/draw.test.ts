@@ -24,7 +24,7 @@ function related(): ViewModel {
             target: 'Sample::Employee',
             stereotype: 'mediation',
             name: 'binds',
-            sourceEnd: { cardinality: '1..*', isConst: false, isAddOnly: false },
+            sourceEnd: { cardinality: '1..*', role: 'contracts', isConst: false, isAddOnly: false },
             targetEnd: { cardinality: '1', role: 'employee', isConst: true, isAddOnly: false }
         }],
         gensets: []
@@ -173,9 +173,10 @@ describe('drawing', () => {
             .map(match => ({ x: Number(match[1]), y: Number(match[2]) }));
         // Multiplicity on one side of the line, role name on the other: run
         // together they read as one phrase, and on a busy diagram there is no
-        // telling which half belongs to which end.
-        expect(labels).toHaveLength(2);
-        expect(labels[0]).not.toEqual(labels[1]);
+        // telling which half belongs to which end. Three here -- both ends of
+        // this relation are named, and one of them has a multiplicity to show.
+        expect(labels).toHaveLength(3);
+        expect(new Set(labels.map(one => `${one.x},${one.y}`)).size).toEqual(3);
     });
 
     test('writes a multiplicity the way a diagram does', () => {
@@ -220,6 +221,52 @@ describe('drawing', () => {
         // Nothing may scope the font to a group a label is not inside.
         expect(style).not.toContain('.tv-edge text {');
         expect(style).not.toContain('.tv-labels text {');
+    });
+
+    test('keeps a multiplicity, a role name and a padlock together at one end', () => {
+        const view = related();
+        // Placed by hand so the geometry is not the layout's opinion: two boxes
+        // side by side, joined by a horizontal line at y = 21.
+        const positions = {
+            'Sample::Contract': { x: 0, y: 0, width: 120, height: 42 },
+            'Sample::Employee': { x: 400, y: 0, width: 120, height: 42 }
+        };
+        const svg = render({ view, positions, display }).svg;
+        const texts = [...svg.matchAll(/<text class="tv-end" x="([-\d.]+)" y="([-\d.]+)"[^>]*>([^<]*)</g)]
+            .map(match => ({ x: Number(match[1]), y: Number(match[2]), text: match[3] }));
+        const multiplicity = texts.find(one => one.text === '1..*');
+        const role = texts.find(one => one.text === 'contracts');
+        const lock = svg.match(/tv-lock" transform="translate\(([-\d.]+), ([-\d.]+)\)/);
+        expect(multiplicity).toBeDefined();
+        expect(role).toBeDefined();
+        expect(lock).not.toBeNull();
+
+        // Opposite sides of the line, which is what the sides are for.
+        expect(Math.sign(multiplicity!.y - 21)).not.toEqual(Math.sign(role!.y - 21));
+        // The same distance along it, so they read as one group at one end.
+        expect(Math.abs(multiplicity!.x - role!.x)).toBeLessThan(60);
+        // And the padlock follows the name, where a property string goes.
+        expect(Number(lock![1])).toBeGreaterThan(role!.x);
+    });
+
+    test('sizes the drawing around its labels, not only around its boxes', () => {
+        const view = related();
+        const edge = view.edges[0]!;
+        if (edge.kind === 'relation') {
+            edge.name = 'is the contract of employment that binds';
+        }
+        const sizes = Object.fromEntries(view.nodes.map(node => [node.id, sizeOf(node, display)]));
+        const svg = render({ view, positions: placeNewNodes(view, sizes, {}), display }).svg;
+        const box = svg.match(/viewBox="([-\d.]+) ([-\d.]+) ([-\d.]+) ([-\d.]+)"/)!.map(Number);
+        // A label that could not find room near its line ends up some way from
+        // it, and a drawing sized to the boxes alone cropped it -- a relation's
+        // name half off the left edge, in an export nobody could correct.
+        for (const [, x, y] of svg.matchAll(/<text[^>]*x="([-\d.]+)" y="([-\d.]+)"/g)) {
+            expect(Number(x)).toBeGreaterThan(box[1]!);
+            expect(Number(x)).toBeLessThan(box[1]! + box[3]!);
+            expect(Number(y)).toBeGreaterThan(box[2]!);
+            expect(Number(y)).toBeLessThan(box[2]! + box[4]!);
+        }
     });
 
     test('goes monochrome when colours are turned off', () => {
