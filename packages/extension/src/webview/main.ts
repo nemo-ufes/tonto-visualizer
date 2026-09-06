@@ -8,7 +8,7 @@
  * anything is being typed.
  */
 
-import type { ContentOptions, DisplayOptions, EdgeRoute, ViewModel } from 'tonto-view';
+import type { ContentOptions, DisplayOptions, EdgeRoute, LayoutOptions, ViewModel } from 'tonto-view';
 import { natureLegend } from 'tonto-view/palette';
 import type { Rect } from 'tonto-canvas/draw';
 import { darkTheme, lightTheme, render, routeEdge } from 'tonto-canvas/draw';
@@ -35,6 +35,7 @@ let positions: Record<string, Rect> = {};
 let routes: Record<string, EdgeRoute> = {};
 let display: DisplayOptions | undefined;
 let content: ContentOptions | undefined;
+let layout: LayoutOptions | undefined;
 let packages: string[] = [];
 let dark = false;
 let selection = new Set<string>();
@@ -63,6 +64,7 @@ window.addEventListener('message', event => {
         routes = message.routes;
         display = message.display;
         content = message.content;
+        layout = message.layout;
         packages = message.packages;
         titleLabel.textContent = message.title;
         staleLabel.hidden = !message.stale;
@@ -229,7 +231,7 @@ function redrawIncidentEdges(moved: Set<string>): void {
         if (!source || !target || !path) {
             continue;
         }
-        const points = routeEdge(source, target);
+        const points = routeEdge(source, target, { style: display?.routing ?? 'straight' });
         path.setAttribute('d', points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' '));
     }
 }
@@ -301,6 +303,19 @@ function fillOptions(): void {
     ];
 
     optionsPanel.replaceChildren();
+    optionsPanel.append(section('Shape', [
+        choice('Lines', [['straight', 'Straight'], ['orthogonal', 'Right-angled']], display.routing,
+            value => host.postMessage({ type: 'display', display: { routing: value as DisplayOptions['routing'] } })),
+        choice('Arrangement', [
+            ['layered', 'Layered (taxonomy)'],
+            ['stress', 'Spread'],
+            ['mrtree', 'Tree'],
+            ['radial', 'Radial']
+        ], layout?.algorithm ?? 'layered',
+            value => host.postMessage({ type: 'layout', layout: { algorithm: value as LayoutOptions['algorithm'] } })),
+        choice('Direction', [['DOWN', 'Top to bottom'], ['RIGHT', 'Left to right']], layout?.direction ?? 'DOWN',
+            value => host.postMessage({ type: 'layout', layout: { direction: value as LayoutOptions['direction'] } }))
+    ]));
     optionsPanel.append(section('Drawn', displayRows.map(([key, label]) =>
         toggle(label, Boolean(display?.[key]), value => host.postMessage({ type: 'display', display: { [key]: value } })))));
     optionsPanel.append(section('Included', contentRows.map(([key, label]) =>
@@ -352,6 +367,27 @@ function section(title: string, rows: HTMLElement[]): HTMLElement {
     heading.textContent = title;
     wrapper.append(heading, ...rows);
     return wrapper;
+}
+
+/** A named choice, for the options that are not on-or-off. */
+function choice(
+    label: string, values: Array<[string, string]>, current: string, onChange: (value: string) => void
+): HTMLElement {
+    const row = document.createElement('label');
+    row.className = 'row choice';
+    const text = document.createElement('span');
+    text.textContent = label;
+    const select = document.createElement('select');
+    for (const [value, name] of values) {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = name;
+        option.selected = value === current;
+        select.append(option);
+    }
+    select.addEventListener('change', () => onChange(select.value));
+    row.append(text, select);
+    return row;
 }
 
 function toggle(label: string, value: boolean, onChange: (value: boolean) => void): HTMLElement {

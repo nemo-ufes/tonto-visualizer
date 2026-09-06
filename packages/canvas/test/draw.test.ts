@@ -47,18 +47,58 @@ describe('drawing', () => {
         expect(employee.x).toBeGreaterThan(-200);
     });
 
-    test('joins two boxes that face each other with one straight line', () => {
+    test('draws a line straight from border to border, by default', () => {
         const points = routeEdge(
             { x: 0, y: 0, width: 100, height: 60 },
-            { x: 0, y: 200, width: 100, height: 60 }
+            { x: 300, y: 200, width: 100, height: 60 }
+        );
+        // Two points, no corner between them: a right angle is a choice now,
+        // not what every edge gets. Each sits on the border of its own box.
+        expect(points).toHaveLength(2);
+        expect(points[0]).toEqual({ x: 95, y: 60 });
+        expect(points[1]).toEqual({ x: 305, y: 200 });
+    });
+
+    test('takes right angles when asked to', () => {
+        const points = routeEdge(
+            { x: 0, y: 0, width: 100, height: 60 },
+            { x: 0, y: 200, width: 100, height: 60 },
+            { style: 'orthogonal' }
         );
         expect(points).toEqual([{ x: 50, y: 60 }, { x: 50, y: 200 }]);
     });
 
+    test('runs parallel edges beside one another', () => {
+        const source = { x: 0, y: 0, width: 100, height: 60 };
+        const target = { x: 300, y: 0, width: 100, height: 60 };
+        const first = routeEdge(source, target, { spread: { index: 0, count: 2 } });
+        const second = routeEdge(source, target, { spread: { index: 1, count: 2 } });
+        // Two relations between the same pair are one line drawn twice unless
+        // something moves them apart.
+        expect(first[0]!.y).not.toEqual(second[0]!.y);
+        expect(Math.abs(first[0]!.y - second[0]!.y)).toBeGreaterThan(8);
+    });
+
+    test('goes round a box that stands between the two it joins', () => {
+        const source = { x: 0, y: 0, width: 100, height: 60 };
+        const target = { x: 600, y: 0, width: 100, height: 60 };
+        const between = { x: 280, y: 0, width: 100, height: 60 };
+        const straightThrough = routeEdge(source, target);
+        expect(straightThrough).toHaveLength(2);
+
+        const around = routeEdge(source, target, { obstacles: [source, target, between] });
+        expect(around.length).toBeGreaterThan(2);
+        // Clear of the box it was told about, above or below it.
+        expect(around.some(point => point.y < between.y || point.y > between.y + between.height)).toBe(true);
+    });
+
     test('obeys a route that was drawn by hand', () => {
         const stored = [{ x: 0, y: 0 }, { x: 5, y: 5 }, { x: 10, y: 10 }];
-        expect(routeEdge({ x: 0, y: 0, width: 10, height: 10 }, { x: 90, y: 90, width: 10, height: 10 }, stored))
-            .toEqual(stored);
+        expect(routeEdge(
+            { x: 0, y: 0, width: 10, height: 10 },
+            { x: 90, y: 90, width: 10, height: 10 },
+            { stored }
+        )).toEqual(stored);
     });
 
     test('draws every element once, with the ids the canvas selects by', () => {

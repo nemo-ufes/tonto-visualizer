@@ -5,4 +5,4 @@ export * from './route.js';
 export * from './render.js';
 export * from './theme.js';
 export { autoLayout } from './autolayout.js';
-export type { AutoLayoutOptions } from './autolayout.js';
+export type { AutoLayoutRequest, AutoLayoutResult } from './autolayout.js';

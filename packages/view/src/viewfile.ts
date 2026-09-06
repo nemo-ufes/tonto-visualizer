@@ -11,8 +11,8 @@
  * decides what a file means once it is open.
  */
 
-import type { ContentOptions, DisplayOptions } from './options.js';
-import { defaultContentOptions, defaultDisplayOptions } from './options.js';
+import type { ContentOptions, DisplayOptions, LayoutOptions } from './options.js';
+import { defaultContentOptions, defaultDisplayOptions, defaultLayoutOptions } from './options.js';
 import type { ViewModel } from './model.js';
 
 export const VIEW_FILE_VERSION = 1;
@@ -50,6 +50,7 @@ export interface ViewFile {
     focus?: string;
     content: ContentOptions;
     display: DisplayOptions;
+    layout: LayoutOptions;
     nodes: Record<string, Placement>;
     edges: Record<string, EdgeRoute>;
 }
@@ -60,6 +61,7 @@ export function emptyViewFile(focus?: string): ViewFile {
         ...(focus ? { focus } : {}),
         content: { ...defaultContentOptions },
         display: { ...defaultDisplayOptions },
+        layout: { ...defaultLayoutOptions },
         nodes: {},
         edges: {}
     };
@@ -95,6 +97,7 @@ export function readViewFile(raw: unknown): ViewFile {
         ...(typeof source.focus === 'string' ? { focus: source.focus } : {}),
         content: { ...defaultContentOptions, ...(source.content ?? {}) },
         display: { ...defaultDisplayOptions, ...(source.display ?? {}) },
+        layout: { ...defaultLayoutOptions, ...(source.layout ?? {}) },
         nodes,
         edges
     };

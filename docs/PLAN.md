@@ -121,8 +121,8 @@ that id is what a saved position is keyed by. This layer is pure: no DOM, no
 `vscode`, and it is where the golden tests live.
 
 **(b) Layout, only where the modeller has not spoken.** `elkjs` (the layered
-algorithm, orthogonal routing, packages as compound nodes) runs in a worker
-inside the webview. Elements with a saved position are pinned; only new and
+algorithm, packages as compound nodes) runs when a view is first drawn or when
+an arrangement is asked for. Elements with a saved position are pinned; only new and
 unpositioned ones are placed, near the neighbours they connect to. **Adding a
 class must not rearrange the diagram** — that property is the whole point, and
 it is what a re-render through PlantUML can never offer. An explicit *Auto-layout*
@@ -140,6 +140,15 @@ complete}` for a genset; hollow diamonds for `<>--`; association labels with
 cardinalities and role names; a dashed `«instanceOf»`. Zoom by transform, pan by
 drag, selection, hover. It is theme-aware — PlantUML always drew on white; this
 can follow the editor.
+
+Lines are **straight**, border to border. A class diagram is read as things
+joined by lines, not as a circuit board: a direct line says *these two* at a
+glance, where a right-angled one has to be followed round two corners, and on a
+model with many associations the corridors start to read as the diagram. Two
+things make straight lines work — parallel edges between the same pair are
+spread apart, and a line that would cross an unrelated class takes one bend
+round it, since a straight line through a class is worse than no line at all.
+Right angles remain, as a choice, for the taxonomies they do suit.
 
 **(d) The arrangement is a document.** Positions, waypoints, hidden elements and
 the option state are written to a `*.tontoview` JSON file beside the model:
@@ -283,11 +292,25 @@ Parity *and* the notation the redesign can express, in the first release:
 | M5 | The rest of the notation: gensets, relation stereotypes, MLT, end decorations, datatypes, documentation | done |
 | M6 | Packaging: bundled `.vsix`, README, CI, nightly build against `tontoredesign@main` | CI and the bundle done; the marketplace listing is not |
 
+Layout was then studied against four models -- `university`, `pets`, `boats`,
+`gufo` -- by measuring each drawing (area, aspect, crossings, lines through
+unrelated boxes, overlaps, taxonomy direction) and looking at it. What came out
+of it: straight lines by default, with the two rules above; `layered` as the
+arrangement, since it is the only one of ELK's that keeps every supertype above
+its subtypes (`stress` and `mrtree` managed 27-68%); generalizations given the
+layering priority and associations almost none, so a mediation cannot drag a
+role a rank away from the kind it specializes; and the spacings repeated on
+every package, since ELK lays a compound node out on its own and inherits
+nothing from the graph around it -- set only at the root, every grouped diagram
+had been running at ELK's 20px default, which is what left labels with nowhere
+to go. Measured over the four models, lines through unrelated boxes fell from
+10, 2, 3 and 17 to 1, 0, 0 and 1.
+
 What is left, in the order it is worth doing: dragging a route by hand (the file
 format holds routes already, the panel draws no handles), undo/redo over view
 changes, resizing a card, marquee selection, PNG export, and better label
-placement on dense models -- the placer walks its own line and gives up rather
-than pushing its neighbours aside.
+placement on dense models -- the placer walks its own line and settles for the
+least-bad spot rather than pushing its neighbours aside.
 
 ## 12. Risks
 

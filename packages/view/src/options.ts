@@ -24,7 +24,17 @@ export interface ContentOptions {
     hidden?: string[];
 }
 
+/** How an edge gets from one box to the other. */
+export type RoutingStyle = 'straight' | 'orthogonal';
+
 export interface DisplayOptions {
+    /**
+     * Straight by default: a direct line says "these two" at a glance, and a
+     * model with many associations drawn with right angles turns into a set of
+     * corridors that read as the diagram. Orthogonal suits a taxonomy and is a
+     * choice rather than the default.
+     */
+    routing: RoutingStyle;
     showAttributes: boolean;
     showCardinalities: boolean;
     showRelationNames: boolean;
@@ -42,6 +52,36 @@ export interface DisplayOptions {
     showDocumentation: boolean;
 }
 
+/**
+ * How the automatic arrangement is made, when it is asked for.
+ *
+ * Separate from the display options because it is not applied to a diagram that
+ * exists: it decides where things go the first time, and again whenever the
+ * modeller asks for the whole thing to be arranged.
+ */
+export interface LayoutOptions {
+    /**
+     * `layered` ranks the taxonomy, which is what most models are read by.
+     * `stress` spreads a densely associated model without ranking it, `mrtree`
+     * is for a model that really is a tree, and `radial` puts one thing in the
+     * middle.
+     */
+    algorithm: 'layered' | 'stress' | 'mrtree' | 'radial' | 'force';
+    /** Which way generalizations point. Down is what a class diagram is read as. */
+    direction: 'DOWN' | 'RIGHT';
+    /** Between neighbours in a rank. */
+    nodeSpacing: number;
+    /** Between one rank and the next -- a supertype and its subtypes. */
+    rankSpacing: number;
+}
+
+export const defaultLayoutOptions: LayoutOptions = {
+    algorithm: 'layered',
+    direction: 'DOWN',
+    nodeSpacing: 60,
+    rankSpacing: 100
+};
+
 export const defaultContentOptions: ContentOptions = {
     showExternalReferences: true,
     showDatatypes: true,
@@ -49,6 +89,7 @@ export const defaultContentOptions: ContentOptions = {
 };
 
 export const defaultDisplayOptions: DisplayOptions = {
+    routing: 'straight',
     showAttributes: true,
     showCardinalities: true,
     showRelationNames: true,

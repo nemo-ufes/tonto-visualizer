@@ -8,7 +8,7 @@
  * panel for its markup.
  */
 
-import type { ContentOptions, DisplayOptions, EdgeRoute, Placement, ViewModel } from 'tonto-view';
+import type { ContentOptions, DisplayOptions, EdgeRoute, LayoutOptions, Placement, ViewModel } from 'tonto-view';
 
 export interface Rect {
     x: number;
@@ -26,6 +26,7 @@ export type ToPanel =
         routes: Record<string, EdgeRoute>;
         display: DisplayOptions;
         content: ContentOptions;
+        layout: LayoutOptions;
         packages: string[];
         title: string;
         /** Set when the model does not parse and the picture is the last good one. */
@@ -42,6 +43,7 @@ export type FromPanel =
     | { type: 'selected'; ids: string[] }
     | { type: 'reveal'; id: string }
     | { type: 'display'; display: Partial<DisplayOptions> }
+    | { type: 'layout'; layout: Partial<LayoutOptions> }
     | { type: 'content'; content: Partial<ContentOptions> }
     | { type: 'autoLayout'; only?: string[] }
     | { type: 'hide'; ids: string[] }

@@ -166,3 +166,20 @@ button:hover {
     opacity: 0.7;
     pointer-events: none;
 }
+
+.row.choice {
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.row.choice select {
+    flex: 1;
+    min-width: 0;
+    max-width: 60%;
+    padding: 2px 4px;
+    border: 1px solid var(--vscode-dropdown-border, rgba(128, 128, 128, 0.4));
+    border-radius: 4px;
+    background: var(--vscode-dropdown-background, transparent);
+    color: var(--vscode-dropdown-foreground, inherit);
+    font: inherit;
+}
