@@ -96,17 +96,20 @@ export function render(input: RenderInput): Rendered {
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${origin.x} ${origin.y} ${width} ${height}" width="${width}" height="${height}">
 <style>
 .tv-node rect { stroke: ${theme.line}; stroke-width: 1; }
-.tv-node text { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; fill: ${theme.onFill}; }
-.tv-name { font-weight: 600; font-size: ${FONT.name}px; }
-.tv-stereotype { font-size: ${FONT.stereotype}px; fill-opacity: 0.75; }
+.tv-node text { font-family: ${FONT.family}; fill: ${theme.onFill}; }
+.tv-name { font-weight: 600; font-size: ${FONT.name}px; letter-spacing: 0.005em; }
+.tv-stereotype { font-size: ${FONT.stereotype}px; fill-opacity: 0.72; letter-spacing: 0.01em; }
 .tv-attribute { font-size: ${FONT.attribute}px; }
 .tv-edge path { fill: none; stroke: ${theme.line}; stroke-width: 1.2; }
-.tv-edge text { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; font-size: ${FONT.edge}px; fill: ${theme.text}; }
+.tv-edge text { font-family: ${FONT.family}; font-size: ${FONT.edge}px; fill: ${theme.text}; font-variant-numeric: tabular-nums; }
 .tv-edge .tv-end { fill: ${theme.muted}; }
+.tv-reading { fill: ${theme.text}; stroke: none; }
+.tv-lock { fill: none; stroke: ${theme.muted}; stroke-width: 1.1; stroke-linecap: round; }
+.tv-lock rect { fill: ${theme.background}; }
 .tv-marker { fill: ${theme.surface}; stroke: ${theme.line}; stroke-width: 1.2; }
 .tv-arrow { fill: none; stroke: ${theme.line}; stroke-width: 1.2; }
 .tv-group rect { fill: none; stroke: ${theme.muted}; stroke-dasharray: 4 3; }
-.tv-group text { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; font-size: ${FONT.stereotype}px; fill: ${theme.muted}; }
+.tv-group text { font-family: ${FONT.family}; font-size: ${FONT.stereotype}px; fill: ${theme.muted}; }
 .tv-selected rect { stroke: ${theme.accent}; stroke-width: 2.5; }
 .tv-selected path { stroke: ${theme.accent}; stroke-width: 2.2; }
 .tv-unresolved rect { stroke-dasharray: 5 3; }
@@ -246,6 +249,30 @@ class LabelPlacer {
         return fallback.at;
     }
 
+    /**
+     * Somewhere to put a mark that is not text -- the padlock, whose size is
+     * known outright rather than estimated from a string.
+     */
+    reserve(candidates: Point[], width: number, height: number): Point {
+        let best: { at: Point; box: Rect; penalty: number } | undefined;
+        for (const candidate of candidates) {
+            const box = { x: candidate.x - width / 2, y: candidate.y - height / 2, width, height };
+            const penalty = this.penaltyOf(box);
+            if (penalty === 0) {
+                this.taken.push(box);
+                return candidate;
+            }
+            if (!best || penalty < best.penalty) {
+                best = { at: candidate, box, penalty };
+            }
+        }
+        if (best) {
+            this.taken.push(best.box);
+            return best.at;
+        }
+        return candidates[0] ?? { x: 0, y: 0 };
+    }
+
     /** How much of what is already drawn this label would cover. A class counts double. */
     private penaltyOf(box: Rect): number {
         let penalty = 0;
@@ -288,72 +315,163 @@ function relationLabels(
     if (display.showRelationStereotypes && edge.stereotype) {
         middle.push(`«${edge.stereotype}»`);
     }
-    if (display.showRelationNames && edge.name) {
+    const named = display.showRelationNames && Boolean(edge.name);
+    if (named && edge.name) {
         middle.push(edge.name);
     }
-    let markup = middle.length > 0 ? centreLabel(points, middle.join(' '), theme, placer) : '';
+    // UML's reading direction: the solid triangle beside the name says which way
+    // round the sentence goes -- "University has Department", not the reverse.
+    // It belongs to the name, so it is only drawn where there is one.
+    let markup = middle.length > 0
+        ? centreLabel(points, middle.join(' '), theme, placer, named ? 'forwards' : undefined)
+        : '';
     markup += endLabel(edge, points, true, display, theme, placer);
     markup += endLabel(edge, points, false, display, theme, placer);
     return markup;
 }
 
+/**
+ * What is written at one end of an association.
+ *
+ * Two labels, not one, on opposite sides of the line: the multiplicity where UML
+ * puts it, and the role name with whatever the end redefines on the other. Run
+ * together as one string they read as a single phrase -- "[2..*] members" -- and
+ * on a busy diagram there is no telling which half belongs to which end.
+ *
+ * `const` is not written at all. An end that cannot change is the ordinary case
+ * here, and a decoration on the ordinary case is noise on every line; the
+ * exception gets the mark instead, as an open padlock.
+ */
 function endLabel(
     edge: ViewRelation, points: Point[], atSource: boolean, display: DisplayOptions, theme: Theme,
     placer: LabelPlacer
 ): string {
     const end = atSource ? edge.sourceEnd : edge.targetEnd;
-    const parts: string[] = [];
-    if (display.showCardinalities && end.cardinality) {
-        parts.push(`[${end.cardinality}]`);
-    }
-    if (display.showRoleNames && end.role) {
-        parts.push(end.role);
-    }
-    if (display.showEndDecorations) {
-        if (end.isConst) {
-            parts.push('{const}');
-        }
-        if (end.isAddOnly) {
-            parts.push('{addOnly}');
-        }
-        if (end.subsets) {
-            parts.push(`{subsets ${end.subsets}}`);
-        }
-        if (end.redefines) {
-            parts.push(`{redefines ${end.redefines}}`);
-        }
-    }
-    if (parts.length === 0) {
-        return '';
-    }
-    // An end label belongs by its end, so the candidates walk in from there and
-    // try both sides of the line before giving up. Two ends of a short edge
-    // otherwise print on top of each other, which is how "[1..*]" and "[1]"
-    // became "[11*]".
-    const text = parts.join(' ');
-    const width = textWidth(text, FONT.edge);
     const total = pathLength(points);
     const forwards = atSource ? points : [...points].reverse();
+
+    const role: string[] = [];
+    if (display.showRoleNames && end.role) {
+        role.push(end.role);
+    }
+    if (display.showEndDecorations) {
+        if (end.isAddOnly) {
+            role.push('{addOnly}');
+        }
+        if (end.subsets) {
+            role.push(`{subsets ${end.subsets}}`);
+        }
+        if (end.redefines) {
+            role.push(`{redefines ${end.redefines}}`);
+        }
+    }
+
+    let markup = '';
+    if (display.showCardinalities && end.cardinality) {
+        markup += placeAtEnd(`[${end.cardinality}]`, forwards, total, [1, 2, -1], theme, placer);
+    }
+    if (role.length > 0) {
+        markup += placeAtEnd(role.join(' '), forwards, total, [-1, -2, 1], theme, placer);
+    }
+    if (display.showEndDecorations && !end.isConst) {
+        markup += padlock(forwards, total, theme, placer);
+    }
+    return markup;
+}
+
+/** A label a short way in from an end, on one side of the line by preference. */
+function placeAtEnd(
+    text: string, forwards: Point[], total: number, sides: number[], theme: Theme, placer: LabelPlacer
+): string {
+    const width = textWidth(text, FONT.edge);
     const candidates: Point[] = [];
-    for (const distance of [18, 30, 46, 64]) {
-        candidates.push(...besideLine(forwards, Math.min(distance, total), width, [1, -1, 2, -2]));
+    for (const distance of [17, 30, 46, 64]) {
+        candidates.push(...besideLine(forwards, Math.min(distance, total * 0.45), width, sides));
     }
     const at = placer.place(candidates, text);
     return label(at.x, at.y, text, theme, 'middle', 'tv-end');
 }
 
-function centreLabel(points: Point[], text: string, theme: Theme, placer: LabelPlacer): string {
+/**
+ * An open padlock: this end may change.
+ *
+ * Drawn rather than written, and drawn open, because it marks the exception. A
+ * word would be read as part of the role name beside it; a small glyph on the
+ * line is read as a property of the line.
+ */
+function padlock(forwards: Point[], total: number, theme: Theme, placer: LabelPlacer): string {
+    // On the role-name side and close in, where UML puts a property's
+    // decoration, and then wherever it fits: a mark that lands on the
+    // multiplicity beside it says less than no mark at all.
+    const candidates: Point[] = [];
+    for (const distance of [13, 24, 36]) {
+        candidates.push(...besideLine(forwards, Math.min(distance, total * 0.4), 12, [-1, 1, -2, 2]));
+    }
+    const at = placer.reserve(candidates, 13, 13);
+    const x = round(at.x - 5.3);
+    const y = round(at.y - 7);
+    return `<g class="tv-lock" transform="translate(${x}, ${y})" aria-label="not const">`
+        + `<title>this end may change (not const)</title>`
+        // The shackle stands off to one side and does not meet the body: a
+        // closed one would say the opposite of what this marks.
+        + `<path d="M 2 5 V 3.1 a 2.7 2.7 0 0 1 5.4 0"/>`
+        + `<rect x="3.5" y="5" width="7.2" height="5.8" rx="1.4" stroke="${theme.muted}"/>`
+        + `</g>`;
+}
+
+function centreLabel(
+    points: Point[], text: string, theme: Theme, placer: LabelPlacer, reading?: 'forwards'
+): string {
     const length = pathLength(points);
     // Outwards from the middle: the middle reads as "this whole line", and the
     // further a label sits from it the more it looks like it belongs to one end.
     const fractions = [0.5, 0.42, 0.58, 0.34, 0.66, 0.26, 0.74];
-    const width = textWidth(text, FONT.edge);
+    // The estimate is calibrated for Helvetica and its metric twins; a machine
+    // that has none of them sets the same string wider. The triangle is placed
+    // off the end of the text, so it is the one thing that must allow for that
+    // -- a mark on top of the last letter is worse than a slightly wide gap.
+    const measured = textWidth(text, FONT.edge) * 1.06;
+    const marker = reading ? 11 : 0;
+    const width = measured + marker;
     const candidates = fractions.flatMap(fraction => {
         const at = length * fraction;
         return besideLine(points, at, width, [0, 1, -1, 2, -2]);
     });
     const at = placer.place(candidates, text);
-    return label(at.x, at.y, text, theme, 'middle');
+    // The text keeps its place; the triangle sits after it, which is where a
+    // reader expects the arrow of "A has B ▶" to be.
+    const shifted = { x: at.x - marker / 2, y: at.y };
+    let markup = label(shifted.x, shifted.y, text, theme, 'middle');
+    if (reading) {
+        const tip = { x: shifted.x + measured / 2 + marker, y: shifted.y - 3.5 };
+        markup += readingTriangle(tip, directionNear(points, at));
+    }
+    return markup;
+}
+
+/** The direction the line runs at the point nearest `at`, source to target. */
+function directionNear(points: Point[], at: Point): Point {
+    let best: { direction: Point; distance: number } | undefined;
+    for (let index = 0; index + 1 < points.length; index += 1) {
+        const from = points[index]!;
+        const to = points[index + 1]!;
+        const middle = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
+        const distance = Math.hypot(middle.x - at.x, middle.y - at.y);
+        if (!best || distance < best.distance) {
+            const length = Math.hypot(to.x - from.x, to.y - from.y) || 1;
+            best = { direction: { x: (to.x - from.x) / length, y: (to.y - from.y) / length }, distance };
+        }
+    }
+    return best?.direction ?? { x: 1, y: 0 };
+}
+
+/** UML's filled reading-direction triangle, pointing the way the name is read. */
+function readingTriangle(tip: Point, direction: Point): string {
+    const back = { x: tip.x - direction.x * 7, y: tip.y - direction.y * 7 };
+    const normal = { x: -direction.y, y: direction.x };
+    return `<polygon class="tv-reading" points="${round(tip.x)},${round(tip.y)} `
+        + `${round(back.x + normal.x * 3.4)},${round(back.y + normal.y * 3.4)} `
+        + `${round(back.x - normal.x * 3.4)},${round(back.y - normal.y * 3.4)}"/>`;
 }
 
 /**

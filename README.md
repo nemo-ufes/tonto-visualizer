@@ -33,8 +33,11 @@ Working end to end, and rough in places.
 
 The notation covers classes with stereotypes and attributes, datatypes and
 enumerations, generalizations, generalization sets as one shared triangle with
-`{disjoint, complete}`, relations with their stereotype, cardinalities, role
-names and end decorations, whole-part diamonds, and `instanceOf`.
+`{disjoint, complete}`, relations with their stereotype and UML's solid
+reading-direction triangle, cardinalities and role names on opposite sides of
+each end, whole-part diamonds, `instanceOf`, and an open padlock on an end that
+is not `const` -- an end that cannot change is the ordinary case, so the
+exception is what carries a mark.
 
 Not there yet: dragging a route by hand (the file format holds them; the panel
 does not draw the handles), undo/redo, resizing a card, marquee selection, PNG
