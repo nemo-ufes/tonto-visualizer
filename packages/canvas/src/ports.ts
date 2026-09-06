@@ -13,6 +13,10 @@
  * of the angle each line leaves at -- which keeps them from crossing each other
  * on the way in, and gives every line a corridor of its own to be labelled in.
  *
+ * A relation from a class to itself is placed here too. It goes nowhere, so it
+ * has no angle to be ordered by: it takes the end of its side, at the corner it
+ * turns, and it turns the corner with the most room left around it.
+ *
  * A relator is the exception. It is a reified relationship, and its mediations
  * are the relationship: the drawing should read as one line from one relatum to
  * the other, passing through the relator on its way. Spreading those ends evenly
@@ -41,6 +45,71 @@ interface Arrival {
     through: boolean;
     /** What that ray points at: the far end, once it is known, else its centre. */
     aim: Point;
+    /**
+     * A loop's end: the side it leaves by, and the neighbouring side it turns
+     * towards. It belongs at that end of its side rather than anywhere in the
+     * fan, because it does not go anywhere -- it turns the corner.
+     */
+    corner?: { side: Side; towards: Side };
+}
+
+/**
+ * The corners a loop may turn, in the order they are preferred on a tie.
+ *
+ * Out of a vertical side and back into a horizontal one, which is the shape a
+ * loop has always been drawn as; right and over the top first, so a class with
+ * nothing else attached is drawn as it was before there was a choice.
+ */
+const CORNERS: ReadonlyArray<{ out: Side; back: Side }> = [
+    { out: 'right', back: 'top' },
+    { out: 'right', back: 'bottom' },
+    { out: 'left', back: 'top' },
+    { out: 'left', back: 'bottom' }
+];
+
+/** Whether a side is at the low end of the axis its neighbours are placed along. */
+function towardsLow(side: Side): boolean {
+    return side === 'top' || side === 'left';
+}
+
+/** The difference between two directions, as an angle no bigger than half a turn. */
+function between(one: number, other: number): number {
+    const difference = Math.abs(one - other) % (Math.PI * 2);
+    return difference > Math.PI ? Math.PI * 2 - difference : difference;
+}
+
+/**
+ * The corner a class's loops turn at: the one with the most room around it.
+ *
+ * A relation from a class to itself used to leave the right side and return over
+ * the top whatever else was there, and `assignPorts` did not know it existed, so
+ * the lines that go somewhere were spread as though those two sides were free.
+ * On gUFO that put the loop of `Aspect` over the line to `ConcreteIndividual`
+ * and the loop of `Event` over two more -- crossings the arrangement never asked
+ * for, and which go as soon as the loop is told what is already there.
+ *
+ * Room is measured as an angle, not as a count of what attaches to each side. A
+ * loop takes up the corner it turns, so what matters is whether anything leaves
+ * in that direction: the line out of `Aspect` to `ConcreteIndividual` runs
+ * almost exactly along the top right diagonal, and a loop turning that corner
+ * crosses it wherever along the two sides either of them is anchored. Counting
+ * sides says only that the top has one line on it, which every corner of a class
+ * with four relations can say.
+ */
+function loopCorner(leaving: readonly number[] | undefined): { out: Side; back: Side } {
+    let best = CORNERS[0]!;
+    let clearest = -Infinity;
+    for (const corner of CORNERS) {
+        const diagonal = Math.atan2(corner.back === 'bottom' ? 1 : -1, corner.out === 'right' ? 1 : -1);
+        // Half a turn where nothing leaves at all, which leaves the first corner
+        // holding the tie: a class drawn on its own keeps the loop it always had.
+        const clearance = Math.min(Math.PI, ...(leaving ?? []).map(angle => between(angle, diagonal)));
+        if (clearance > clearest) {
+            best = corner;
+            clearest = clearance;
+        }
+    }
+    return best;
 }
 
 /** How close to a corner a line may attach. */
@@ -60,11 +129,40 @@ export function assignPorts(
     /** The ends to aim through the centre of the box, by `endKey`. */
     through: ReadonlySet<string> = new Set()
 ): Map<string, EdgeEnds> {
-    const arrivals = new Map<string, Arrival[]>();
+    // The direction everything that goes somewhere leaves in, by class, so that
+    // a loop can turn at the corner with the most room around it.
+    const leaving = new Map<string, number[]>();
     for (const edge of edges) {
         const source = positions[edge.source];
         const target = positions[edge.target];
         if (!source || !target || edge.source === edge.target) {
+            continue;
+        }
+        note(leaving, edge.source, centerOf(source), centerOf(target));
+        note(leaving, edge.target, centerOf(target), centerOf(source));
+    }
+
+    const arrivals = new Map<string, Arrival[]>();
+    for (const edge of edges) {
+        const source = positions[edge.source];
+        const target = positions[edge.target];
+        if (!source || !target) {
+            continue;
+        }
+        if (edge.source === edge.target) {
+            // Both ends of a loop are ends on this class, and are placed with
+            // everything else: a line that goes somewhere must not be given the
+            // piece of border the loop leaves from.
+            const { out, back } = loopCorner(leaving.get(edge.source));
+            const centre = centerOf(source);
+            push(arrivals, edge.source, {
+                edge: edge.id, isSource: true, from: centre, aim: centre, through: false,
+                corner: { side: out, towards: back }
+            });
+            push(arrivals, edge.source, {
+                edge: edge.id, isSource: false, from: centre, aim: centre, through: false,
+                corner: { side: back, towards: out }
+            });
             continue;
         }
         push(arrivals, edge.source, {
@@ -116,15 +214,29 @@ function place(
         const rect = positions[nodeId]!;
         const bySide = new Map<Side, Arrival[]>();
         for (const arrival of incoming) {
-            const side = sideOf(rect, arrival.from);
+            const side = arrival.corner?.side ?? sideOf(rect, arrival.from);
             bySide.set(side, [...(bySide.get(side) ?? []), arrival]);
         }
         for (const [side, group] of bySide) {
             // Ordered by the angle each line leaves at, so they fan out without
-            // crossing one another between the border and open space.
-            const ordered = [...group].sort((one, other) =>
-                fanAngle(rect, side, one.from) - fanAngle(rect, side, other.from)
-                || one.edge.localeCompare(other.edge));
+            // crossing one another between the border and open space. A loop
+            // turns the corner rather than leaving for anywhere, so it takes the
+            // end of the side it turns at -- outside the fan, at either extreme.
+            const order = (arrival: Arrival) => (arrival.corner
+                ? (towardsLow(arrival.corner.towards) ? -1 : 1) * Math.PI * 2
+                : fanAngle(rect, side, arrival.from));
+            const ordered = [...group].sort((one, other) => {
+                if (one.corner && other.corner) {
+                    // Two loops turning the same corner nest one inside the
+                    // other, and both ends of each have to come in the same
+                    // order out from that corner -- which is towards the low end
+                    // of one side and towards the high end of the other, or the
+                    // wider loop's return leg crosses the narrower one's.
+                    const outwards = towardsLow(one.corner.towards) ? 1 : -1;
+                    return outwards * one.edge.localeCompare(other.edge);
+                }
+                return order(one) - order(other) || one.edge.localeCompare(other.edge);
+            });
             // A line to be read through the box asks for the point its own ray
             // crosses; the rest take their share of the side, as they always
             // have. Both are then held apart, so that aiming a line through the
@@ -258,4 +370,8 @@ function pointOn(rect: Rect, side: Side, along: number): Point {
 
 function push(index: Map<string, Arrival[]>, key: string, arrival: Arrival): void {
     index.set(key, [...(index.get(key) ?? []), arrival]);
+}
+
+function note(index: Map<string, number[]>, key: string, from: Point, towards: Point): void {
+    index.set(key, [...(index.get(key) ?? []), Math.atan2(towards.y - from.y, towards.x - from.x)]);
 }
