@@ -32,6 +32,62 @@ function related(): ViewModel {
     };
 }
 
+/**
+ * `Man.hasChild inverseOf Person.hasFather`: one association stated twice, as
+ * `boats.tonto` states it. The half with the smaller id keeps the line.
+ */
+function inversePair(): ViewModel {
+    const ends = {
+        man: { cardinality: '1', role: 'father', isConst: true, isAddOnly: false },
+        person: { cardinality: '*', role: 'children', isConst: false, isAddOnly: true }
+    };
+    return {
+        groups: [],
+        nodes: ['Man', 'Person'].map(name => ({
+            id: `Sample::${name}`, kind: 'class' as const, name, package: 'Sample',
+            stereotype: name === 'Man' ? 'subkind' : 'kind', color: '#FF99A3',
+            isExternal: false, attributes: []
+        })),
+        edges: [
+            {
+                kind: 'relation' as const,
+                id: 'rel:Sample::Man->Sample::Person::hasChild',
+                source: 'Sample::Man',
+                target: 'Sample::Person',
+                name: 'hasChild',
+                sourceEnd: { ...ends.man },
+                // Only this half names the role, so only this half can lose it.
+                targetEnd: { ...ends.person },
+                inverseOf: 'rel:Sample::Person->Sample::Man:historicalDependence:hasFather'
+            },
+            {
+                kind: 'relation' as const,
+                id: 'rel:Sample::Person->Sample::Man:historicalDependence:hasFather',
+                source: 'Sample::Person',
+                target: 'Sample::Man',
+                stereotype: 'historicalDependence',
+                name: 'hasFather',
+                sourceEnd: { cardinality: '*', isConst: false, isAddOnly: true },
+                targetEnd: { cardinality: '1', isConst: true, isAddOnly: false },
+                inverseOf: 'rel:Sample::Man->Sample::Person::hasChild'
+            }
+        ],
+        gensets: []
+    };
+}
+
+/** The pair drawn between two boxes a fixed distance apart. */
+function drawnPair(view = inversePair()) {
+    return render({
+        view,
+        positions: {
+            'Sample::Man': { x: 0, y: 0, width: 140, height: 42 },
+            'Sample::Person': { x: 460, y: 0, width: 140, height: 42 }
+        },
+        display
+    });
+}
+
 function drawn(view: ViewModel, options = display) {
     const sizes = Object.fromEntries(view.nodes.map(node => [node.id, sizeOf(node, options)]));
     return render({ view, positions: placeNewNodes(view, sizes, {}), display: options });
@@ -234,6 +290,76 @@ describe('drawing', () => {
         // Beyond the name's own half-width, and not out in the middle of nowhere.
         expect(gap).toBeGreaterThan(0);
         expect(gap).toBeLessThan(40);
+    });
+
+    test('draws an inverse pair as one line', () => {
+        const output = drawnPair();
+        // Two relations, one association: two lines between the same pair of
+        // classes saying the same thing in opposite directions is a reader
+        // counting two relationships where the model has one.
+        expect(Object.keys(output.paths)).toEqual(['rel:Sample::Man->Sample::Person::hasChild']);
+        expect(output.svg.match(/data-edge=/g)).toHaveLength(1);
+        expect(output.svg).not.toContain('data-edge="rel:Sample::Person-&gt;Sample::Man');
+    });
+
+    test('writes both readings of an inverse pair on that line', () => {
+        const svg = drawnPair().svg;
+        expect(svg).toContain('>hasChild<');
+        expect(svg).toContain('>hasFather<');
+        // One triangle each: the line carries two sentences, and neither is
+        // readable without knowing which way round it goes.
+        expect(svg.match(/class="tv-reading"/g)).toHaveLength(2);
+    });
+
+    test('points the two readings of an inverse pair opposite ways', () => {
+        const svg = drawnPair().svg;
+        const triangles = [...svg.matchAll(/<polygon class="tv-reading" points="([-\d.]+),([-\d.]+) ([-\d.]+),/g)]
+            .map(match => Number(match[3]) - Number(match[1]));
+        // The line runs left to right, so the half written that way points
+        // right and its inverse points back along it.
+        expect(triangles).toHaveLength(2);
+        expect(Math.min(...triangles)).toBeLessThan(0);
+        expect(Math.max(...triangles)).toBeGreaterThan(0);
+    });
+
+    test('keeps a stereotype over the name it belongs to, on both readings', () => {
+        const svg = drawnPair().svg;
+        const stereotype = svg.match(/<text class="tv-edge-stereotype"[^>]*? y="([-\d.]+)"[^>]*>«historicalDependence»/);
+        const name = svg.match(/<text[^>]*? y="([-\d.]+)"[^>]*>hasFather</);
+        expect(stereotype).not.toBeNull();
+        // Its own name, not the other half's: a material relation is regularly
+        // the inverse of a mediation, and one stereotype over both would say
+        // the line is something the model does not say it is.
+        expect(Number(stereotype![1])).toBeLessThan(Number(name![1]));
+        expect(svg.match(/«historicalDependence»/g)).toHaveLength(1);
+    });
+
+    test('writes a shared stereotype once', () => {
+        const view = inversePair();
+        for (const edge of view.edges) {
+            if (edge.kind === 'relation') {
+                edge.stereotype = 'material';
+            }
+        }
+        expect(drawnPair(view).svg.match(/«material»/g)).toHaveLength(1);
+    });
+
+    test('keeps what only the covered half of an inverse pair says', () => {
+        // `hasChild` names the ends; `hasFather` leaves them unnamed. Whichever
+        // of the two keeps the line, the role names are on the picture.
+        expect(drawnPair().svg).toContain('children');
+        expect(drawnPair().svg).toContain('father');
+    });
+
+    test('draws both lines when only one half claims the other', () => {
+        const view = inversePair();
+        const [child] = view.edges;
+        if (child?.kind === 'relation') {
+            delete child.inverseOf;
+        }
+        // A pair that does not agree is a model the validator rejects, and
+        // drawing fewer lines than there are relations would hide it.
+        expect(Object.keys(drawnPair(view).paths)).toHaveLength(2);
     });
 
     test('leaves the reading triangle off a relation with no name', () => {
