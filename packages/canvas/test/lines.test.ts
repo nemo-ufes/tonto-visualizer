@@ -86,6 +86,24 @@ describe('telling one line from another', () => {
         expect(svg.match(/class="tv-marker"/g)).toHaveLength(1);
     });
 
+    test('anchors lines to one class in the order they leave in', () => {
+        // Three classes on one rank, as a layered layout leaves them, reached
+        // from the right side of one class. Every far centre has the same y, so
+        // ordering the ends by that y decided nothing and they were ordered by
+        // edge id instead -- which here is the wrong way round.
+        const svg = drawnWith(['Person', 'Near', 'Middle', 'Far'],
+            [relation('a-near', 'Person', 'Near'),
+                relation('b-middle', 'Person', 'Middle'),
+                relation('c-far', 'Person', 'Far')],
+            { Person: { x: 0, y: 0 }, Near: { x: 400, y: 30 }, Middle: { x: 700, y: 30 }, Far: { x: 1000, y: 30 } });
+        const at = Object.fromEntries(Object.entries(paths(svg))
+            .map(([id, d]) => [id, Number(/^M ?([-\d.]+) ([-\d.]+)/.exec(d)![2])]));
+        // The steeper the line, the lower down the side it leaves: a fan, which
+        // is the one order in which none of the three crosses another.
+        expect(at['a-near']).toBeGreaterThan(at['b-middle']!);
+        expect(at['b-middle']).toBeGreaterThan(at['c-far']!);
+    });
+
     test('leaves them as separate arrows when they are not all on one side', () => {
         const svg = drawnWith(['Person', 'Child', 'Adult'],
             [generalization('Child', 'Person'), generalization('Adult', 'Person')],
