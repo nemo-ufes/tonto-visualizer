@@ -58,6 +58,20 @@ describe('the panel chrome', () => {
         expect(/img-src[^;]*\bdata:/.test(policy![1]!)).toBe(true);
     });
 
+    /**
+     * `element` throws when an id is missing, and it is called as the script
+     * loads, so one id in the panel's HTML that the webview does not know about
+     * -- a button renamed on one side of the pair -- is not a broken button, it
+     * is a blank diagram with the failure only in a console nobody has open.
+     */
+    test('gives the webview every element it asks the page for', () => {
+        const webview = readFileSync(resolve(import.meta.dirname, '../src/webview/main.ts'), 'utf8');
+        const asked = [...webview.matchAll(/\belement\('([^']+)'/g)].map(match => match[1]!);
+        const offered = new Set([...panel.matchAll(/id="([^"]+)"/g)].map(match => match[1]!));
+        expect(asked.length).toBeGreaterThan(0);
+        expect(asked.filter(id => !offered.has(id))).toEqual([]);
+    });
+
     test('falls back to the font the diagram is drawn in', () => {
         // Chrome and drawing should agree when neither is being told what to
         // use; the stack is the one in packages/canvas/src/measure.ts.
