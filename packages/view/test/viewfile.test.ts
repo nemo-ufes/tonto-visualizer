@@ -6,6 +6,7 @@ describe('view file options', () => {
     test('replaces malformed persisted option fields with defaults', () => {
         const view = readViewFile({
             content: {
+                scope: 'everything',
                 showExternalReferences: 'yes',
                 showDatatypes: 0,
                 showGensets: null,
@@ -34,6 +35,7 @@ describe('view file options', () => {
     test('retains valid optional arrays and explicit false values', () => {
         const view = readViewFile({
             content: {
+                scope: 'workspace',
                 showExternalReferences: false,
                 showDatatypes: false,
                 showGensets: false,
@@ -48,6 +50,7 @@ describe('view file options', () => {
         });
 
         expect(view.content).toEqual({
+            scope: 'workspace',
             showExternalReferences: false,
             showDatatypes: false,
             showGensets: false,

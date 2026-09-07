@@ -108,6 +108,7 @@ function readContentOptions(value: unknown): ContentOptions {
     const includedPackages = stringArray(source.includedPackages);
     const hidden = stringArray(source.hidden);
     return {
+        scope: oneOf(source.scope, ['file', 'workspace']) ? source.scope : defaultContentOptions.scope,
         showExternalReferences: booleanOr(source.showExternalReferences, defaultContentOptions.showExternalReferences),
         showDatatypes: booleanOr(source.showDatatypes, defaultContentOptions.showDatatypes),
         showGensets: booleanOr(source.showGensets, defaultContentOptions.showGensets),

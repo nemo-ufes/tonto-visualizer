@@ -834,18 +834,28 @@ function fillOptions(): void {
         }
     }
 
-    if (packages.length > 1) {
+    if (packages.length > 0) {
         const included = new Set(content.includedPackages ?? packages);
-        optionsPanel.append(section('Packages', packages.map(name =>
-            toggle(name, included.has(name), value => {
-                const next = new Set(included);
-                if (value) {
-                    next.add(name);
-                } else {
-                    next.delete(name);
-                }
-                host.postMessage({ type: 'content', content: { includedPackages: [...next] } });
-            }))));
+        // The scope says where the view starts; the ticks below refine it. Both
+        // are offered together so it is plain that choosing a scope puts every
+        // tick back to what that scope holds.
+        const rows = [choice('Scope', [['file', 'This file'], ['workspace', 'Whole workspace']], content.scope,
+            value => host.postMessage({
+                type: 'content', content: { scope: value as ContentOptions['scope'] }
+            }))];
+        if (packages.length > 1) {
+            rows.push(...packages.map(name =>
+                toggle(name, included.has(name), value => {
+                    const next = new Set(included);
+                    if (value) {
+                        next.add(name);
+                    } else {
+                        next.delete(name);
+                    }
+                    host.postMessage({ type: 'content', content: { includedPackages: [...next] } });
+                })));
+        }
+        optionsPanel.append(section('Packages', rows));
     }
 
     const hiddenIds = content.hidden ?? [];

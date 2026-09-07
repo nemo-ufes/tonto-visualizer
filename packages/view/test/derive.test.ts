@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { derive, expandInverseIds, idsAtSource } from '../src/index.js';
+import { derive, expandInverseIds, idsAtSource, packagesInScope } from '../src/index.js';
 import { ViewSession } from '../src/session.js';
 
 const parties = resolve(import.meta.dirname, 'fixtures/parties');
@@ -127,6 +127,36 @@ kind Animal {
         const view = derive({ models, options: { includedPackages } });
         expect(view.groups.filter(group => !group.isExternal).map(group => group.name)).toEqual(['Employment']);
         expect(view.groups.filter(group => group.isExternal).map(group => group.name)).toEqual(['Parties']);
+    });
+
+    test('draws the opened file or the whole workspace, as the scope says', async () => {
+        const session = new ViewSession({ workspace: [parties] });
+        const uri = pathToFileURL(resolve(parties, 'employment.tonto')).toString();
+        const models = await session.models();
+        const available = {
+            file: packageNames(await session.modelsOf(uri, models)),
+            workspace: packageNames(models)
+        };
+        // What the extension does with a scope: the stored choice becomes the
+        // list of names the derivation is given.
+        const viewOf = (content: Parameters<typeof packagesInScope>[0]) => derive({
+            models,
+            options: { ...content, includedPackages: packagesInScope(content, available) }
+        });
+
+        const file = viewOf({ scope: 'file' });
+        expect(file.groups.filter(group => !group.isExternal).map(group => group.name)).toEqual(['Employment']);
+        expect(file.groups.filter(group => group.isExternal).map(group => group.name)).toEqual(['Parties']);
+
+        const whole = viewOf({ scope: 'workspace' });
+        expect(whole.groups.map(group => group.name).sort()).toEqual(['Employment', 'Parties']);
+        expect(whole.groups.filter(group => group.isExternal)).toEqual([]);
+        expect(whole.nodes.filter(node => node.isExternal)).toEqual([]);
+        expect(whole.nodes.length).toBeGreaterThan(file.nodes.length);
+
+        // Ticking packages by hand outranks either scope.
+        const picked = viewOf({ scope: 'workspace', includedPackages: ['Parties'] });
+        expect(picked.groups.filter(group => !group.isExternal).map(group => group.name)).toEqual(['Parties']);
     });
 
     test('drops datatype nodes and the attributes typed by them together', async () => {
@@ -256,6 +286,13 @@ kind Person {
         expect(idsAtSource(view, knows.source_!.uri, knows.source_!.line)).toContain(knows.id);
     });
 });
+
+/** The packages a set of models declares, which is what a scope resolves to. */
+function packageNames(models: Awaited<ReturnType<ViewSession['models']>>): string[] {
+    return [...new Set(models
+        .flatMap(model => model.packages.map(one => one.name))
+        .filter((name): name is string => name !== undefined))];
+}
 
 function node(view: Awaited<ReturnType<typeof viewOfText>>, id: string) {
     const found = view.nodes.find(candidate => candidate.id === id);
