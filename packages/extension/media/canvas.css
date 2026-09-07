@@ -140,6 +140,27 @@ button:hover {
     opacity: 0.7;
 }
 
+/*
+ * The corner grips of the selected card. Square rather than round, because a
+ * corner is what they pull and a circle on a corner reads as a bend in a line
+ * -- which is what the round ones are.
+ */
+#canvas .tv-grip {
+    fill: var(--vscode-editor-background, #f7f6f2);
+    stroke: var(--vscode-focusBorder, #1f5c5c);
+    pointer-events: all;
+    cursor: nwse-resize;
+}
+
+#canvas .tv-grip[data-grip="top-right"],
+#canvas .tv-grip[data-grip="bottom-left"] {
+    cursor: nesw-resize;
+}
+
+#canvas .tv-grip:hover {
+    fill: var(--vscode-focusBorder, #1f5c5c);
+}
+
 #canvas .tv-handle:hover {
     fill: var(--vscode-focusBorder, #1f5c5c);
     opacity: 1;
