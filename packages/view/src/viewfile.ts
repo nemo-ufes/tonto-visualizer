@@ -77,16 +77,16 @@ export function emptyViewFile(focus?: string): ViewFile {
  * string is a bad trade.
  */
 export function readViewFile(raw: unknown): ViewFile {
-    const source = (typeof raw === 'object' && raw !== null ? raw : {}) as Partial<ViewFile>;
+    const source = recordOf(raw);
     const nodes: Record<string, Placement> = {};
-    for (const [id, placement] of Object.entries(source.nodes ?? {})) {
+    for (const [id, placement] of Object.entries(recordOf(source.nodes))) {
         const read = readPlacement(placement);
         if (read) {
             nodes[id] = read;
         }
     }
     const edges: Record<string, EdgeRoute> = {};
-    for (const [id, route] of Object.entries(source.edges ?? {})) {
+    for (const [id, route] of Object.entries(recordOf(source.edges))) {
         const read = readRoute(route);
         if (read) {
             edges[id] = read;
@@ -95,11 +95,57 @@ export function readViewFile(raw: unknown): ViewFile {
     return {
         version: VIEW_FILE_VERSION,
         ...(typeof source.focus === 'string' ? { focus: source.focus } : {}),
-        content: { ...defaultContentOptions, ...(source.content ?? {}) },
-        display: { ...defaultDisplayOptions, ...(source.display ?? {}) },
-        layout: { ...defaultLayoutOptions, ...(source.layout ?? {}) },
+        content: readContentOptions(source.content),
+        display: readDisplayOptions(source.display),
+        layout: readLayoutOptions(source.layout),
         nodes,
         edges
+    };
+}
+
+function readContentOptions(value: unknown): ContentOptions {
+    const source = recordOf(value);
+    const includedPackages = stringArray(source.includedPackages);
+    const hidden = stringArray(source.hidden);
+    return {
+        showExternalReferences: booleanOr(source.showExternalReferences, defaultContentOptions.showExternalReferences),
+        showDatatypes: booleanOr(source.showDatatypes, defaultContentOptions.showDatatypes),
+        showGensets: booleanOr(source.showGensets, defaultContentOptions.showGensets),
+        ...(includedPackages ? { includedPackages } : {}),
+        ...(hidden ? { hidden } : {})
+    };
+}
+
+function readDisplayOptions(value: unknown): DisplayOptions {
+    const source = recordOf(value);
+    return {
+        routing: oneOf(source.routing, ['straight', 'orthogonal'])
+            ? source.routing : defaultDisplayOptions.routing,
+        showAttributes: booleanOr(source.showAttributes, defaultDisplayOptions.showAttributes),
+        showCardinalities: booleanOr(source.showCardinalities, defaultDisplayOptions.showCardinalities),
+        showRelationNames: booleanOr(source.showRelationNames, defaultDisplayOptions.showRelationNames),
+        showRelationStereotypes: booleanOr(
+            source.showRelationStereotypes, defaultDisplayOptions.showRelationStereotypes),
+        showEndDecorations: booleanOr(source.showEndDecorations, defaultDisplayOptions.showEndDecorations),
+        showRoleNames: booleanOr(source.showRoleNames, defaultDisplayOptions.showRoleNames),
+        showColors: booleanOr(source.showColors, defaultDisplayOptions.showColors),
+        showLegend: booleanOr(source.showLegend, defaultDisplayOptions.showLegend),
+        showPackageGroups: booleanOr(source.showPackageGroups, defaultDisplayOptions.showPackageGroups),
+        qualifyNames: booleanOr(source.qualifyNames, defaultDisplayOptions.qualifyNames),
+        showDocumentation: booleanOr(source.showDocumentation, defaultDisplayOptions.showDocumentation)
+    };
+}
+
+function readLayoutOptions(value: unknown): LayoutOptions {
+    const source = recordOf(value);
+    return {
+        algorithm: oneOf(source.algorithm, ['layered', 'stress', 'mrtree', 'radial', 'force'])
+            ? source.algorithm : defaultLayoutOptions.algorithm,
+        direction: oneOf(source.direction, ['DOWN', 'RIGHT'])
+            ? source.direction : defaultLayoutOptions.direction,
+        nodeSpacing: nonNegativeNumberOr(source.nodeSpacing, defaultLayoutOptions.nodeSpacing),
+        rankSpacing: nonNegativeNumberOr(source.rankSpacing, defaultLayoutOptions.rankSpacing),
+        groupByPackage: booleanOr(source.groupByPackage, defaultLayoutOptions.groupByPackage)
     };
 }
 
@@ -182,4 +228,26 @@ function readRoute(value: unknown): EdgeRoute | undefined {
 function isPoint(value: unknown): value is Point {
     return typeof value === 'object' && value !== null
         && typeof (value as Point).x === 'number' && typeof (value as Point).y === 'number';
+}
+
+function recordOf(value: unknown): Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value)
+        ? value as Record<string, unknown>
+        : {};
+}
+
+function booleanOr(value: unknown, fallback: boolean): boolean {
+    return typeof value === 'boolean' ? value : fallback;
+}
+
+function nonNegativeNumberOr(value: unknown, fallback: number): number {
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+function stringArray(value: unknown): string[] | undefined {
+    return Array.isArray(value) && value.every(item => typeof item === 'string') ? [...value] : undefined;
+}
+
+function oneOf<const T extends string>(value: unknown, choices: readonly T[]): value is T {
+    return typeof value === 'string' && choices.includes(value as T);
 }

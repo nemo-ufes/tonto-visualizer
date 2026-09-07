@@ -15,6 +15,7 @@ import {
     CORNERS, cornerOf, darkTheme, distanceToPath, drawNode, dropHandle, handlesFor, lightTheme,
     moveHandle, overlaps, rectBetween, render, resizeTo, routeEdge, segmentHitsRect, sizeOf
 } from 'tonto-canvas/draw';
+import type { FilterItem } from '../protocol.js';
 
 interface HostApi {
     postMessage(message: unknown): void;
@@ -40,8 +41,10 @@ let display: DisplayOptions | undefined;
 let content: ContentOptions | undefined;
 let layout: LayoutOptions | undefined;
 let packages: string[] = [];
+let filters: FilterItem[] = [];
 let dark = false;
 let selection = new Set<string>();
+const openFilterSections = new Set<FilterItem['kind']>();
 
 const stored = host.getState() ?? {};
 let scale = stored.scale ?? 1;
@@ -73,17 +76,29 @@ window.addEventListener('message', event => {
     const message = event.data;
     if (message.type === 'model') {
         view = message.view;
+        const visible = new Set([
+            ...view.nodes.map(node => node.id),
+            ...view.edges.map(edge => edge.id)
+        ]);
+        const pruned = new Set([...selection].filter(id => visible.has(id)));
+        const selectionChanged = pruned.size !== selection.size;
+        selection = pruned;
         positions = message.positions;
         routes = message.routes;
         display = message.display;
         content = message.content;
         layout = message.layout;
         packages = message.packages;
+        filters = message.filters;
         titleLabel.textContent = message.title;
         staleLabel.hidden = !message.stale;
         staleLabel.textContent = message.stale ? `does not parse — showing the last good diagram` : '';
         draw();
-        updateArrangeTitle();
+        if (selectionChanged) {
+            reportSelection();
+        } else {
+            updateArrangeTitle();
+        }
         if (optionsPanel.hidden === false) {
             fillOptions();
         }
@@ -678,11 +693,7 @@ viewport.addEventListener('wheel', event => {
 
 window.addEventListener('keydown', event => {
     if (event.key === 'Delete' || event.key === 'Backspace') {
-        if (selection.size > 0) {
-            host.postMessage({ type: 'hide', ids: [...selection] });
-            selection = new Set();
-            reportSelection();
-        }
+        hideSelection();
         return;
     }
     // The keys every editor uses, since the panel is where the change was made.
@@ -698,6 +709,15 @@ window.addEventListener('keydown', event => {
         }
     }
 });
+
+function hideSelection(): void {
+    if (selection.size === 0) {
+        return;
+    }
+    host.postMessage({ type: 'hide', ids: [...selection] });
+    selection = new Set();
+    reportSelection();
+}
 
 function applySelection(): void {
     for (const group of Array.from(canvas.querySelectorAll('[data-node], [data-edge]'))) {
@@ -717,6 +737,7 @@ function updateArrangeTitle(): void {
     element('arrange').title = selectedNodes > 0
         ? `Arrange ${selectedNodes} selected node${selectedNodes === 1 ? '' : 's'} automatically`
         : 'Arrange the whole diagram automatically';
+    element('hide').toggleAttribute('disabled', selection.size === 0);
 }
 
 element('zoomIn').addEventListener('click', () => zoomAt(scale * 1.2, centreX(), centreY()));
@@ -728,6 +749,7 @@ element('arrange').addEventListener('click', () => {
         ? { type: 'autoLayout', only: selectedNodes }
         : { type: 'autoLayout' });
 });
+element('hide').addEventListener('click', hideSelection);
 // No format: the name the modeller gives the file in the dialog decides.
 element('exportButton').addEventListener('click', () => host.postMessage({ type: 'export' }));
 element('optionsButton').addEventListener('click', () => {
@@ -791,6 +813,14 @@ function fillOptions(): void {
     optionsPanel.append(section('Included', contentRows.map(([key, label]) =>
         toggle(label, Boolean(content?.[key]), value => host.postMessage({ type: 'content', content: { [key]: value } })))));
 
+    const hidden = new Set(content.hidden ?? []);
+    for (const kind of ['class', 'association'] as const) {
+        const items = filters.filter(item => item.kind === kind);
+        if (items.length > 0) {
+            optionsPanel.append(filterSection(kind, items, hidden));
+        }
+    }
+
     if (packages.length > 1) {
         const included = new Set(content.includedPackages ?? packages);
         optionsPanel.append(section('Packages', packages.map(name =>
@@ -805,13 +835,38 @@ function fillOptions(): void {
             }))));
     }
 
-    const hidden = content.hidden ?? [];
-    if (hidden.length > 0) {
+    const hiddenIds = content.hidden ?? [];
+    if (hiddenIds.length > 0) {
         const button = document.createElement('button');
-        button.textContent = `Show ${hidden.length} hidden element${hidden.length === 1 ? '' : 's'}`;
-        button.addEventListener('click', () => host.postMessage({ type: 'show', ids: hidden }));
-        optionsPanel.append(section('Hidden', [button]));
+        button.textContent = 'Reset class and association filters';
+        button.addEventListener('click', () => host.postMessage({ type: 'show', ids: hiddenIds }));
+        optionsPanel.append(section('Reset', [button]));
     }
+}
+
+function filterSection(
+    kind: FilterItem['kind'], items: FilterItem[], hidden: ReadonlySet<string>
+): HTMLElement {
+    const wrapper = document.createElement('details');
+    wrapper.className = 'section filter-section';
+    wrapper.open = openFilterSections.has(kind);
+    wrapper.addEventListener('toggle', () => {
+        if (wrapper.open) {
+            openFilterSections.add(kind);
+        } else {
+            openFilterSections.delete(kind);
+        }
+    });
+    const heading = document.createElement('summary');
+    heading.className = 'section-title';
+    heading.textContent = `${kind === 'class' ? 'Classes' : 'Associations'} (${items.length})`;
+    wrapper.append(heading, ...items.map(item => {
+        const row = toggle(item.label, !item.ids.some(id => hidden.has(id)), shown =>
+            host.postMessage({ type: shown ? 'show' : 'hide', ids: item.ids }));
+        row.title = item.label;
+        return row;
+    }));
+    return wrapper;
 }
 
 function fillLegend(): void {
