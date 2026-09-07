@@ -248,7 +248,13 @@ why its generator can only be exercised through the extension.
 - **Scope follows the model, not the file.** The redesign reads a model as every
   `.tonto` file under its root, so the default view is the package the file
   declares, with imports drawn as external references — the same file/project
-  pair the old extension offers, resolved the way the language resolves it.
+  pair the old extension offers, resolved the way the language resolves it. The
+  other half of that pair is a choice in the options panel: *whole workspace*
+  draws every package under the root, and what was an external reference becomes
+  an element like any other. The choice is stored in the view file as the scope
+  rather than as the packages it comes to, because a file gains and loses
+  packages as it is written; ticking packages by hand outranks it, and choosing
+  a scope hands the ticks back.
 
 Command and setting ids are namespaced `tonto.viz.*`: the old extension owns
 `tonto.diagram.*`, and a user with both installed should not get two commands

@@ -35,9 +35,10 @@ Working end to end, and rough in places.
 - `packages/cli` — `tonto-view <file-or-directory> [--svg]`.
 - `packages/extension` — the panel: live redraw as the model is typed, the last
   good picture kept while it does not parse, drag to arrange, double-click to
-  open the declaration, cursor-follows-selection, package filter, display
-  options, nature legend, SVG export, and a `.tontoview` file beside the model
-  holding the arrangement.
+  open the declaration, cursor-follows-selection, a scope that is either the
+  opened file's packages or the whole workspace, package, class and association
+  filters, display options, nature legend, SVG export, and a `.tontoview` file
+  beside the model holding the arrangement.
 
 The notation covers classes with stereotypes and attributes, datatypes and
 enumerations, generalizations, generalization sets as one shared triangle with

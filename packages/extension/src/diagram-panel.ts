@@ -8,7 +8,7 @@
 
 import * as vscode from 'vscode';
 import type { ContentOptions, DisplayOptions, ViewModel } from 'tonto-view';
-import { derive, expandInverseIds, idsAtSource, reconcile } from 'tonto-view';
+import { contentAfter, derive, expandInverseIds, idsAtSource, packagesInScope, reconcile } from 'tonto-view';
 import { ViewSession } from 'tonto-view/session';
 import { autoLayout } from 'tonto-canvas';
 import { darkTheme, drawnSizes, lightTheme, movedTo, placeNewNodes, render, sizeOf } from 'tonto-canvas/draw';
@@ -429,10 +429,22 @@ export class DiagramPanel {
         return Object.fromEntries(this.view.nodes.map(node => [node.id, sizeOf(node, display)]));
     }
 
+    /**
+     * The content options with the packages named, since the view is derived
+     * from names and the stored options hold a scope.
+     *
+     * Which packages a scope comes to is not known until the model has been
+     * read, and changes as the panel follows the editor: that is why the file
+     * says `file` or `workspace` rather than listing them.
+     */
     private effectiveContent(content: ContentOptions): ContentOptions {
-        return content.includedPackages === undefined
-            ? { ...content, includedPackages: this.focusPackages }
-            : content;
+        return {
+            ...content,
+            includedPackages: packagesInScope(content, {
+                file: this.focusPackages,
+                workspace: this.availablePackages
+            })
+        };
     }
 
     /**
@@ -565,7 +577,7 @@ export class DiagramPanel {
             case 'content':
                 if (store) {
                     store.begin('Content option');
-                    store.update({ content: { ...store.state.content, ...message.content } });
+                    store.update({ content: contentAfter(store.state.content, message.content) });
                     await this.refresh();
                 }
                 return;

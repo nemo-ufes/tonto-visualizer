@@ -84,6 +84,23 @@ function posted(type: string): Array<Record<string, unknown>> {
         typeof message === 'object' && message !== null && (message as { type?: string }).type === type);
 }
 
+/** The options panel is a toggle, and every test after the first wants it open. */
+function openOptions(): void {
+    if ((document.getElementById('options') as HTMLElement).hidden) {
+        document.getElementById('optionsButton')!.click();
+    }
+}
+
+function chooser(label: string): HTMLSelectElement {
+    const row = [...document.querySelectorAll('label.choice')].find(candidate =>
+        candidate.querySelector('span')?.textContent === label);
+    const select = row?.querySelector('select');
+    if (!(select instanceof HTMLSelectElement)) {
+        throw new Error(`no chooser named ${label}`);
+    }
+    return select;
+}
+
 function checkbox(label: string): HTMLInputElement {
     const row = [...document.querySelectorAll('label')].find(candidate =>
         candidate.textContent?.trim() === label);
@@ -154,6 +171,31 @@ describe('the webview and its host protocol', () => {
         expect((document.getElementById('hide') as HTMLButtonElement).disabled).toBe(true);
         expect(document.getElementById('stale')!.hidden).toBe(false);
         expect(checkbox('Sample::Person').checked).toBe(false);
+    });
+
+    test('asks the host for the whole workspace, and shows which packages that is', () => {
+        window.dispatchEvent(new MessageEvent('message', { data: {
+            type: 'model', view, positions: {}, routes: {},
+            display: defaultDisplayOptions,
+            content: { ...defaultContentOptions, includedPackages: ['Sample'] },
+            layout: defaultLayoutOptions,
+            packages: ['Other', 'Sample'],
+            filters: [], title: 'sample.tonto'
+        } }));
+        openOptions();
+
+        // The file declares `Sample`, so that is what the scope came to.
+        expect(checkbox('Sample').checked).toBe(true);
+        expect(checkbox('Other').checked).toBe(false);
+
+        const scope = chooser('Scope');
+        expect(scope.value).toBe('file');
+        scope.value = 'workspace';
+        scope.dispatchEvent(new Event('change', { bubbles: true }));
+
+        // Only the scope is sent: which packages it comes to is the host's to
+        // answer, and it answers it again on every keystroke.
+        expect(posted('content').at(-1)).toEqual({ type: 'content', content: { scope: 'workspace' } });
     });
 
     test('does not offer to hide lines outside the association filter', () => {
