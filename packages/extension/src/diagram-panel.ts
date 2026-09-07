@@ -11,7 +11,7 @@ import type { ContentOptions, DisplayOptions, ViewModel } from 'tonto-view';
 import { derive, expandInverseIds, idsAtSource, reconcile } from 'tonto-view';
 import { ViewSession } from 'tonto-view/session';
 import { autoLayout } from 'tonto-canvas';
-import { darkTheme, lightTheme, placeNewNodes, render, segmentHitsRect, sizeOf } from 'tonto-canvas/draw';
+import { darkTheme, drawnSizes, lightTheme, movedTo, placeNewNodes, render, segmentHitsRect, sizeOf } from 'tonto-canvas/draw';
 import { filterItemsOf, filterView } from './filters.js';
 import type { FilterItem, FromPanel, Rect, ToPanel } from './protocol.js';
 import { safeRestoredPlacements } from './restoration.js';
@@ -162,7 +162,10 @@ export class DiagramPanel {
         const request = ++this.layoutRequest;
         const view = this.view;
         const previous = this.positions;
-        const sizes = this.sizes(store.state.display);
+        // The size each card is drawn at, not the size its content needs: a card
+        // the modeller widened is arranged around at the width they gave it,
+        // and its neighbours are placed clear of that rather than under it.
+        const sizes = drawnSizes(view, this.sizes(store.state.display), store.state.nodes);
         let laid;
         try {
             laid = await autoLayout(view, sizes, this.positions, {
@@ -186,7 +189,7 @@ export class DiagramPanel {
             return false;
         }
         this.positions = laid.positions;
-        store.move(Object.fromEntries(Object.entries(laid.positions).map(([id, rect]) => [id, rect])));
+        store.move(movedTo(laid.positions, store.state.nodes));
         // Only an orthogonal drawing has routes to keep; a straight one is
         // recomputed from the boxes, so what is on screen after an arrange is
         // the same kind of line as after a drag.
@@ -494,25 +497,20 @@ export class DiagramPanel {
                 if (!store) {
                     return;
                 }
-                // A placement carries a size only when the card was resized,
-                // so the message says which of the two happened.
-                store.begin(Object.values(message.positions).some(one => one.width !== undefined)
-                    ? 'Resize'
-                    : 'Move');
+                store.begin(message.resized ? 'Resize' : 'Move');
                 this.layoutRequest += 1;
                 store.move(message.positions);
                 {
-                    // A placement with no size is the file saying "as big as
-                    // what it holds", so the content decides -- not whatever
-                    // the card happened to be before it was fitted back.
-                    const natural = this.sizes(store.state.display);
+                    // The size a card is drawn at is what it holds, grown to
+                    // whatever the file asks for -- so a drag keeps the width
+                    // the modeller chose, and fitting a card back to its
+                    // content, which clears that width, shrinks it here too.
+                    const drawn = drawnSizes(this.view, this.sizes(store.state.display), store.state.nodes);
                     for (const [id, placement] of Object.entries(message.positions)) {
-                        const current = this.positions[id];
                         this.positions[id] = {
                             x: placement.x,
                             y: placement.y,
-                            width: placement.width ?? natural[id]?.width ?? current?.width ?? 160,
-                            height: placement.height ?? natural[id]?.height ?? current?.height ?? 60
+                            ...(drawn[id] ?? { width: 160, height: 60 })
                         };
                     }
                 }

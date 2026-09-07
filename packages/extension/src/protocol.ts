@@ -56,7 +56,12 @@ export type ToPanel =
 /** Panel → host. */
 export type FromPanel =
     | { type: 'ready' }
-    | { type: 'moved'; positions: Record<string, Placement>; rerouted: string[] }
+    /**
+     * Where cards are now. `resized` marks the ones the modeller sized by hand:
+     * a placement's size is what the file must never draw the card below, so a
+     * drag carries none and leaves whatever the file already asked for alone.
+     */
+    | { type: 'moved'; positions: Record<string, Placement>; rerouted: string[]; resized?: boolean }
     /** A route the modeller drew, or nothing to give the line back to the router. */
     | { type: 'rerouted'; edge: string; route?: EdgeRoute }
     | { type: 'selected'; ids: string[] }

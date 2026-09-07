@@ -571,11 +571,12 @@ viewport.addEventListener('pointerup', () => {
         .map(edge => edge.id);
     host.postMessage({
         type: 'moved',
+        // Where they are, and nothing about how big they are: a size in the
+        // file is a size the card may never go below, and a drag is not a
+        // request to freeze the card at whatever it happens to hold today.
         positions: Object.fromEntries(drag.ids.map(id => [id, {
             x: positions[id]!.x,
-            y: positions[id]!.y,
-            width: positions[id]!.width,
-            height: positions[id]!.height
+            y: positions[id]!.y
         }])),
         rerouted
     });
@@ -615,7 +616,8 @@ function keepSize(id: string, rect: Rect, sized = true): void {
     host.postMessage({
         type: 'moved',
         positions: { [id]: { x: rect.x, y: rect.y, ...(sized ? { width: rect.width, height: rect.height } : {}) } },
-        rerouted: view.edges.filter(edge => edge.source === id || edge.target === id).map(edge => edge.id)
+        rerouted: view.edges.filter(edge => edge.source === id || edge.target === id).map(edge => edge.id),
+        resized: true
     });
     for (const edge of view.edges) {
         if (edge.source === id || edge.target === id) {
