@@ -205,7 +205,9 @@ export function render(input: RenderInput): Rendered {
         // Whatever this line bent around, the next one goes round elsewhere.
         bends.push(...paths[edge.id]!.slice(1, -1));
     }
-    const placer = new LabelPlacer(rects, groups.map(group => group.rect), paths);
+    // A copy: the placer is told about the bar of each tree as it is drawn,
+    // and `paths` is what the canvas hit-tests edges against.
+    const placer = new LabelPlacer(rects, groups.map(group => group.rect), { ...paths });
     const buses: BusLine[] = [];
     const treeMarkup = trees.plans
         .map(plan => drawTree(plan, positions, theme, placer, rects, buses))
@@ -543,6 +545,17 @@ class LabelPlacer {
             worst = Math.max(worst, overlapArea(box, rect) / area);
         }
         return worst;
+    }
+
+    /**
+     * A line the placer was not given when it was built.
+     *
+     * A generalization set's bar is decided as the tree is drawn, which is
+     * after the routes and before any label. Told about it, the placer can keep
+     * the set's own label on it and everybody else's off it.
+     */
+    carry(id: string, points: Point[]): void {
+        this.lines[id] = points;
     }
 
     /** Claims a box, so whatever is placed next avoids it. */
@@ -1113,12 +1126,27 @@ function drawTree(
     if (plan.label) {
         const label = plan.label;
         const width = textWidth(label, FONT.edge);
+        // The label belongs to the bar, so it is written on the bar: centred
+        // along it, on the side the parent is. Beside the stem is where it went
+        // before, which on a parent that has a subtype outside the set is on
+        // top of that subtype's line -- `PersonAgePhases {disjoint, complete}`
+        // printed across the generalization to `Employee`, a class the set does
+        // not hold. A label is read against whatever line is nearest it, so the
+        // bar is registered as a line and the label pays for leaving it.
+        placer.carry(plan.marker ?? plan.general, [{ x: left, y: bus }, { x: right, y: bus }]);
+        const middle = (left + right) / 2;
+        // Clear of the bar either way: a baseline six above it puts the text
+        // wholly above, and sixteen below puts it wholly below.
+        const above = bus - 6;
+        const below = bus + 16;
+        const near = direction > 0 ? above : below;
+        const far = direction > 0 ? below : above;
         const at = placer.place([
-            { x: base.x + width / 2 + 14, y: bus - 6 },
-            { x: base.x - width / 2 - 14, y: bus - 6 },
-            { x: base.x + width / 2 + 14, y: bus + 16 },
-            { x: base.x, y: bus - 20 }
-        ], label);
+            { x: middle, y: near },
+            { x: middle, y: far },
+            { x: base.x + width / 2 + 14, y: near },
+            { x: base.x - width / 2 - 14, y: near }
+        ], label, plan.marker ?? plan.general);
         markup += `<text x="${round(at.x)}" y="${round(at.y)}" fill="${theme.muted}" text-anchor="middle" `
             + `paint-order="stroke" stroke="${theme.background}" stroke-width="3" stroke-linejoin="round">`
             + `${escape(label)}</text>`;

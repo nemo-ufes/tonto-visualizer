@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 import type { ViewModel, ViewRelationEnd } from 'tonto-view';
 import { defaultDisplayOptions } from 'tonto-view';
 import { placeNewNodes } from '../src/place.js';
-import { segmentHitsRect } from '../src/geometry.js';
+import { distanceToPath, segmentHitsRect } from '../src/geometry.js';
 import { labelWidth, render } from '../src/render.js';
 import { routeEdge } from '../src/route.js';
 import { FONT, multiplicityLabel, sizeOf, textWidth } from '../src/measure.js';
@@ -657,6 +657,72 @@ describe('drawing', () => {
         expect(Math.min(...points.map(point => point.y))).toBeGreaterThanOrEqual(rendered.bounds.y);
         expect(Math.max(...points.map(point => point.x)))
             .toBeLessThanOrEqual(rendered.bounds.x + rendered.bounds.width);
+    });
+
+    /**
+     * A generalization set names the bar it is drawn as, so that is where it
+     * has to be written. It used to be put beside the stem, which on a parent
+     * that has a subtype of its own outside the set is on top of that subtype's
+     * line: `PersonAgePhases {disjoint, complete}` printed itself across the
+     * generalization to `Employee`, a class the set does not hold, and a reader
+     * has nothing but position to tell them otherwise.
+     */
+    test('writes a generalization set on its own bar, not across a neighbour\'s line', () => {
+        const set = 'set:Sample::PersonAgePhases';
+        const clazz = (name: string, stereotype: string) => ({
+            id: `Sample::${name}`, kind: 'class' as const, name, package: 'Sample',
+            stereotype, color: '#FF99A3', isExternal: false, attributes: []
+        });
+        const specialization = (name: string, genset?: string) => ({
+            kind: 'generalization' as const,
+            id: `gen:Sample::${name}->Sample::Person`,
+            source: `Sample::${name}`,
+            target: 'Sample::Person',
+            ...(genset ? { genset } : {})
+        });
+        const view: ViewModel = {
+            groups: [],
+            nodes: [
+                clazz('Person', 'kind'), clazz('Child', 'phase'),
+                clazz('Adult', 'phase'), clazz('Employee', 'role')
+            ],
+            edges: [
+                specialization('Child', set), specialization('Adult', set), specialization('Employee')
+            ],
+            gensets: [{
+                id: set, name: 'PersonAgePhases', disjoint: true, complete: true,
+                general: 'Sample::Person', specifics: ['Sample::Child', 'Sample::Adult'], categorizers: []
+            }]
+        };
+        // As `parties` is arranged: the set's two phases to the left, and the
+        // role that is not in the set to the right of them.
+        const positions = {
+            'Sample::Person': { x: 253, y: 525, width: 208, height: 84 },
+            'Sample::Adult': { x: 117, y: 709, width: 120, height: 42 },
+            'Sample::Child': { x: 297, y: 709, width: 120, height: 42 },
+            'Sample::Employee': { x: 477, y: 709, width: 120, height: 42 }
+        };
+        const output = render({ view, positions, display });
+
+        const tree = /<g class="tv-edge tv-tree"[^>]*>([\s\S]*?)<\/g>/.exec(output.svg)?.[1] ?? '';
+        const segments = [...tree.matchAll(/<path d="M ([-\d.]+) ([-\d.]+) L ([-\d.]+) ([-\d.]+)"\/>/g)]
+            .map(match => match.slice(1).map(Number) as [number, number, number, number]);
+        const horizontal = segments.find(([, y1, , y2]) => y1 === y2);
+        expect(horizontal).toBeDefined();
+        const bar = [
+            { x: horizontal![0], y: horizontal![1] },
+            { x: horizontal![2], y: horizontal![3] }
+        ];
+        const written = /<text x="([-\d.]+)" y="([-\d.]+)"[^>]*>PersonAgePhases[^<]*<\/text>/.exec(tree);
+        expect(written).not.toBeNull();
+        const at = { x: Number(written![1]), y: Number(written![2]) };
+
+        // Over the bar, and nearer it than the line to the class the set does
+        // not hold -- which is what the reader takes a label from.
+        expect(at.x).toBeGreaterThanOrEqual(Math.min(bar[0]!.x, bar[1]!.x));
+        expect(at.x).toBeLessThanOrEqual(Math.max(bar[0]!.x, bar[1]!.x));
+        expect(distanceToPath(at, bar))
+            .toBeLessThan(distanceToPath(at, output.paths['gen:Sample::Employee->Sample::Person']!));
     });
 
     test('goes monochrome when colours are turned off', () => {
