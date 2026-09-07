@@ -37,17 +37,7 @@ export function placeNewNodes(
         const placement = saved[node.id];
         const size = sizes[node.id] ?? { width: 160, height: 60 };
         if (placement) {
-            positions[node.id] = {
-                x: placement.x,
-                y: placement.y,
-                // A size in the file is the least the card may be, not the size
-                // it is. A modeller widens a card to give a long name a line of
-                // its own, and it stays wide; but an attribute added afterwards
-                // still grows it, because a card too small for what is written
-                // in it is not a smaller card, it is a broken one.
-                width: Math.max(size.width, placement.width ?? 0),
-                height: Math.max(size.height, placement.height ?? 0)
-            };
+            positions[node.id] = { x: placement.x, y: placement.y, ...grownTo(size, placement) };
         }
     }
 
@@ -65,6 +55,64 @@ export function placeNewNodes(
         positions[node.id] = findSpot(size, anchors, Object.values(positions));
     }
     return positions;
+}
+
+/**
+ * The size a card is drawn at: what it holds, grown to what the file asks for.
+ *
+ * A size in the file is the least the card may be, not the size it is. A
+ * modeller widens a card to give a long name a line of its own, and it stays
+ * wide; but an attribute added afterwards still grows it, because a card too
+ * small for what is written in it is not a smaller card, it is a broken one.
+ */
+function grownTo(size: Size, placement: Placement | undefined): Size {
+    return {
+        width: Math.max(size.width, placement?.width ?? 0),
+        height: Math.max(size.height, placement?.height ?? 0)
+    };
+}
+
+/**
+ * The size every node is drawn at, which is the size to arrange it at.
+ *
+ * `sizeOf` answers what a card needs; the file may ask for more. A layout run
+ * on the smaller of the two packs the diagram around a card that is not the
+ * size it will be drawn at, and the widened card then sits over its neighbours.
+ */
+export function drawnSizes(
+    view: ViewModel,
+    sizes: Record<string, Size>,
+    saved: Record<string, Placement>
+): Record<string, Size> {
+    return Object.fromEntries(view.nodes.map(node => [
+        node.id,
+        grownTo(sizes[node.id] ?? { width: 160, height: 60 }, saved[node.id])
+    ]));
+}
+
+/**
+ * An arrangement on its way back into the file: new places, old sizes.
+ *
+ * A layout answers with a rectangle for every node, but its width and height
+ * are the size the card is drawn at -- and writing that back would record every
+ * card's present content as a size it must never go below. A class that lost an
+ * attribute afterwards would keep the room the attribute used to take, and the
+ * one card the modeller did widen by hand would be reset to what it holds. So
+ * only the place is written, and a size the file already asked for stays.
+ */
+export function movedTo(
+    laid: Positions,
+    saved: Record<string, Placement>
+): Record<string, Placement> {
+    return Object.fromEntries(Object.entries(laid).map(([id, rect]) => {
+        const chosen = saved[id];
+        return [id, {
+            x: rect.x,
+            y: rect.y,
+            ...(chosen?.width === undefined ? {} : { width: chosen.width }),
+            ...(chosen?.height === undefined ? {} : { height: chosen.height })
+        }];
+    }));
 }
 
 /**
