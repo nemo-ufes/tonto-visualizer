@@ -92,12 +92,50 @@ window.addEventListener('message', event => {
         selection = new Set(message.ids);
         applySelection();
         updateArrangeTitle();
+    } else if (message.type === 'rasterise') {
+        void rasterise(message.id, message.svg, message.scale);
     } else if (message.type === 'theme') {
         dark = message.dark;
         document.body.classList.toggle('dark', dark);
         draw();
     }
 });
+
+/**
+ * Draws an SVG as pixels, which is the one thing the host cannot do for itself.
+ *
+ * Through a `data:` URI rather than a blob, because the panel's content policy
+ * admits `data:` for images and nothing else -- and a self-contained SVG drawn
+ * from one does not taint the canvas, so the pixels can be read back out. The
+ * SVG carries its own styles and its own font stack; there is nothing in it to
+ * fetch, which is what makes both of those true.
+ */
+async function rasterise(id: number, svg: string, scale: number): Promise<void> {
+    try {
+        const bytes = new TextEncoder().encode(svg);
+        let binary = '';
+        for (const byte of bytes) {
+            binary += String.fromCharCode(byte);
+        }
+        const image = new Image();
+        await new Promise<void>((resolve, reject) => {
+            image.onload = () => resolve();
+            image.onerror = () => reject(new Error('the drawing could not be read as an image'));
+            image.src = `data:image/svg+xml;base64,${btoa(binary)}`;
+        });
+        const surface = document.createElement('canvas');
+        surface.width = Math.max(1, Math.round(image.naturalWidth * scale));
+        surface.height = Math.max(1, Math.round(image.naturalHeight * scale));
+        const context = surface.getContext('2d');
+        if (!context) {
+            throw new Error('this panel has no 2d canvas');
+        }
+        context.drawImage(image, 0, 0, surface.width, surface.height);
+        host.postMessage({ type: 'raster', id, data: surface.toDataURL('image/png').split(',')[1] });
+    } catch (error) {
+        host.postMessage({ type: 'raster', id, error: error instanceof Error ? error.message : String(error) });
+    }
+}
 
 function draw(): void {
     if (!display) {
@@ -664,7 +702,8 @@ element('arrange').addEventListener('click', () => {
         ? { type: 'autoLayout', only: selectedNodes }
         : { type: 'autoLayout' });
 });
-element('exportButton').addEventListener('click', () => host.postMessage({ type: 'export', format: 'svg' }));
+// No format: the name the modeller gives the file in the dialog decides.
+element('exportButton').addEventListener('click', () => host.postMessage({ type: 'export' }));
 element('optionsButton').addEventListener('click', () => {
     optionsPanel.hidden = !optionsPanel.hidden;
     if (!optionsPanel.hidden) {

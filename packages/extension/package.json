@@ -44,6 +44,11 @@
                 "category": "Tonto"
             },
             {
+                "command": "tonto.viz.exportPng",
+                "title": "Export Diagram as PNG",
+                "category": "Tonto"
+            },
+            {
                 "command": "tonto.viz.undo",
                 "title": "Undo Diagram Change",
                 "category": "Tonto"

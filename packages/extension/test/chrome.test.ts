@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const stylesheet = readFileSync(resolve(import.meta.dirname, '../media/canvas.css'), 'utf8');
+const panel = readFileSync(resolve(import.meta.dirname, '../src/diagram-panel.ts'), 'utf8');
 
 describe('the panel chrome', () => {
 
@@ -30,6 +31,18 @@ describe('the panel chrome', () => {
         const handle = /#canvas \.tv-handle \{([^}]*)\}/.exec(stylesheet);
         expect(handle).not.toBeNull();
         expect(handle![1]).toContain('pointer-events: all');
+    });
+
+    /**
+     * Exporting a PNG means drawing the diagram into a canvas, and the only way
+     * to hand an SVG to an `Image` inside the panel is a `data:` URI -- a blob
+     * is not one of the things the policy admits. Take `data:` out of `img-src`
+     * and the export stops working with nothing on screen to say why.
+     */
+    test('lets the panel load the drawing it is asked to photograph', () => {
+        const policy = /Content-Security-Policy" content="([^"]*)"/.exec(panel);
+        expect(policy).not.toBeNull();
+        expect(/img-src[^;]*\bdata:/.test(policy![1]!)).toBe(true);
     });
 
     test('falls back to the font the diagram is drawn in', () => {

@@ -379,9 +379,20 @@ middle button, where every diagram holds it -- and neither panning nor starting
 a band with shift held clears the selection, which the plain drag used to do on
 the way past.
 
-What is left, in the order it is worth doing: PNG export, and better label
-placement on dense models -- the placer walks its own line and settles for the
-least-bad spot rather than pushing its neighbours aside.
+The diagram exports as a picture as well as a drawing. The name given in the
+dialog decides which, as a Save As always has, so the toolbar keeps one button;
+the two commands force one either way. Rendering still happens in the host, from
+the state the host holds, and only the rasterising is asked of the panel --
+which is the one thing the host cannot do for itself, since that needs a browser
+and the extension host is Node. It goes through a `data:` URI because that is
+what the panel's content policy admits for an image, and a self-contained SVG
+drawn from one does not taint the canvas, so the pixels can be read back. At
+twice the size: a diagram exported to be looked at is read on a screen denser
+than the one it was drawn on.
+
+What is left: better label placement on dense models -- the placer walks its own
+line and settles for the least-bad spot rather than pushing its neighbours
+aside.
 
 ## 12. Risks
 
