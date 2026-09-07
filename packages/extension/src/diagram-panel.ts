@@ -11,10 +11,10 @@ import type { ContentOptions, DisplayOptions, ViewModel } from 'tonto-view';
 import { derive, expandInverseIds, idsAtSource, reconcile } from 'tonto-view';
 import { ViewSession } from 'tonto-view/session';
 import { autoLayout } from 'tonto-canvas';
-import { darkTheme, drawnSizes, lightTheme, movedTo, placeNewNodes, render, segmentHitsRect, sizeOf } from 'tonto-canvas/draw';
+import { darkTheme, drawnSizes, lightTheme, movedTo, placeNewNodes, render, sizeOf } from 'tonto-canvas/draw';
 import { filterItemsOf, filterView } from './filters.js';
 import type { FilterItem, FromPanel, Rect, ToPanel } from './protocol.js';
-import { safeRestoredPlacements } from './restoration.js';
+import { routesAffectedBy, safeRestoredPlacements } from './restoration.js';
 import { ViewStore } from './view-store.js';
 
 const DEBOUNCE = 300;
@@ -390,8 +390,17 @@ export class DiagramPanel {
         this.view = next;
         const reconciled = reconcile(store.state, next);
         const sizes = this.sizes(store.state.display);
+        // A class newly introduced by an edit has a position on screen before
+        // it has one in the file. Preserve that local arrangement through the
+        // next refresh; saved positions still win, which is what undo, redo and
+        // reopening the view require.
+        const current = this.hasPresentedView
+            ? Object.fromEntries(next.nodes
+                .filter(node => this.visibleNodeIds.has(node.id) && previous[node.id])
+                .map(node => [node.id, previous[node.id]!]))
+            : {};
         const { placed: safePlaced, repositioned } = safeRestoredPlacements(
-            next.nodes.map(node => node.id), returning, sizes, reconciled.placed);
+            next.nodes.map(node => node.id), returning, sizes, { ...current, ...reconciled.placed });
 
         const placed = placeNewNodes(next, sizes, safePlaced);
         const changed = new Set(returning);
@@ -434,24 +443,11 @@ export class DiagramPanel {
     private dropRoutesAffectedBy(
         nodes: ReadonlySet<string>, store: ViewStore, preserve: ReadonlySet<string> = new Set()
     ): void {
-        if (nodes.size === 0) {
-            return;
-        }
-        const changed = [...nodes];
-        for (const edge of this.view.edges) {
-            if (preserve.has(edge.id)) {
-                continue;
-            }
-            const incident = nodes.has(edge.source) || nodes.has(edge.target);
-            const points = store.state.edges[edge.id]?.points;
-            const obstructed = points !== undefined && changed.some(id => {
-                const rect = this.positions[id];
-                return rect !== undefined && points.slice(1).some((point, index) =>
-                    segmentHitsRect(points[index]!, point, rect, 4));
-            });
-            if (incident || obstructed) {
-                store.reroute(edge.id, undefined);
-            }
+        // Hidden associations still have saved routes. Moving one of their
+        // endpoints must invalidate those routes now, or restoring the line
+        // later resurrects a polyline whose ends describe the old card places.
+        for (const edge of routesAffectedBy(this.catalog, this.positions, store.state.edges, nodes, preserve)) {
+            store.reroute(edge, undefined);
         }
     }
 

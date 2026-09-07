@@ -1,6 +1,6 @@
-import type { Placement } from 'tonto-view';
+import type { EdgeRoute, Placement, ViewModel } from 'tonto-view';
 import type { Rect, Size } from 'tonto-canvas/draw';
-import { overlaps } from 'tonto-canvas/draw';
+import { overlaps, segmentHitsRect } from 'tonto-canvas/draw';
 
 /**
  * Removes obsolete saved positions from cards returning to a visible canvas.
@@ -34,6 +34,34 @@ export function safeRestoredPlacements(
         }
     }
     return { placed, repositioned };
+}
+
+/** Stored routes invalidated by moved, resized, or newly restored cards. */
+export function routesAffectedBy(
+    view: ViewModel,
+    positions: Record<string, Rect>,
+    routes: Record<string, EdgeRoute>,
+    changedNodes: ReadonlySet<string>,
+    preserve: ReadonlySet<string> = new Set()
+): string[] {
+    if (changedNodes.size === 0) {
+        return [];
+    }
+    const changed = [...changedNodes];
+    return view.edges.filter(edge => {
+        if (preserve.has(edge.id)) {
+            return false;
+        }
+        if (changedNodes.has(edge.source) || changedNodes.has(edge.target)) {
+            return true;
+        }
+        const points = routes[edge.id]?.points;
+        return points !== undefined && changed.some(id => {
+            const rect = positions[id];
+            return rect !== undefined && points.slice(1).some((point, index) =>
+                segmentHitsRect(points[index]!, point, rect, 4));
+        });
+    }).map(edge => edge.id);
 }
 
 function rectOf(placement: Placement | undefined, size: Size | undefined): Rect | undefined {
