@@ -49,8 +49,10 @@ export class ViewStore {
         this.file = file;
     }
 
-    static async open(modelUri: vscode.Uri, focus: string | undefined, enabled: boolean): Promise<ViewStore> {
-        const uri = viewUriFor(modelUri);
+    static async open(
+        modelUri: vscode.Uri, focus: string | undefined, enabled: boolean,
+        uri: vscode.Uri = viewUriFor(modelUri)
+    ): Promise<ViewStore> {
         try {
             const bytes = await vscode.workspace.fs.readFile(uri);
             return new ViewStore(uri, readViewFile(JSON.parse(Buffer.from(bytes).toString('utf8'))), enabled);
@@ -64,6 +66,17 @@ export class ViewStore {
 
     get state(): ViewFile {
         return this.file;
+    }
+
+    get location(): vscode.Uri {
+        return this.uri;
+    }
+
+    /** Copies the current view deliberately, even when automatic saving is off. */
+    async copyTo(uri: vscode.Uri): Promise<void> {
+        await this.write();
+        const text = JSON.stringify(this.file, undefined, 2) + '\n';
+        await vscode.workspace.fs.writeFile(uri, Buffer.from(text, 'utf8'));
     }
 
     /**
@@ -200,7 +213,80 @@ export class ViewStore {
     }
 }
 
-/** `Person.tonto` is arranged in `Person.tontoview`, beside it. */
-export function viewUriFor(modelUri: vscode.Uri): vscode.Uri {
-    return modelUri.with({ path: modelUri.path.replace(/\.tonto$/, '') + '.tontoview' });
+export interface ViewChoice {
+    label: string;
+    description: string;
+    uri: vscode.Uri;
+}
+
+/** `Person.tonto` has `Person.tontoview` and, for example, `Person.roles.tontoview`. */
+export function viewUriFor(modelUri: vscode.Uri, name?: string): vscode.Uri {
+    const suffix = name ? `.${name}.tontoview` : '.tontoview';
+    return modelUri.with({ path: modelUri.path.replace(/\.tonto$/i, '') + suffix });
+}
+
+/** A filesystem-safe, stable identifier; presentation can put the spaces back. */
+export function viewNameOf(value: string): string | undefined {
+    const name = value.trim().normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    return name || undefined;
+}
+
+/** The name encoded in a sibling view URI, or undefined for the default view. */
+export function viewNameFor(modelUri: vscode.Uri, viewUri: vscode.Uri): string | undefined {
+    const stem = modelUri.path.replace(/\.tonto$/i, '');
+    if (viewUri.path === `${stem}.tontoview`) {
+        return undefined;
+    }
+    const prefix = `${stem}.`;
+    const suffix = '.tontoview';
+    return viewUri.path.startsWith(prefix) && viewUri.path.endsWith(suffix)
+        ? viewUri.path.slice(prefix.length, -suffix.length) || undefined
+        : undefined;
+}
+
+/** Finds only views whose filename identifies this exact model. */
+export async function viewChoicesFor(modelUri: vscode.Uri): Promise<ViewChoice[]> {
+    const slash = modelUri.path.lastIndexOf('/');
+    const directory = modelUri.with({ path: modelUri.path.slice(0, slash || 1) });
+    const modelFile = modelUri.path.slice(slash + 1);
+    const stem = modelFile.replace(/\.tonto$/i, '');
+    let entries: [string, vscode.FileType][] = [];
+    try {
+        entries = await vscode.workspace.fs.readDirectory(directory);
+    } catch {
+        // The default view can still be opened in an untitled or virtual
+        // workspace whose directory cannot be enumerated.
+    }
+    const named = entries
+        .filter(([file, type]) => type === vscode.FileType.File
+            && file.startsWith(`${stem}.`) && file.endsWith('.tontoview')
+            && file !== `${stem}.tontoview`)
+        .map(([file]) => {
+            const name = file.slice(stem.length + 1, -'.tontoview'.length);
+            return {
+                label: labelOfView(name),
+                description: file,
+                uri: modelUri.with({ path: `${modelUri.path.slice(0, slash + 1)}${file}` })
+            };
+        })
+        .sort((left, right) => left.label.localeCompare(right.label));
+    return [{
+        label: 'Default view',
+        description: `${stem}.tontoview`,
+        uri: viewUriFor(modelUri)
+    }, ...named];
+}
+
+export async function viewFileExists(uri: vscode.Uri): Promise<boolean> {
+    try {
+        await vscode.workspace.fs.stat(uri);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+export function labelOfView(name: string): string {
+    return name.replace(/[-_]+/g, ' ');
 }

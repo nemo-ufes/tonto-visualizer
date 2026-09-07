@@ -22,6 +22,20 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.commands.registerCommand('tonto.viz.exportPng', async () => {
             await DiagramPanel.current?.exportDiagram('png');
         }),
+        vscode.commands.registerCommand('tonto.viz.openView', async () => {
+            if (!DiagramPanel.current) {
+                vscode.window.showErrorMessage('Open a Tonto diagram before choosing a view.');
+                return;
+            }
+            await DiagramPanel.current.chooseView();
+        }),
+        vscode.commands.registerCommand('tonto.viz.saveNamedView', async () => {
+            if (!DiagramPanel.current) {
+                vscode.window.showErrorMessage('Open a Tonto diagram before saving a named view.');
+                return;
+            }
+            await DiagramPanel.current.saveAsNamedView();
+        }),
         // The panel binds these to its own keys as well: a webview only sees a
         // keystroke while it has focus, and the palette is where a modeller
         // looks when it does not.

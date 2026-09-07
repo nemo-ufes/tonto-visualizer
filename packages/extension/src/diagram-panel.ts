@@ -15,7 +15,9 @@ import { darkTheme, drawnSizes, lightTheme, movedTo, placeNewNodes, render, size
 import { filterItemsOf, filterView } from './filters.js';
 import type { FilterItem, FromPanel, Rect, ToPanel } from './protocol.js';
 import { routesAffectedBy, safeRestoredPlacements } from './restoration.js';
-import { ViewStore } from './view-store.js';
+import {
+    labelOfView, ViewStore, viewChoicesFor, viewFileExists, viewNameFor, viewNameOf, viewUriFor
+} from './view-store.js';
 
 const DEBOUNCE = 300;
 
@@ -88,10 +90,12 @@ export class DiagramPanel {
         }));
     }
 
-    static async open(extensionUri: vscode.Uri, document: vscode.TextDocument): Promise<void> {
+    static async open(
+        extensionUri: vscode.Uri, document: vscode.TextDocument, viewUri?: vscode.Uri
+    ): Promise<void> {
         if (DiagramPanel.current) {
             DiagramPanel.current.panel.reveal(vscode.ViewColumn.Beside, true);
-            await DiagramPanel.current.show(document);
+            await DiagramPanel.current.show(document, viewUri);
             return;
         }
         const panel = vscode.window.createWebviewPanel(
@@ -106,22 +110,28 @@ export class DiagramPanel {
         );
         DiagramPanel.current = new DiagramPanel(panel, extensionUri);
         vscode.commands.executeCommand('setContext', 'tontoVizOpen', true);
-        await DiagramPanel.current.show(document);
+        await DiagramPanel.current.show(document, viewUri);
     }
 
     /** Points the diagram at a document, loading its arrangement. */
-    async show(document: vscode.TextDocument): Promise<void> {
+    async show(document: vscode.TextDocument, requestedView?: vscode.Uri): Promise<void> {
+        // Returning from the webview to the editor fires the active-editor
+        // listener. That must keep a named view open rather than silently
+        // replacing it with the default arrangement for the same document.
+        const viewUri = requestedView
+            ?? (this.document === document ? this.store?.location : undefined)
+            ?? viewUriFor(document.uri);
         const generation = ++this.generation;
         this.layoutRequest += 1;
         clearTimeout(this.pending);
         this.pending = undefined;
-        if (this.document === document) {
+        if (this.document === document && this.store?.location.toString() === viewUri.toString()) {
             this.schedule();
             return;
         }
         const folder = modelRootOf(document.uri);
         const session = new ViewSession({ workspace: [folder] });
-        const store = await ViewStore.open(document.uri, undefined, saveArrangement());
+        const store = await ViewStore.open(document.uri, undefined, saveArrangement(), viewUri);
         if (generation !== this.generation) {
             await store.dispose();
             return;
@@ -132,7 +142,7 @@ export class DiagramPanel {
             return;
         }
         this.document = document;
-        this.panel.title = `Diagram: ${nameOf(document.uri)}`;
+        this.panel.title = this.diagramTitle(document.uri, viewUri);
         this.session = session;
         this.store = store;
         this.view = { groups: [], nodes: [], edges: [], gensets: [] };
@@ -140,8 +150,70 @@ export class DiagramPanel {
         this.positions = {};
         this.filters = [];
         this.visibleNodeIds = new Set();
+        this.selected = new Set();
         this.hasPresentedView = false;
         await this.refresh();
+    }
+
+    /** Chooses another arrangement over the current model. */
+    async chooseView(): Promise<void> {
+        const document = this.document;
+        if (!document) {
+            return;
+        }
+        const picked = await vscode.window.showQuickPick(await viewChoicesFor(document.uri), {
+            title: 'Open Diagram View',
+            placeHolder: 'Choose an arrangement of this model'
+        });
+        if (picked) {
+            await this.show(document, picked.uri);
+        }
+    }
+
+    /** Makes the current content and arrangement a separately named document. */
+    async saveAsNamedView(): Promise<void> {
+        const document = this.document;
+        const store = this.store;
+        if (!document || !store) {
+            return;
+        }
+        const entered = await vscode.window.showInputBox({
+            title: 'Save Diagram as Named View',
+            prompt: 'The view is stored beside the model and can be committed with it.',
+            placeHolder: 'Core taxonomy',
+            validateInput: value => viewNameOf(value) ? undefined : 'Enter a name containing a letter or number.'
+        });
+        if (entered === undefined) {
+            return;
+        }
+        const name = viewNameOf(entered);
+        if (!name) {
+            return;
+        }
+        const target = viewUriFor(document.uri, name);
+        if (store.location.toString() === target.toString()) {
+            vscode.window.showInformationMessage(`This is already the ${labelOfView(name)} view.`);
+            return;
+        }
+        if (await viewFileExists(target)) {
+            const replace = await vscode.window.showWarningMessage(
+                `${nameOf(target)} already exists. Replace it with the current diagram?`,
+                { modal: true }, 'Replace');
+            if (replace !== 'Replace') {
+                return;
+            }
+        }
+        try {
+            await store.copyTo(target);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            vscode.window.showErrorMessage(`Could not save the named view: ${message}`);
+            return;
+        }
+        if (store === this.store && document === this.document) {
+            await this.show(document, target);
+            vscode.window.showInformationMessage(`Saved ${nameOf(target)}.`);
+        }
     }
 
     /**
@@ -478,7 +550,9 @@ export class DiagramPanel {
             layout: store.state.layout,
             packages: this.availablePackages,
             filters: this.filters,
-            title: this.document ? nameOf(this.document.uri) : 'Tonto',
+            title: this.document && this.store
+                ? this.diagramTitle(this.document.uri, this.store.location).replace(/^Diagram: /, '')
+                : 'Tonto',
             ...(stale ? { stale } : {})
         };
         this.last = message;
@@ -489,6 +563,11 @@ export class DiagramPanel {
         if (this.ready) {
             void this.panel.webview.postMessage(message);
         }
+    }
+
+    private diagramTitle(modelUri: vscode.Uri, viewUri: vscode.Uri): string {
+        const view = viewNameFor(modelUri, viewUri);
+        return `Diagram: ${nameOf(modelUri)}${view ? ` — ${labelOfView(view)}` : ''}`;
     }
 
     private async receive(message: FromPanel): Promise<void> {
