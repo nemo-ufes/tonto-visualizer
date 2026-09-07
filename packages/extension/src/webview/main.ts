@@ -55,6 +55,14 @@ let bounds: Rect = { x: 0, y: 0, width: 1, height: 1 };
 let dragging: DragState | undefined;
 /** The polyline each edge was last drawn along, which is what a handle holds. */
 let paths: Record<string, Point[]> = {};
+/**
+ * The set each line drawn as a leg of a shared tree belongs to.
+ *
+ * A leg is chosen and opened like any other line. What it is not is routed: the
+ * tree decides where its branches run, so a handle offering to bend one would
+ * be an offer the drawing cannot keep.
+ */
+let inTree: Record<string, string> = {};
 /** Where the pointer last was, in diagram coordinates, for a drag that ends. */
 let lastPoint: Point | undefined;
 
@@ -166,6 +174,7 @@ function draw(): void {
     });
     bounds = drawn.bounds;
     paths = drawn.paths;
+    inTree = drawn.trees;
     canvas.innerHTML = drawn.svg;
     drawHandles();
     applyViewport();
@@ -197,7 +206,7 @@ function drawHandles(): void {
     // the diagram is being read whole or a corner of it is filling the panel.
     const radius = 4.5 / scale;
     const rect = positions[id];
-    const points = paths[id];
+    const points = inTree[id] ? undefined : paths[id];
     if (rect) {
         for (const corner of CORNERS) {
             const at = cornerOf(rect, corner);
@@ -675,9 +684,14 @@ viewport.addEventListener('dblclick', event => {
         keepRoute(held.edge, dropHandle(paths[held.edge]!, held.handle.index));
         return;
     }
-    const target = under.closest('[data-node]') ?? under.closest('[data-edge]');
+    // A tree's stem, bar and triangle are the set itself rather than any one of
+    // its branches, so they open the line the set is declared on. The legs
+    // inside it carry their own id and are found before this.
+    const target = under.closest('[data-node]') ?? under.closest('[data-edge]')
+        ?? under.closest('[data-genset]');
     const id = target?.getAttribute('data-node')
         ?? target?.getAttribute('data-edge')
+        ?? target?.getAttribute('data-genset')
         ?? labelOwner(under)
         ?? held?.edge
         ?? nearestLine(event);

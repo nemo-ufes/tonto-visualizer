@@ -761,7 +761,13 @@ export class DiagramPanel {
     private async reveal(id: string): Promise<void> {
         const node = this.view.nodes.find(candidate => candidate.id === id);
         const edge = this.view.edges.find(candidate => candidate.id === id);
-        const location = node?.source ?? (edge && 'source_' in edge ? edge.source_ : undefined);
+        // A generalization set is the third thing on the canvas with a
+        // declaration of its own: its triangle and bar are drawn for the line
+        // that says `disjoint complete genset ... where ...`.
+        const genset = this.view.gensets.find(candidate => candidate.id === id);
+        const location = node?.source
+            ?? (edge && 'source_' in edge ? edge.source_ : undefined)
+            ?? genset?.source;
         if (!location) {
             return;
         }

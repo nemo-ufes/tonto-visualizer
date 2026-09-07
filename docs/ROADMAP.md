@@ -15,7 +15,7 @@ views, navigation and review before it considers drawing-to-edit operations.
 | 5 | Semantic revision diff | Ontology review should show added, removed and changed declarations against a Git revision without throwing away the familiar arrangement. | Planned |
 | 6 | Diagram navigation | A minimap, back/forward history and breadcrumbs keep very large drawings navigable. | Planned |
 | 7 | Documentation inspector | `///` documentation and an element's semantic connections should be readable without crowding the canvas. | Planned |
-| 8 | Generalization-tree interaction | A branch needs selection and source navigation without pretending the shared stem is a generalization set or offering nonsensical route handles. | Design needed |
+| 8 | Generalization-tree interaction | A branch needs selection and source navigation without pretending the shared stem is a generalization set or offering nonsensical route handles. | Delivered |
 
 Editing the Tonto model by drawing is deliberately not on this roadmap. It has
 different semantic, validation and undo requirements; adding it before the
@@ -62,6 +62,14 @@ not need another path that can go stale when a repository moves.
   copy operation that works even when automatic arrangement saving is off.
 - Added four storage-level tests; the repository now runs 154 tests.
 - Kept the existing `.tontoview` schema and default-view behaviour compatible.
+- Took priority 8 while the drawing code was open. A leg of a shared tree
+  carries the id of the generalization it is: clicking one chooses that
+  specialization and draws it chosen, double-clicking one opens the line it is
+  written on, and the stem, bar and triangle open the `genset` declaration
+  instead, since those are the set rather than any one branch of it. A leg is
+  offered no route handle -- the tree decides where its branches run -- and, as
+  no generalization is, it cannot be hidden. Generalizations now carry where
+  they are written, which nothing in the view model had.
 - Corrected two things the first slice got wrong, with two more tests (156):
   discovery offered the views of a model whose name begins the same way --
   `employment.v2.roles.tontoview`, and `employment.v2.tontoview` where that
