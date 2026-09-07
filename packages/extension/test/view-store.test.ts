@@ -128,4 +128,20 @@ describe('the view store', () => {
         expect(store.state.display.showLegend).toBe(false);
         await store.dispose();
     });
+
+    test('restores filters and placements after the panel is reopened', async () => {
+        const first = await ViewStore.open(modelUri() as never, 'Sample', true);
+        first.begin('Hide');
+        first.update({ content: { ...first.state.content, hidden: ['Sample::Person', 'works-for'] } });
+        first.move({ 'Sample::Person': { x: 80, y: 120 } });
+        await first.dispose();
+        const bytes = filesystem.writeFile.mock.calls.at(-1)![1] as Uint8Array;
+        filesystem.readFile.mockResolvedValue(bytes);
+
+        const reopened = await ViewStore.open(modelUri() as never, 'Sample', true);
+
+        expect(reopened.state.content.hidden).toEqual(['Sample::Person', 'works-for']);
+        expect(reopened.state.nodes['Sample::Person']).toEqual({ x: 80, y: 120 });
+        await reopened.dispose();
+    });
 });

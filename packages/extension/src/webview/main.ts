@@ -713,12 +713,23 @@ window.addEventListener('keydown', event => {
 });
 
 function hideSelection(): void {
-    if (selection.size === 0) {
+    const ids = hideableSelection();
+    if (ids.length === 0) {
         return;
     }
-    host.postMessage({ type: 'hide', ids: [...selection] });
-    selection = new Set();
+    host.postMessage({ type: 'hide', ids });
+    const hidden = new Set(ids);
+    selection = new Set([...selection].filter(id => !hidden.has(id)));
     reportSelection();
+}
+
+/** Only concepts exposed by the class and association filters can be hidden. */
+function hideableSelection(): string[] {
+    const hideable = new Set([
+        ...view.nodes.filter(node => node.kind === 'class').map(node => node.id),
+        ...view.edges.filter(edge => edge.kind === 'relation').map(edge => edge.id)
+    ]);
+    return [...selection].filter(id => hideable.has(id));
 }
 
 function applySelection(): void {
@@ -739,7 +750,7 @@ function updateArrangeTitle(): void {
     element('arrange').title = selectedNodes > 0
         ? `Arrange ${selectedNodes} selected node${selectedNodes === 1 ? '' : 's'} automatically`
         : 'Arrange the whole diagram automatically';
-    element('hide').toggleAttribute('disabled', selection.size === 0);
+    element('hide').toggleAttribute('disabled', hideableSelection().length === 0);
 }
 
 element('zoomIn').addEventListener('click', () => zoomAt(scale * 1.2, centreX(), centreY()));
