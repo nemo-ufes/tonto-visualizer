@@ -575,7 +575,7 @@ export class DiagramPanel {
         <div id="canvas"></div>
     </div>
     <div id="legend" class="legend" hidden></div>
-    <div id="hint" class="hint">Drag to move · click a line to take hold of its route · double-click to open the declaration · Ctrl/⌘Z to undo</div>
+    <div id="hint" class="hint">Drag to move · drag the background to select, alt-drag to pan · click a line to take hold of its route · double-click to open the declaration · Ctrl/⌘Z to undo</div>
 </div>
 <script nonce="${nonce}" src="${script}"></script>
 </body>
