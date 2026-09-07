@@ -74,6 +74,13 @@ export interface ViewGeneralization {
     target: string;
     /** The generalization set this specialization belongs to, when it belongs to one. */
     genset?: string;
+    /**
+     * Where the specialization is written: the parent's name inside the child's
+     * declaration, since Tonto states the two together and a generalization has
+     * no line of its own to open. Named as a relation names it, because
+     * `source` is taken by the end the line runs from.
+     */
+    source_?: SourceLocation;
 }
 
 export interface ViewRelation {

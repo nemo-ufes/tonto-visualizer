@@ -198,6 +198,57 @@ describe('the webview and its host protocol', () => {
         expect(posted('content').at(-1)).toEqual({ type: 'content', content: { scope: 'workspace' } });
     });
 
+    /**
+     * A branch of a shared tree is a generalization: it can be chosen and it
+     * can be opened. What it cannot be is routed -- the tree decides where its
+     * branches run -- so it is offered no handle to bend, which every other
+     * chosen line has.
+     */
+    test('chooses the branch of a shared tree that was clicked, and offers no bend on it', () => {
+        const set = 'set:Sample::PersonAgePhases';
+        const clazz = (name: string, stereotype: string) => ({
+            id: `Sample::${name}`, kind: 'class' as const, name, package: 'Sample',
+            stereotype, color: '#eee', isExternal: false, attributes: []
+        });
+        const specialization = (name: string) => ({
+            kind: 'generalization' as const,
+            id: `gen:Sample::${name}->Sample::Person`,
+            source: `Sample::${name}`, target: 'Sample::Person', genset: set
+        });
+        window.dispatchEvent(new MessageEvent('message', { data: {
+            type: 'model',
+            view: {
+                groups: [], gensets: [{
+                    id: set, name: 'PersonAgePhases', disjoint: true, complete: true,
+                    general: 'Sample::Person', specifics: ['Sample::Child', 'Sample::Adult'], categorizers: []
+                }],
+                nodes: [clazz('Person', 'kind'), clazz('Child', 'phase'), clazz('Adult', 'phase')],
+                edges: [specialization('Child'), specialization('Adult')]
+            },
+            positions: {
+                'Sample::Person': { x: 120, y: 0, width: 160, height: 42 },
+                'Sample::Adult': { x: 0, y: 200, width: 120, height: 42 },
+                'Sample::Child': { x: 240, y: 200, width: 120, height: 42 }
+            },
+            routes: {}, display: defaultDisplayOptions, content: defaultContentOptions,
+            layout: defaultLayoutOptions, packages: ['Sample'], filters: [], title: 'sample.tonto'
+        } }));
+
+        const leg = document.querySelector('[data-edge="gen:Sample::Child->Sample::Person"]');
+        expect(leg).not.toBeNull();
+        expect(leg!.tagName.toLowerCase()).toBe('path');
+
+        leg!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1 }));
+
+        expect(posted('selected').at(-1))
+            .toEqual({ type: 'selected', ids: ['gen:Sample::Child->Sample::Person'] });
+        expect(leg!.classList.contains('tv-selected')).toBe(true);
+        // The handles layer is there, and empty: nothing on a leg to take hold of.
+        expect(document.querySelector('.tv-handles')?.children.length).toBe(0);
+        // Nor is it something the panel offers to hide, as no generalization is.
+        expect((document.getElementById('hide') as HTMLButtonElement).disabled).toBe(true);
+    });
+
     test('does not offer to hide lines outside the association filter', () => {
         const specialization = {
             ...view,

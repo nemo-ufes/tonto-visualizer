@@ -159,6 +159,23 @@ kind Animal {
         expect(picked.groups.filter(group => !group.isExternal).map(group => group.name)).toEqual(['Parties']);
     });
 
+    /**
+     * A generalization has no declaration of its own -- `phase Child
+     * specializes Person` states the class and the specialization together --
+     * so the line it is opened at is the parent's name inside the child.
+     */
+    test('says where a specialization is written', async () => {
+        const view = await viewOfText(`
+package Sample
+kind Person
+phase Child specializes Person
+`);
+        const edge = view.edges.find(candidate => candidate.kind === 'generalization');
+        expect(edge?.id).toBe('gen:Sample::Child->Sample::Person');
+        expect(edge && 'source_' in edge ? edge.source_ : undefined)
+            .toMatchObject({ line: 3, character: 24, endLine: 3, endCharacter: 30 });
+    });
+
     test('drops datatype nodes and the attributes typed by them together', async () => {
         const view = await viewOfFixture({ showDatatypes: false });
         expect(view.nodes.some(node => node.kind === 'datatype' || node.kind === 'enumeration')).toBe(false);
