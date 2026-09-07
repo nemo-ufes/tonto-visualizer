@@ -66,6 +66,8 @@ export type FromPanel =
     | { type: 'rerouted'; edge: string; route?: EdgeRoute }
     | { type: 'selected'; ids: string[] }
     | { type: 'reveal'; id: string }
+    /** The title was clicked: which arrangement of this model to draw. */
+    | { type: 'chooseView' }
     | { type: 'display'; display: Partial<DisplayOptions> }
     | { type: 'layout'; layout: Partial<LayoutOptions> }
     | { type: 'content'; content: Partial<ContentOptions> }

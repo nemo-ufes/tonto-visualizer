@@ -842,6 +842,10 @@ element('arrange').addEventListener('click', () => {
     const only = selectedNodes();
     host.postMessage(only.length > 0 ? { type: 'autoLayout', only } : { type: 'autoLayout' });
 });
+// The title says which view is drawn, so it is also where another one is
+// asked for: the commands are in the palette, which is not where a reader
+// looking at a diagram looks.
+element('title').addEventListener('click', () => host.postMessage({ type: 'chooseView' }));
 element('hide').addEventListener('click', hideSelection);
 // No format: the name the modeller gives the file in the dialog decides.
 element('exportButton').addEventListener('click', () => host.postMessage({ type: 'export' }));

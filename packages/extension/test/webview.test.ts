@@ -38,7 +38,7 @@ const view: ViewModel = {
 function panelHtml(): string {
     return `<div id="shell">
         <div id="toolbar">
-            <span id="title"></span><span id="stale" hidden></span>
+            <button id="title"></button><span id="stale" hidden></span>
             <button id="zoomOut"></button><span id="scale"></span><button id="zoomIn"></button>
             <button id="fit"></button><button id="arrange"></button>
             <button id="hide" disabled></button><button id="optionsButton"></button><button id="exportButton"></button>
@@ -305,6 +305,19 @@ describe('the webview and its host protocol', () => {
         expect(legOf()).toMatch(/ 304$/);
         document.getElementById('viewport')!.dispatchEvent(
             new PointerEvent('pointerup', { bubbles: true, pointerId: 2 }));
+    });
+
+    /**
+     * The commands are in the palette, which is not where somebody looking at
+     * a diagram looks. The title already says which view is drawn, so it is
+     * also where another one is asked for.
+     */
+    test('asks the host for another view when the title is clicked', () => {
+        sendModel();
+
+        document.getElementById('title')!.click();
+
+        expect(posted('chooseView').at(-1)).toEqual({ type: 'chooseView' });
     });
 
     test('does not offer to hide lines outside the association filter', () => {

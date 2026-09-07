@@ -46,7 +46,7 @@ not need another path that can go stale when a repository moves.
 - [x] Switch among views without reopening the model.
 - [x] Show the active view in the panel and canvas titles.
 - [x] Cover filename normalization, discovery and copied state with tests.
-- [ ] Put the view switcher in the panel toolbar as well as the command palette.
+- [x] Put the view switcher in the panel toolbar as well as the command palette.
 - [ ] Create an empty named view as an alternative to copying the current one.
 - [ ] Rename and delete named views with explicit, recoverable file operations.
 - [ ] Surface orphaned placements so they can be reassigned after a model rename.
@@ -62,6 +62,11 @@ not need another path that can go stale when a repository moves.
   copy operation that works even when automatic arrangement saving is off.
 - Added four storage-level tests; the repository now runs 154 tests.
 - Kept the existing `.tontoview` schema and default-view behaviour compatible.
+- Closed the toolbar slice of priority 1: the panel title, which already says
+  which view is drawn, is the switch. Clicking it opens the same picker the
+  palette command does, with the open view marked in its own row; it is a
+  button, so it is reachable by keyboard, and styled as the title it is with a
+  caret as the only sign that it does anything.
 - Finished priority 8: the set is now chosen as itself -- clicking its bar,
   stem or label draws the whole tree chosen, where one leg chosen is one
   specialization, and the cursor on the `genset` line chooses it in the diagram.
