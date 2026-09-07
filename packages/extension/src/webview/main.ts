@@ -10,10 +10,10 @@
 
 import type { ContentOptions, DisplayOptions, EdgeRoute, LayoutOptions, ViewModel } from 'tonto-view';
 import { natureLegend } from 'tonto-view/palette';
-import type { Handle, Point, Rect } from 'tonto-canvas/draw';
+import type { Corner, Handle, Point, Rect, Size } from 'tonto-canvas/draw';
 import {
-    darkTheme, distanceToPath, dropHandle, handlesFor, lightTheme, moveHandle, render, routeEdge,
-    segmentHitsRect
+    CORNERS, cornerOf, darkTheme, distanceToPath, drawNode, dropHandle, handlesFor, lightTheme,
+    moveHandle, render, resizeTo, routeEdge, segmentHitsRect, sizeOf
 } from 'tonto-canvas/draw';
 
 interface HostApi {
@@ -61,6 +61,8 @@ interface DragState {
     origin: Record<string, Rect>;
     /** Set instead of `ids` when what is being dragged is a bend in a line. */
     route?: { edge: string; handle: Handle; from: Point[] };
+    /** Set instead of `ids` when what is being dragged is the corner of a card. */
+    resize?: { id: string; corner: Corner; from: Rect; least: Size };
 }
 
 window.addEventListener('message', event => {
@@ -127,28 +129,58 @@ function drawHandles(): void {
     const svg = canvas.querySelector('svg');
     svg?.querySelector('.tv-handles')?.remove();
     const selected = [...selection];
-    const edge = selected.length === 1 ? selected[0]! : undefined;
-    const points = edge ? paths[edge] : undefined;
-    if (!svg || !edge || !points || dragging?.ids.length) {
+    const id = selected.length === 1 ? selected[0]! : undefined;
+    if (!svg || !id || dragging?.ids.length) {
         return;
     }
     const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     group.setAttribute('class', 'tv-handles');
-    group.setAttribute('data-handles', edge);
+    group.setAttribute('data-handles', id);
     // Sized against the zoom, so a handle is the same target on screen whether
     // the diagram is being read whole or a corner of it is filling the panel.
     const radius = 4.5 / scale;
-    for (const [index, handle] of handlesFor(points).entries()) {
-        const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-        dot.setAttribute('class', `tv-handle${handle.kind === 'new' ? ' tv-handle-new' : ''}`);
-        dot.setAttribute('data-handle', String(index));
-        dot.setAttribute('cx', String(handle.at.x));
-        dot.setAttribute('cy', String(handle.at.y));
-        dot.setAttribute('r', String(handle.kind === 'new' ? radius * 0.8 : radius));
-        dot.setAttribute('stroke-width', String(1.4 / scale));
-        group.append(dot);
+    const rect = positions[id];
+    const points = paths[id];
+    if (rect) {
+        for (const corner of CORNERS) {
+            const at = cornerOf(rect, corner);
+            const grip = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            grip.setAttribute('class', 'tv-grip');
+            grip.setAttribute('data-grip', corner);
+            grip.setAttribute('x', String(at.x - radius));
+            grip.setAttribute('y', String(at.y - radius));
+            grip.setAttribute('width', String(radius * 2));
+            grip.setAttribute('height', String(radius * 2));
+            grip.setAttribute('stroke-width', String(1.4 / scale));
+            group.append(grip);
+        }
+    } else if (points) {
+        for (const [index, handle] of handlesFor(points).entries()) {
+            const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            dot.setAttribute('class', `tv-handle${handle.kind === 'new' ? ' tv-handle-new' : ''}`);
+            dot.setAttribute('data-handle', String(index));
+            dot.setAttribute('cx', String(handle.at.x));
+            dot.setAttribute('cy', String(handle.at.y));
+            dot.setAttribute('r', String(handle.kind === 'new' ? radius * 0.8 : radius));
+            dot.setAttribute('stroke-width', String(1.4 / scale));
+            group.append(dot);
+        }
     }
     svg.append(group);
+}
+
+/** The corner grip a pointer is on, and the card it belongs to. */
+function gripAt(target: Element): { id: string; corner: Corner } | undefined {
+    const grip = target.closest('[data-grip]');
+    const id = grip?.parentElement?.getAttribute('data-handles') ?? undefined;
+    const corner = grip?.getAttribute('data-grip') as Corner | undefined;
+    return id && corner && positions[id] ? { id, corner } : undefined;
+}
+
+/** The size a card's content needs, which is the least it may be drawn at. */
+function leastSize(id: string): Size {
+    const node = view.nodes.find(candidate => candidate.id === id);
+    return node && display ? sizeOf(node, display) : { width: 120, height: 42 };
 }
 
 /**
@@ -205,6 +237,17 @@ function handleAt(target: Element): { edge: string; handle: Handle } | undefined
     return edge && handle ? { edge, handle } : undefined;
 }
 
+/** Draws one card at its current size, without redrawing anything else. */
+function repaintNode(id: string): void {
+    const node = view.nodes.find(candidate => candidate.id === id);
+    const group = canvas.querySelector(`[data-node="${cssEscape(id)}"]`);
+    const rect = positions[id];
+    if (!node || !group || !rect || !display) {
+        return;
+    }
+    group.outerHTML = drawNode(node, rect, display, dark ? darkTheme : lightTheme, selection.has(id));
+}
+
 /** Draws one line along a polyline, without redrawing anything else. */
 function repaint(edge: string, points: Point[]): void {
     const path = canvas.querySelector(`[data-edge="${cssEscape(edge)}"] path`) as SVGPathElement | null;
@@ -246,8 +289,21 @@ viewport.addEventListener('pointerdown', event => {
     const target = event.target as Element;
     viewport.setPointerCapture(event.pointerId);
 
-    // Before anything else: a handle sits over the line it belongs to, and the
-    // line is already selected, so neither the selection nor a pan is wanted.
+    // Before anything else: a grip or a handle sits over the thing it belongs
+    // to, which is already selected, so neither the selection nor a pan is
+    // wanted -- and a grip on a card's corner is inside the card.
+    const grip = gripAt(target);
+    if (grip) {
+        dragging = {
+            ids: [], startX: event.clientX, startY: event.clientY, moved: false, origin: {},
+            resize: {
+                id: grip.id, corner: grip.corner,
+                from: { ...positions[grip.id]! }, least: leastSize(grip.id)
+            }
+        };
+        return;
+    }
+
     const held = handleAt(target);
     if (held) {
         dragging = {
@@ -298,6 +354,21 @@ viewport.addEventListener('pointermove', event => {
     }
     dragging.moved = true;
 
+    const resize = dragging.resize;
+    if (resize) {
+        const at = diagramPoint(event);
+        if (at) {
+            // Snapped like everything else, so two cards pulled to the same
+            // width end up the same width rather than nearly the same.
+            positions[resize.id] = resizeTo(resize.from, resize.corner,
+                { x: snap(at.x), y: snap(at.y) }, resize.least);
+            repaintNode(resize.id);
+            redrawIncidentEdges(new Set([resize.id]));
+            drawHandles();
+        }
+        return;
+    }
+
     const route = dragging.route;
     if (route) {
         // Snapped like a box is, so a bend put level with a border stays level.
@@ -332,6 +403,10 @@ viewport.addEventListener('pointermove', event => {
 viewport.addEventListener('pointerup', () => {
     const drag = dragging;
     dragging = undefined;
+    if (drag?.resize && drag.moved) {
+        keepSize(drag.resize.id, positions[drag.resize.id]!);
+        return;
+    }
     if (drag?.route && drag.moved) {
         // The whole polyline, ends included: a route and the boxes it runs
         // between are one arrangement, and half of one is a line to a corner.
@@ -389,6 +464,28 @@ function keepRoute(edge: string, points: Point[] | undefined): void {
     draw();
 }
 
+/**
+ * Tells the host where a card is and, when it was resized, how big.
+ *
+ * There is no message of its own for a resize: a placement carries an optional
+ * size, so a card that was pulled bigger reports one and a card that was only
+ * moved does not. A placement without a size is how the file says "as big as
+ * what it holds", which is what fitting a card back to its content is.
+ */
+function keepSize(id: string, rect: Rect, sized = true): void {
+    host.postMessage({
+        type: 'moved',
+        positions: { [id]: { x: rect.x, y: rect.y, ...(sized ? { width: rect.width, height: rect.height } : {}) } },
+        rerouted: view.edges.filter(edge => edge.source === id || edge.target === id).map(edge => edge.id)
+    });
+    for (const edge of view.edges) {
+        if (edge.source === id || edge.target === id) {
+            delete routes[edge.id];
+        }
+    }
+    draw();
+}
+
 /** While a node is being dragged its edges follow it, without a full redraw. */
 function redrawIncidentEdges(moved: Set<string>): void {
     for (const edge of view.edges) {
@@ -417,6 +514,14 @@ viewport.addEventListener('dblclick', event => {
     const under = document.elementFromPoint(event.clientX, event.clientY);
     if (!under) {
         fit();
+        return;
+    }
+    const grip = gripAt(under);
+    if (grip) {
+        // Back to the size of what it holds. The card body still opens the
+        // declaration, which is the gesture a reader uses far more often.
+        positions[grip.id] = { ...positions[grip.id]!, ...leastSize(grip.id) };
+        keepSize(grip.id, positions[grip.id]!, false);
         return;
     }
     const held = handleAt(under);

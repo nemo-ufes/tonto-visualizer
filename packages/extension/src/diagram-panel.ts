@@ -366,17 +366,27 @@ export class DiagramPanel {
                 if (!store) {
                     return;
                 }
-                store.begin('Move');
+                // A placement carries a size only when the card was resized,
+                // so the message says which of the two happened.
+                store.begin(Object.values(message.positions).some(one => one.width !== undefined)
+                    ? 'Resize'
+                    : 'Move');
                 this.layoutRequest += 1;
                 store.move(message.positions);
-                for (const [id, placement] of Object.entries(message.positions)) {
-                    const current = this.positions[id];
-                    this.positions[id] = {
-                        x: placement.x,
-                        y: placement.y,
-                        width: placement.width ?? current?.width ?? 160,
-                        height: placement.height ?? current?.height ?? 60
-                    };
+                {
+                    // A placement with no size is the file saying "as big as
+                    // what it holds", so the content decides -- not whatever
+                    // the card happened to be before it was fitted back.
+                    const natural = this.sizes(store.state.display);
+                    for (const [id, placement] of Object.entries(message.positions)) {
+                        const current = this.positions[id];
+                        this.positions[id] = {
+                            x: placement.x,
+                            y: placement.y,
+                            width: placement.width ?? natural[id]?.width ?? current?.width ?? 160,
+                            height: placement.height ?? natural[id]?.height ?? current?.height ?? 60
+                        };
+                    }
                 }
                 this.dropRoutesAffectedBy(new Set(Object.keys(message.positions)), store);
                 return;

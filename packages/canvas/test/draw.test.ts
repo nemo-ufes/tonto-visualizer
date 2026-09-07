@@ -114,6 +114,24 @@ function model(): ViewModel {
 
 describe('drawing', () => {
 
+    test('keeps a card the modeller made roomier, and still grows it for content', () => {
+        const view = model();
+        const sizes = Object.fromEntries(view.nodes.map(node => [node.id, sizeOf(node, display)]));
+        const natural = sizes['Sample::Employee']!;
+        const placed = placeNewNodes(view, sizes, {
+            'Sample::Employee': { x: 0, y: 0, width: natural.width + 200, height: natural.height + 100 }
+        });
+        // A size in the file is the least the card may be, not the size it is.
+        expect(placed['Sample::Employee']!.width).toBe(natural.width + 200);
+        expect(placed['Sample::Employee']!.height).toBe(natural.height + 100);
+
+        // ... so an attribute added afterwards still grows it rather than
+        // spilling out of a box that was pinned to what it used to contain.
+        const narrow = placeNewNodes(view, sizes, { 'Sample::Employee': { x: 0, y: 0, width: 10, height: 10 } });
+        expect(narrow['Sample::Employee']!.width).toBe(natural.width);
+        expect(narrow['Sample::Employee']!.height).toBe(natural.height);
+    });
+
     test('sizes a card to what it has to hold', () => {
         const [person, employee] = model().nodes;
         expect(sizeOf(person!, display).height).toBeGreaterThan(sizeOf(employee!, display).height);

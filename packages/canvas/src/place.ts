@@ -40,11 +40,13 @@ export function placeNewNodes(
             positions[node.id] = {
                 x: placement.x,
                 y: placement.y,
-                // Cards are not manually resizable yet. Width and height in an
-                // older view file describe what the card used to contain, not a
-                // choice that should make new attributes overflow their box.
-                width: size.width,
-                height: size.height
+                // A size in the file is the least the card may be, not the size
+                // it is. A modeller widens a card to give a long name a line of
+                // its own, and it stays wide; but an attribute added afterwards
+                // still grows it, because a card too small for what is written
+                // in it is not a smaller card, it is a broken one.
+                width: Math.max(size.width, placement.width ?? 0),
+                height: Math.max(size.height, placement.height ?? 0)
             };
         }
     }

@@ -314,7 +314,16 @@ function loopIndex(view: ViewModel): Map<string, { index: number; count: number 
     return loops;
 }
 
-function drawNode(node: ViewNode, rect: Rect, display: DisplayOptions, theme: Theme, isSelected: boolean): string {
+/**
+ * One card, on its own.
+ *
+ * Exported so a panel dragging a card's corner can repaint that card without
+ * re-rendering the diagram around it: on a model the size of `boats` a full
+ * render is tens of milliseconds, which is a resize the pointer outruns.
+ */
+export function drawNode(
+    node: ViewNode, rect: Rect, display: DisplayOptions, theme: Theme, isSelected: boolean
+): string {
     const stereotype = stereotypeLabel(node);
     const lines = attributeLines(node, display);
     const fill = display.showColors && node.kind !== 'unresolved' ? node.color : theme.surface;

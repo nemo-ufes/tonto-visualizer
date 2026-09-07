@@ -1,5 +1,5 @@
 /**
- * Taking hold of a route.
+ * Taking hold of what is drawn: a route, and the corner of a card.
  *
  * A line is routed for the modeller until they disagree with it, and then it is
  * theirs. What they take hold of is a handle: one on every bend the line already
@@ -18,7 +18,7 @@
  * changed size.
  */
 
-import type { Point } from './geometry.js';
+import type { Point, Rect, Size } from './geometry.js';
 
 export interface Handle {
     /** Where the handle sits. */
@@ -92,4 +92,55 @@ export function dropHandle(points: Point[], index: number): Point[] | undefined 
     }
     const left = points.filter((_, at) => at !== index);
     return left.length > 2 ? left : undefined;
+}
+
+/** Which corner of a card is being pulled. */
+export type Corner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+
+export const CORNERS: readonly Corner[] = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
+
+/** Where a corner of a rectangle is. */
+export function cornerOf(rect: Rect, corner: Corner): Point {
+    return {
+        x: corner === 'top-left' || corner === 'bottom-left' ? rect.x : rect.x + rect.width,
+        y: corner === 'top-left' || corner === 'top-right' ? rect.y : rect.y + rect.height
+    };
+}
+
+/**
+ * The card a corner has been pulled to, with the opposite corner left alone.
+ *
+ * A card is only ever made roomier than what it holds. `least` is the size the
+ * content needs, so pulling a corner past it stops there rather than sliding the
+ * name out of the box: a card too small for what is written in it is not a
+ * smaller card, it is a broken one. Which is also why the size a modeller
+ * chooses is kept as a minimum rather than as the size -- an attribute added
+ * later grows the card past it.
+ */
+export function resizeTo(rect: Rect, corner: Corner, to: Point, least: Size): Rect {
+    const left = corner === 'top-left' || corner === 'bottom-left';
+    const top = corner === 'top-left' || corner === 'top-right';
+    const fixed = cornerOf(rect, opposite(corner));
+    const width = Math.max(least.width, left ? fixed.x - to.x : to.x - fixed.x);
+    const height = Math.max(least.height, top ? fixed.y - to.y : to.y - fixed.y);
+    return {
+        x: left ? fixed.x - width : fixed.x,
+        y: top ? fixed.y - height : fixed.y,
+        width,
+        height
+    };
+}
+
+function opposite(corner: Corner): Corner {
+    switch (corner) {
+        case 'top-left':
+            return 'bottom-right';
+        case 'top-right':
+            return 'bottom-left';
+        case 'bottom-left':
+            return 'top-right';
+        case 'bottom-right':
+        default:
+            return 'top-left';
+    }
 }
