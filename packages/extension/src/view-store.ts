@@ -232,17 +232,57 @@ export function viewNameOf(value: string): string | undefined {
     return name || undefined;
 }
 
-/** The name encoded in a sibling view URI, or undefined for the default view. */
-export function viewNameFor(modelUri: vscode.Uri, viewUri: vscode.Uri): string | undefined {
-    const stem = modelUri.path.replace(/\.tonto$/i, '');
-    if (viewUri.path === `${stem}.tontoview`) {
-        return undefined;
-    }
+/**
+ * The name a view file carries for one model, or nothing when it is not a
+ * named view of it.
+ *
+ * A dot in what is left between the stem and `.tontoview` says the file belongs
+ * to another model: `employment.v2.roles.tontoview` is the roles view of
+ * `employment.v2.tonto`, and beside `employment.tonto` it reads as a view named
+ * `v2.roles`. `viewNameOf` writes no dots, so the two are told apart outright
+ * rather than guessed at. The default view has nothing between them and is not
+ * a named view either.
+ */
+function viewNameBetween(stem: string, file: string): string | undefined {
     const prefix = `${stem}.`;
     const suffix = '.tontoview';
-    return viewUri.path.startsWith(prefix) && viewUri.path.endsWith(suffix)
-        ? viewUri.path.slice(prefix.length, -suffix.length) || undefined
-        : undefined;
+    if (!file.startsWith(prefix) || !file.endsWith(suffix)) {
+        return undefined;
+    }
+    const name = file.slice(prefix.length, -suffix.length);
+    return name && !name.includes('.') ? name : undefined;
+}
+
+/** The name encoded in a sibling view URI, or undefined for the default view. */
+export function viewNameFor(modelUri: vscode.Uri, viewUri: vscode.Uri): string | undefined {
+    // Whole paths, so a file of the same name in another directory is not one
+    // of this model's views. A dot in the directory is part of the stem, and
+    // only what follows it is the name.
+    return viewNameBetween(modelUri.path.replace(/\.tonto$/i, ''), viewUri.path);
+}
+
+/**
+ * The arrangement a document opens in.
+ *
+ * `showing` is what the panel has open, and counts only while it is the same
+ * document: returning to the editor from the webview fires the active-editor
+ * listener, and that must not replace a named view with the default one.
+ * `seen` is where each document was last left, so following the editor to
+ * another model and back keeps the named view too.
+ */
+export function viewToShow(
+    modelUri: vscode.Uri,
+    requested: vscode.Uri | undefined,
+    showing: { document: vscode.Uri; view: vscode.Uri } | undefined,
+    seen: ReadonlyMap<string, vscode.Uri>
+): vscode.Uri {
+    if (requested) {
+        return requested;
+    }
+    if (showing && showing.document.toString() === modelUri.toString()) {
+        return showing.view;
+    }
+    return seen.get(modelUri.toString()) ?? viewUriFor(modelUri);
 }
 
 /** Finds only views whose filename identifies this exact model. */
@@ -258,17 +298,23 @@ export async function viewChoicesFor(modelUri: vscode.Uri): Promise<ViewChoice[]
         // The default view can still be opened in an untitled or virtual
         // workspace whose directory cannot be enumerated.
     }
+    // A model of its own claims its default view: `employment.v2.tontoview` is
+    // what `employment.v2.tonto` is arranged in, and only otherwise what a view
+    // of `employment.tonto` named `v2` would be called. The names collide by
+    // construction, and the directory says which of the two is meant.
+    const models = new Set(entries
+        .filter(([, type]) => type === vscode.FileType.File)
+        .map(([file]) => file.toLowerCase())
+        .filter(file => file.endsWith('.tonto')));
     const named = entries
-        .filter(([file, type]) => type === vscode.FileType.File
-            && file.startsWith(`${stem}.`) && file.endsWith('.tontoview')
-            && file !== `${stem}.tontoview`)
-        .map(([file]) => {
-            const name = file.slice(stem.length + 1, -'.tontoview'.length);
-            return {
+        .flatMap(([file, type]) => {
+            const found = type === vscode.FileType.File ? viewNameBetween(stem, file) : undefined;
+            const name = found && !models.has(`${stem}.${found}.tonto`.toLowerCase()) ? found : undefined;
+            return name ? [{
                 label: labelOfView(name),
                 description: file,
                 uri: modelUri.with({ path: `${modelUri.path.slice(0, slash + 1)}${file}` })
-            };
+            }] : [];
         })
         .sort((left, right) => left.label.localeCompare(right.label));
     return [{

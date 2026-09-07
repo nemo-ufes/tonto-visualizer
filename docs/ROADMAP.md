@@ -62,3 +62,9 @@ not need another path that can go stale when a repository moves.
   copy operation that works even when automatic arrangement saving is off.
 - Added four storage-level tests; the repository now runs 154 tests.
 - Kept the existing `.tontoview` schema and default-view behaviour compatible.
+- Corrected two things the first slice got wrong, with two more tests (156):
+  discovery offered the views of a model whose name begins the same way --
+  `employment.v2.roles.tontoview`, and `employment.v2.tontoview` where that
+  model exists -- as views of `employment.tonto`; and the panel remembered a
+  named view only while it stayed on one document, so following the editor to
+  another model and back silently reopened the default arrangement.

@@ -16,7 +16,7 @@ import { filterItemsOf, filterView } from './filters.js';
 import type { FilterItem, FromPanel, Rect, ToPanel } from './protocol.js';
 import { routesAffectedBy, safeRestoredPlacements } from './restoration.js';
 import {
-    labelOfView, ViewStore, viewChoicesFor, viewFileExists, viewNameFor, viewNameOf, viewUriFor
+    labelOfView, ViewStore, viewChoicesFor, viewFileExists, viewNameFor, viewNameOf, viewToShow, viewUriFor
 } from './view-store.js';
 
 const DEBOUNCE = 300;
@@ -39,6 +39,14 @@ export class DiagramPanel {
     /** Only the newest arrangement request may replace positions or routes. */
     private layoutRequest = 0;
     private refreshes: Promise<void> = Promise.resolve();
+    /**
+     * The view each document was last shown in.
+     *
+     * The panel follows the editor, so without this a named view lasted only
+     * as long as the modeller stayed in one file: a glance at another model and
+     * back reopened the default arrangement, and nothing said it had.
+     */
+    private readonly viewOfDocument = new Map<string, vscode.Uri>();
     private availablePackages: string[] = [];
     private focusPackages: string[] = [];
     private filters: FilterItem[] = [];
@@ -115,12 +123,14 @@ export class DiagramPanel {
 
     /** Points the diagram at a document, loading its arrangement. */
     async show(document: vscode.TextDocument, requestedView?: vscode.Uri): Promise<void> {
-        // Returning from the webview to the editor fires the active-editor
-        // listener. That must keep a named view open rather than silently
-        // replacing it with the default arrangement for the same document.
-        const viewUri = requestedView
-            ?? (this.document === document ? this.store?.location : undefined)
-            ?? viewUriFor(document.uri);
+        const viewUri = viewToShow(
+            document.uri,
+            requestedView,
+            this.document && this.store
+                ? { document: this.document.uri, view: this.store.location }
+                : undefined,
+            this.viewOfDocument
+        );
         const generation = ++this.generation;
         this.layoutRequest += 1;
         clearTimeout(this.pending);
@@ -142,6 +152,7 @@ export class DiagramPanel {
             return;
         }
         this.document = document;
+        this.viewOfDocument.set(document.uri.toString(), viewUri);
         this.panel.title = this.diagramTitle(document.uri, viewUri);
         this.session = session;
         this.store = store;
