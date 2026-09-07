@@ -404,10 +404,25 @@ disappearing instead. Measured over the six models: the three multiplicities
 that were entirely out of sight are on the drawing, and nothing anywhere is more
 than an eighth covered.
 
-What is left: labels that overlap each other on the densest models -- 43 pairs
-on `gufo`, an eleventh of the label area. The placer walks its own line and
-settles for the least-bad spot rather than pushing a neighbour aside, which is
-the harder half of the same problem and untouched.
+Labels are then placed widest first rather than in the order the model declares
+its relations. Each takes the best place left, so what goes first gets the
+choice, and the one with the least choice of where to go should not be the one
+left over: a long role name with two property strings after it needs a stretch
+of clear space, where a `*` fits almost anywhere. On gUFO that is what had
+`{addOnly} {redefines Entity.parts}` struck through `wasTerminatedIn`; both read
+now, and the ink one label hides of another falls by a third on the one model
+that has the problem. The other five have none of it either way.
+
+An earlier note here said 43 overlapping pairs on gUFO, an eleventh of the label
+area. That was measured on the boxes the placer reserves, which are padded, and
+a stereotype set over the name it belongs to overlaps by that padding on purpose.
+Measured on what the glyphs actually cover it was 13 pairs and a fortieth of the
+area, and is now 14 pairs and a sixtieth -- more collisions, each far smaller.
+
+What is left: nothing on the plan. The placer still walks its own line and
+settles for the least-bad spot rather than pushing a neighbour aside, which
+would need labels placed before any of them is drawn; ordering them turned out
+to buy most of what that would.
 
 ## 12. Risks
 
