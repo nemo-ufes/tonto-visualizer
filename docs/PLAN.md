@@ -390,9 +390,24 @@ drawn from one does not taint the canvas, so the pixels can be read back. At
 twice the size: a diagram exported to be looked at is read on a screen denser
 than the one it was drawn on.
 
-What is left: better label placement on dense models -- the placer walks its own
-line and settles for the least-bad spot rather than pushing its neighbours
-aside.
+No label is drawn where a class hides it. That was the worst of what the placer
+did on a dense model, and the two reasons for it were both about having nowhere
+to go: every place it looked was within fifty pixels of the end of the line, so
+a relation running alongside a class was hemmed in for the whole of that; and a
+multiplicity and the role name opposite it were placed as one group, so where
+one of the pair was stuck they both were. The group now comes apart when
+together would hide one of them -- reading as one group is worth a great deal
+and worth less than being on the drawing -- and a label that is wholly behind a
+class is charged for the share of itself that is gone as well as for the area it
+covers, so it can no longer buy its way out of being near the wrong line by
+disappearing instead. Measured over the six models: the three multiplicities
+that were entirely out of sight are on the drawing, and nothing anywhere is more
+than an eighth covered.
+
+What is left: labels that overlap each other on the densest models -- 43 pairs
+on `gufo`, an eleventh of the label area. The placer walks its own line and
+settles for the least-bad spot rather than pushing a neighbour aside, which is
+the harder half of the same problem and untouched.
 
 ## 12. Risks
 

@@ -408,6 +408,16 @@ function drawEdgeLabels(
  */
 const DISPLACEMENT = 5;
 
+/**
+ * What being entirely inside a class costs, over and above the area charge.
+ *
+ * Large enough that nothing else can outbid it. Being read against the wrong
+ * line is the other thing a label can do wrong, and it is charged hundreds --
+ * so on a dense drawing a label could buy its way out of that by hiding inside
+ * a class, which is not a lesser fault but the worst one there is.
+ */
+const HIDDEN = 4000;
+
 class LabelPlacer {
     private readonly taken: Rect[] = [];
 
@@ -490,9 +500,30 @@ class LabelPlacer {
         return this.penaltyOf(box, owner);
     }
 
+    /** The largest share of a label one class would cover: 1 is out of sight. */
+    hidden(box: Rect | undefined): number {
+        if (!box) {
+            return 0;
+        }
+        const area = Math.max(1, box.width * box.height);
+        let worst = 0;
+        for (const rect of this.nodes) {
+            worst = Math.max(worst, overlapArea(box, rect) / area);
+        }
+        return worst;
+    }
+
     /** Claims a box, so whatever is placed next avoids it. */
     take(box: Rect): void {
         this.taken.push(box);
+    }
+
+    /** Gives a claimed box back, for one taken only to weigh a second choice. */
+    undo(box: Rect): void {
+        const at = this.taken.lastIndexOf(box);
+        if (at >= 0) {
+            this.taken.splice(at, 1);
+        }
     }
 
     /** Everything placed so far, so the drawing can be sized to include it. */
@@ -513,8 +544,21 @@ class LabelPlacer {
      */
     private penaltyOf(box: Rect, owner?: string): number {
         let penalty = 0;
+        const area = Math.max(1, box.width * box.height);
         for (const rect of this.nodes) {
-            penalty += overlapArea(box, rect) * 6;
+            const covered = overlapArea(box, rect);
+            if (covered <= 0) {
+                continue;
+            }
+            // Charged by how much of the label is gone as well as by how much
+            // of the class it covers. A multiplicity half over a border is
+            // still read; one wholly inside a class is not there at all, and
+            // the reader has no way to know it ever was. Squared, so the second
+            // of those costs far more than twice the first -- which is what
+            // stopped `*` being printed through a class name rather than
+            // beside the wrong line, a trade the flat area charge lost.
+            const share = covered / area;
+            penalty += covered * 6 + share * share * HIDDEN;
         }
         for (const rect of this.taken) {
             penalty += overlapArea(box, rect) * 2;
@@ -686,53 +730,82 @@ function endLabel(
 
     const forwards = atSource ? points : [...points].reverse();
     const total = pathLength(points);
-    const reach = Math.min(total * 0.45, 64);
+    // Never past the middle of the line, since beyond that a multiplicity reads
+    // as the other end's. Within that, far enough to get out from under a class
+    // the line runs alongside: a mediation leaving the bottom of a relator runs
+    // parallel to it for the whole of its first fifty pixels, and every place
+    // the group could stand there was inside one class or another.
+    const reach = Math.min(total * 0.45, 128);
     const multiplicityWidth = multiplicity ? textWidth(multiplicity, FONT.edge) : 0;
     const textOnly = textWidth(roleText, FONT.edge);
     const roleWidth = textOnly + (lock ? LOCK.width + LOCK.gap : 0);
 
-    let best: { multiplicity?: Placed; role?: Placed; cost: number } | undefined;
-    for (const distance of [13, 18, 24, 32, 42, 54]) {
+    interface Candidate { at: number; side: number; multiplicity?: Placed; role?: Placed }
+    const candidates: Candidate[] = [];
+    for (const distance of [13, 18, 24, 32, 42, 54, 70, 88, 108]) {
         const at = Math.min(distance, reach);
         for (const side of [1, -1]) {
-            const placedMultiplicity = multiplicity
-                ? placedAt(besideLine(forwards, at, multiplicityWidth, [side])[0]!, multiplicityWidth)
-                : undefined;
-            const placedRole = roleWidth > 0
-                ? placedAt(besideLine(forwards, at, roleWidth, [-side])[0]!, roleWidth)
-                : undefined;
-            // Turning the group over has a price, since which side the
-            // multiplicity is on says something and says less if it changes from
-            // line to line -- but less of a price than being read against the
-            // wrong line, which is what the other side is often the way out of.
-            const cost = (placedMultiplicity ? placer.cost(placedMultiplicity.box, edge.id) : 0)
-                + (placedRole ? placer.cost(placedRole.box, edge.id) : 0)
-                + (at - 13) * DISPLACEMENT
-                + (side === 1 ? 0 : 120);
-            if (!best || cost < best.cost) {
-                best = {
-                    ...(placedMultiplicity ? { multiplicity: placedMultiplicity } : {}),
-                    ...(placedRole ? { role: placedRole } : {}),
-                    cost
-                };
-            }
-        }
-        if (best?.cost === 0) {
-            break;
+            candidates.push({
+                at,
+                side,
+                ...(multiplicity
+                    ? { multiplicity: placedAt(besideLine(forwards, at, multiplicityWidth, [side])[0]!, multiplicityWidth) }
+                    : {}),
+                ...(roleWidth > 0
+                    ? { role: placedAt(besideLine(forwards, at, roleWidth, [-side])[0]!, roleWidth) }
+                    : {})
+            });
         }
     }
-    if (!best) {
+
+    // Turning the group over has a price, since which side the multiplicity is
+    // on says something and says less if it changes from line to line -- but
+    // less of a price than being read against the wrong line, which is what the
+    // other side is often the way out of.
+    const awayFrom = (one: Candidate) => (one.at - 13) * DISPLACEMENT + (one.side === 1 ? 0 : 120);
+    const cheapest = (of: (one: Candidate) => Rect | undefined) => candidates.reduce((best, one) => {
+        const box = of(one);
+        const cost = (box ? placer.cost(box, edge.id) : 0) + awayFrom(one);
+        return !best || cost < best.cost ? { one, cost } : best;
+    }, undefined as { one: Candidate; cost: number } | undefined);
+
+    // Scored as a pair: one distance and one flip for both of them.
+    const together = candidates.reduce((chosen, one) => {
+        const cost = (one.multiplicity ? placer.cost(one.multiplicity.box, edge.id) : 0)
+            + (one.role ? placer.cost(one.role.box, edge.id) : 0)
+            + awayFrom(one);
+        return !chosen || cost < chosen.cost ? { one, cost } : chosen;
+    }, undefined as { one: Candidate; cost: number } | undefined);
+    if (!together) {
         return '';
     }
 
-    let markup = '';
-    if (best.multiplicity && multiplicity) {
-        placer.take(best.multiplicity.box);
-        markup += label(best.multiplicity.at.x, best.multiplicity.at.y, multiplicity, theme, 'middle', 'tv-end', edge.id);
+    let chosenMultiplicity = together.one.multiplicity;
+    let chosenRole = together.one.role;
+    // One distance and two sides for the pair, so that a multiplicity and the
+    // role name opposite it read as belonging to the same end. Unless that
+    // leaves one of them inside a class, where it is not read at all: being one
+    // group is worth a great deal, and worth less than being on the drawing.
+    if (placer.hidden(chosenMultiplicity?.box) > 0.5 || placer.hidden(chosenRole?.box) > 0.5) {
+        chosenMultiplicity = cheapest(one => one.multiplicity?.box)?.one.multiplicity;
+        if (chosenMultiplicity) {
+            // Claimed before the role is chosen, so the two do not both take it.
+            placer.take(chosenMultiplicity.box);
+        }
+        chosenRole = cheapest(one => one.role?.box)?.one.role;
+        if (chosenMultiplicity) {
+            placer.undo(chosenMultiplicity.box);
+        }
     }
-    if (best.role) {
-        placer.take(best.role.box);
-        const { at } = best.role;
+
+    let markup = '';
+    if (chosenMultiplicity && multiplicity) {
+        placer.take(chosenMultiplicity.box);
+        markup += label(chosenMultiplicity.at.x, chosenMultiplicity.at.y, multiplicity, theme, 'middle', 'tv-end', edge.id);
+    }
+    if (chosenRole) {
+        placer.take(chosenRole.box);
+        const { at } = chosenRole;
         // The group is centred on `at`: the text takes the left of it and the
         // padlock follows, so a role name and its mark read in that order
         // however wide the name is.

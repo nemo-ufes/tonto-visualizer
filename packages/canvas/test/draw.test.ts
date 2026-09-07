@@ -5,7 +5,7 @@ import { placeNewNodes } from '../src/place.js';
 import { segmentHitsRect } from '../src/geometry.js';
 import { render } from '../src/render.js';
 import { routeEdge } from '../src/route.js';
-import { multiplicityLabel, sizeOf } from '../src/measure.js';
+import { FONT, multiplicityLabel, sizeOf, textWidth } from '../src/measure.js';
 
 const display = { ...defaultDisplayOptions };
 
@@ -86,6 +86,40 @@ function drawnPair(view = inversePair()) {
         },
         display
     });
+}
+
+/**
+ * Every label in a drawing, with the box the renderer's own metrics give it.
+ *
+ * Enough to answer the one question that matters about a label: is it on the
+ * drawing, or behind a class where nobody will ever see it?
+ */
+function labelBoxes(svg: string): Array<{ text: string; box: Rect }> {
+    const layer = /<g class="tv-labels">([\s\S]*?)<\/svg>/.exec(svg)?.[1] ?? '';
+    return [...layer.matchAll(/<text([^>]*)>([^<]*)<\/text>/g)].flatMap(match => {
+        const attributes = match[1]!;
+        const text = match[2]!;
+        const x = Number(/ x="([-\d.]+)"/.exec(attributes)?.[1]);
+        const y = Number(/ y="([-\d.]+)"/.exec(attributes)?.[1]);
+        if (!text.trim() || !isFinite(x) || !isFinite(y)) {
+            return [];
+        }
+        const size = /tv-edge-stereotype/.test(attributes) ? FONT.edgeStereotype : FONT.edge;
+        const width = textWidth(text, size) + 6;
+        const anchor = /text-anchor="(\w+)"/.exec(attributes)?.[1] ?? 'start';
+        const left = anchor === 'middle' ? x - width / 2 : anchor === 'end' ? x - width : x;
+        return [{ text, box: { x: left, y: y - size, width, height: size + 4 } }];
+    });
+}
+
+/** The largest share of a label that any one of the given classes covers. */
+function hiddenShare(box: Rect, cards: Rect[]): number {
+    const area = Math.max(1, box.width * box.height);
+    return Math.max(0, ...cards.map(card => {
+        const wide = Math.max(0, Math.min(box.x + box.width, card.x + card.width) - Math.max(box.x, card.x));
+        const tall = Math.max(0, Math.min(box.y + box.height, card.y + card.height) - Math.max(box.y, card.y));
+        return (wide * tall) / area;
+    }));
 }
 
 function drawn(view: ViewModel, options = display) {
@@ -284,6 +318,36 @@ describe('drawing', () => {
         expect(drawn.svg).toContain('«kind»');
         expect(drawn.svg).toContain('name: string');
         expect(Object.keys(drawn.paths)).toEqual(['gen:Sample::Employee->Sample::Person']);
+    });
+
+    test('never leaves a label where a class hides it', () => {
+        // A relation whose line runs the length of another class: the whole
+        // neighbourhood of each end is inside something, which is where the
+        // group of multiplicity and role name used to give up and print itself
+        // over a class name.
+        const view = related();
+        const edge = view.edges[0]!;
+        if (edge.kind === 'relation') {
+            edge.sourceEnd = { cardinality: '*', role: 'contracts', isConst: false, isAddOnly: false };
+            edge.targetEnd = { cardinality: '1..*', role: 'employee', isConst: false, isAddOnly: false };
+        }
+        view.nodes.push({
+            id: 'Sample::Between', kind: 'class', name: 'Between', package: 'Sample',
+            stereotype: 'kind', color: '#FF99A3', isExternal: false, attributes: []
+        });
+        const positions = {
+            'Sample::Contract': { x: 0, y: 0, width: 150, height: 42 },
+            'Sample::Employee': { x: 640, y: 0, width: 150, height: 42 },
+            // Straddling the line between them, so both ends are hemmed in.
+            'Sample::Between': { x: 170, y: 24, width: 440, height: 90 }
+        };
+        const output = render({ view, positions, display });
+        const cards = Object.values(positions);
+        for (const { text, box } of labelBoxes(output.svg)) {
+            // Wholly behind a class is not a worse place for a label, it is no
+            // place at all: the reader has no way to know it was ever there.
+            expect({ text, hidden: hiddenShare(box, cards) > 0.6 }).toEqual({ text, hidden: false });
+        }
     });
 
     test('says which way a named association reads', () => {
