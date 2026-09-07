@@ -10,9 +10,12 @@
 
 import type { ContentOptions, DisplayOptions, EdgeRoute, LayoutOptions, ViewModel } from 'tonto-view';
 import { natureLegend } from 'tonto-view/palette';
+// By subpath, as the canvas imports `inversePairs`: the package's own entry
+// pulls in the derivation, and with it Langium and half of Node.
+import { nodesInSelection } from 'tonto-view/selection';
 import type { Corner, Handle, Point, Rect, Size } from 'tonto-canvas/draw';
 import {
-    CORNERS, cornerOf, darkTheme, distanceToPath, drawNode, dropHandle, handlesFor, lightTheme,
+    CORNERS, cornerOf, darkTheme, distanceToPath, drawNode, drawTrees, dropHandle, handlesFor, lightTheme,
     moveHandle, overlaps, rectBetween, render, resizeTo, routeEdge, segmentHitsRect, sizeOf
 } from 'tonto-canvas/draw';
 import type { FilterItem } from '../protocol.js';
@@ -63,6 +66,14 @@ let paths: Record<string, Point[]> = {};
  * be an offer the drawing cannot keep.
  */
 let inTree: Record<string, string> = {};
+/**
+ * The stem and bar of each tree, by the set it draws.
+ *
+ * Beside `paths` rather than in it: a set is not an edge -- nothing routed it
+ * and nothing may offer to bend it -- but a pointer near the line it is drawn
+ * as is asking for the set, and a bar is 1.2px wide.
+ */
+let spines: Record<string, Point[]> = {};
 /** Where the pointer last was, in diagram coordinates, for a drag that ends. */
 let lastPoint: Point | undefined;
 
@@ -86,7 +97,10 @@ window.addEventListener('message', event => {
         view = message.view;
         const visible = new Set([
             ...view.nodes.map(node => node.id),
-            ...view.edges.map(edge => edge.id)
+            ...view.edges.map(edge => edge.id),
+            // A generalization set is chosen as itself, so it has to survive the
+            // next keystroke as itself.
+            ...view.gensets.map(genset => genset.id)
         ]);
         const pruned = new Set([...selection].filter(id => visible.has(id)));
         const selectionChanged = pruned.size !== selection.size;
@@ -175,6 +189,7 @@ function draw(): void {
     bounds = drawn.bounds;
     paths = drawn.paths;
     inTree = drawn.trees;
+    spines = drawn.spines;
     canvas.innerHTML = drawn.svg;
     drawHandles();
     applyViewport();
@@ -285,7 +300,9 @@ function nearestLine(event: { clientX: number; clientY: number }): string | unde
     }
     const reach = 6 / scale;
     let best: { edge: string; distance: number } | undefined;
-    for (const [edge, points] of Object.entries(paths)) {
+    // The trees last, so that a leg wins a tie with the bar it hangs from: the
+    // branch is the more specific answer where both are within reach.
+    for (const [edge, points] of [...Object.entries(spines), ...Object.entries(paths)]) {
         const distance = distanceToPath(at, points);
         if (distance <= reach && (!best || distance < best.distance)) {
             best = { edge, distance };
@@ -419,8 +436,11 @@ viewport.addEventListener('pointerdown', event => {
     const id = nodeGroup?.getAttribute('data-node') ?? undefined;
 
     if (!id) {
-        const edgeGroup = target.closest('[data-edge]');
+        // A tree's stem, bar and triangle are the set: its legs carry their own
+        // id and are found first, being inside it.
+        const edgeGroup = target.closest('[data-edge]') ?? target.closest('[data-genset]');
         const edgeId = edgeGroup?.getAttribute('data-edge')
+            ?? edgeGroup?.getAttribute('data-genset')
             ?? labelOwner(target)
             ?? nearestLine(event);
         // Alt, or the middle button, is what panning is held behind once the
@@ -642,6 +662,11 @@ function redrawIncidentEdges(moved: Set<string>): void {
         if (!moved.has(edge.source) && !moved.has(edge.target)) {
             continue;
         }
+        // A leg is not routed between two boxes: the tree it belongs to decides
+        // where it runs, and that is redrawn whole below.
+        if (inTree[edge.id]) {
+            continue;
+        }
         const source = positions[edge.source];
         const target = positions[edge.target];
         const path = canvas.querySelector(`[data-edge="${cssEscape(edge.id)}"] path`) as SVGPathElement | null;
@@ -651,6 +676,40 @@ function redrawIncidentEdges(moved: Set<string>): void {
         const points = routeEdge(source, target, { style: display?.routing ?? 'straight' });
         path.setAttribute('d', points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' '));
     }
+    redrawTrees(moved);
+}
+
+/**
+ * The trees a drag has changed the shape of.
+ *
+ * A tree is not a line between two boxes but a figure derived from all of them
+ * -- how deep the bar runs, how long each leg is, where the triangle sits on
+ * the parent -- so there is no segment to nudge as there is for an association.
+ * It is drawn again, by the same code that draws it in a full rendering, and
+ * only for the sets a moved class actually belongs to: dragging a class in one
+ * corner of a large model must not redraw the taxonomy in the other.
+ */
+function redrawTrees(moved: Set<string>): void {
+    const affected = view.gensets.filter(genset =>
+        (genset.general !== undefined && moved.has(genset.general))
+        || genset.specifics.some(id => moved.has(id)));
+    if (affected.length === 0) {
+        return;
+    }
+    const drawn = drawTrees({
+        view, positions, theme: dark ? darkTheme : lightTheme, selection: [...selection]
+    });
+    for (const genset of affected) {
+        const group = canvas.querySelector(`[data-genset="${cssEscape(genset.id)}"]`);
+        const markup = drawn.markup[genset.id];
+        if (group && markup) {
+            group.outerHTML = markup;
+        }
+    }
+    // The lines moved with it, and the pointer is measured against where they
+    // are now rather than where the last full drawing left them.
+    paths = { ...paths, ...drawn.legs };
+    spines = { ...spines, ...drawn.spines };
 }
 
 viewport.addEventListener('dblclick', event => {
@@ -747,8 +806,9 @@ function hideableSelection(): string[] {
 }
 
 function applySelection(): void {
-    for (const group of Array.from(canvas.querySelectorAll('[data-node], [data-edge]'))) {
-        const id = group.getAttribute('data-node') ?? group.getAttribute('data-edge');
+    for (const group of Array.from(canvas.querySelectorAll('[data-node], [data-edge], [data-genset]'))) {
+        const id = group.getAttribute('data-node') ?? group.getAttribute('data-edge')
+            ?? group.getAttribute('data-genset');
         group.classList.toggle('tv-selected', id !== null && selection.has(id));
     }
     drawHandles();
@@ -759,10 +819,18 @@ function reportSelection(): void {
     updateArrangeTitle();
 }
 
+/**
+ * The cards an arrange would move: what is chosen, with a chosen generalization
+ * set standing for the classes it holds, since the set has no place of its own.
+ */
+function selectedNodes(): string[] {
+    return nodesInSelection(view, selection).filter(id => positions[id] !== undefined);
+}
+
 function updateArrangeTitle(): void {
-    const selectedNodes = [...selection].filter(id => positions[id] !== undefined).length;
-    element('arrange').title = selectedNodes > 0
-        ? `Arrange ${selectedNodes} selected node${selectedNodes === 1 ? '' : 's'} automatically`
+    const count = selectedNodes().length;
+    element('arrange').title = count > 0
+        ? `Arrange ${count} selected node${count === 1 ? '' : 's'} automatically`
         : 'Arrange the whole diagram automatically';
     element('hide').toggleAttribute('disabled', hideableSelection().length === 0);
 }
@@ -771,10 +839,8 @@ element('zoomIn').addEventListener('click', () => zoomAt(scale * 1.2, centreX(),
 element('zoomOut').addEventListener('click', () => zoomAt(scale / 1.2, centreX(), centreY()));
 element('fit').addEventListener('click', fit);
 element('arrange').addEventListener('click', () => {
-    const selectedNodes = [...selection].filter(id => positions[id] !== undefined);
-    host.postMessage(selectedNodes.length > 0
-        ? { type: 'autoLayout', only: selectedNodes }
-        : { type: 'autoLayout' });
+    const only = selectedNodes();
+    host.postMessage(only.length > 0 ? { type: 'autoLayout', only } : { type: 'autoLayout' });
 });
 element('hide').addEventListener('click', hideSelection);
 // No format: the name the modeller gives the file in the dialog decides.

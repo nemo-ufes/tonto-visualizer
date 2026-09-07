@@ -8,7 +8,9 @@
 
 import * as vscode from 'vscode';
 import type { ContentOptions, DisplayOptions, ViewModel } from 'tonto-view';
-import { contentAfter, derive, expandInverseIds, idsAtSource, packagesInScope, reconcile } from 'tonto-view';
+import {
+    contentAfter, derive, expandInverseIds, idsAtSource, nodesInSelection, packagesInScope, reconcile
+} from 'tonto-view';
 import { ViewSession } from 'tonto-view/session';
 import { autoLayout } from 'tonto-canvas';
 import { darkTheme, drawnSizes, lightTheme, movedTo, placeNewNodes, render, sizeOf } from 'tonto-canvas/draw';
@@ -304,7 +306,10 @@ export class DiagramPanel {
     }
 
     async autoLayoutSelectedOrAll(): Promise<void> {
-        const only = [...this.selected].filter(id => this.positions[id] !== undefined);
+        // A chosen generalization set is the classes it holds: it has no place
+        // of its own to arrange, and a taxonomy is what a shared triangle is.
+        const only = nodesInSelection(this.view, this.selected)
+            .filter(id => this.positions[id] !== undefined);
         await this.autoLayoutNow(only.length > 0 ? only : undefined);
     }
 

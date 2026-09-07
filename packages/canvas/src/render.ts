@@ -44,6 +44,15 @@ export interface Rendered {
      * whatever offers to bend a line has to know not to offer it here.
      */
     trees: Record<string, string>;
+    /**
+     * The stem and bar of each tree, by the set it draws.
+     *
+     * The set is a thing in the model with a declaration of its own, and this
+     * is the line it is drawn as: kept apart from `paths` because a set is not
+     * an edge -- nothing routes it, and nothing may offer to bend it -- but a
+     * pointer near it is still asking for it.
+     */
+    spines: Record<string, Point[]>;
 }
 
 const GROUP_HEADER = 20;
@@ -217,21 +226,12 @@ export function render(input: RenderInput): Rendered {
     // A copy: the placer is told about the bar of each tree as it is drawn,
     // and `paths` is what the canvas hit-tests edges against.
     const placer = new LabelPlacer(rects, groups.map(group => group.rect), { ...paths });
-    const buses: BusLine[] = [];
     // The legs join the routed lines once they are drawn: a leg is a line the
     // reader can point at, and everything that answers "which line is this?"
     // asks `paths`.
-    const inTree: Record<string, string> = {};
-    const treeMarkup = trees.plans
-        .map(plan => {
-            const tree = drawTree(plan, positions, theme, placer, rects, buses, selected);
-            for (const [edge, leg] of Object.entries(tree.legs)) {
-                paths[edge] = leg;
-                inTree[edge] = plan.marker ?? plan.general;
-            }
-            return tree.markup;
-        })
-        .join('');
+    const drawnTrees = drawPlannedTrees(trees.plans, positions, theme, selected, rects, placer);
+    const treeMarkup = Object.values(drawnTrees.markup).join('');
+    Object.assign(paths, drawnTrees.legs);
 
     // Labels are drawn last, over the boxes. A line may pass behind a class --
     // that reads as a line -- but a cardinality hidden behind one has simply
@@ -327,7 +327,10 @@ text {
 <rect x="${origin.x}" y="${origin.y}" width="${width}" height="${height}" fill="${theme.background}"/>
 ${groups.map(group => drawGroup(group)).join('')}${edgeMarkup}${treeMarkup}${nodeMarkup}<g class="tv-labels">${labelMarkup}</g></svg>`;
 
-    return { svg, bounds: { x: origin.x, y: origin.y, width, height }, paths, trees: inTree };
+    return {
+        svg, bounds: { x: origin.x, y: origin.y, width, height }, paths,
+        trees: drawnTrees.inTree, spines: drawnTrees.spines
+    };
 }
 
 /** Which of a class's loops each self-relation is, so no two are drawn alike. */
@@ -1104,6 +1107,79 @@ interface DrawnTree {
     markup: string;
     /** The polyline of each leg, by the generalization it is. */
     legs: Record<string, Point[]>;
+    /** The stem and the bar, as one line, for a pointer to be measured against. */
+    spine: Point[];
+}
+
+/** Every tree in a view, drawn. */
+export interface TreeDrawing {
+    /** What each tree is drawn as, by the set it draws. */
+    markup: Record<string, string>;
+    /** The polyline of each leg, by the generalization it is. */
+    legs: Record<string, Point[]>;
+    /** The set each leg belongs to. */
+    inTree: Record<string, string>;
+    /** The stem and bar of each tree, by the set. */
+    spines: Record<string, Point[]>;
+    /** The specializations the trees took over, which nothing else may draw. */
+    covered: Set<string>;
+}
+
+/**
+ * The trees of a view, drawn on their own.
+ *
+ * A tree is the one part of the picture whose shape is not a line between two
+ * boxes: it is a triangle, a stem, a bar and a leg for each subtype, all of it
+ * derived from where those boxes are. So a class being dragged has to redraw
+ * its trees, and redrawing the whole diagram on every pointer move is not what
+ * the canvas does for anything else. `render` draws the trees through this too,
+ * so what a drag leaves behind is what the next full drawing produces.
+ */
+export function drawTrees(input: {
+    view: ViewModel;
+    positions: Positions;
+    theme?: Theme;
+    selection?: Iterable<string>;
+    /** Boxes the bars and legs keep clear of. Every card, unless said otherwise. */
+    obstacles?: Rect[];
+}): TreeDrawing {
+    const { view, positions } = input;
+    const obstacles = input.obstacles ?? view.nodes
+        .map(node => positions[node.id])
+        .filter((rect): rect is Rect => rect !== undefined);
+    const planned = planTrees(view, positions);
+    return {
+        ...drawPlannedTrees(
+            planned.plans, positions, input.theme ?? lightTheme,
+            new Set(input.selection ?? []), obstacles, new LabelPlacer(obstacles)
+        ),
+        covered: planned.covered
+    };
+}
+
+function drawPlannedTrees(
+    plans: TreePlan[], positions: Positions, theme: Theme, selected: ReadonlySet<string>,
+    obstacles: Rect[], placer: LabelPlacer
+): Omit<TreeDrawing, 'covered'> {
+    const buses: BusLine[] = [];
+    const markup: Record<string, string> = {};
+    const legs: Record<string, Point[]> = {};
+    const inTree: Record<string, string> = {};
+    const spines: Record<string, Point[]> = {};
+    for (const plan of plans) {
+        const tree = drawTree(plan, positions, theme, placer, obstacles, buses, selected);
+        if (!tree.markup) {
+            continue;
+        }
+        const set = plan.marker ?? plan.general;
+        markup[set] = tree.markup;
+        spines[set] = tree.spine;
+        for (const [edge, leg] of Object.entries(tree.legs)) {
+            legs[edge] = leg;
+            inTree[edge] = set;
+        }
+    }
+    return { markup, legs, inTree, spines };
 }
 
 function drawTree(
@@ -1115,7 +1191,7 @@ function drawTree(
         .map(id => ({ id, rect: positions[id] }))
         .filter((entry): entry is { id: string; rect: Rect } => entry.rect !== undefined);
     if (!general || children.length < 2) {
-        return { markup: '', legs: {} };
+        return { markup: '', legs: {}, spine: [] };
     }
 
     const below = children.every(entry => entry.rect.y >= general.y + general.height);
@@ -1141,7 +1217,13 @@ function drawTree(
         right: Math.max(...children.map(entry => centerOf(entry.rect).x), base.x)
     });
 
-    let markup = `<g class="tv-edge tv-tree"${plan.marker ? ` data-genset="${escape(plan.marker)}"` : ''}>`;
+    const set = plan.marker ?? plan.general;
+    // The set is a thing in the model, so it can be chosen like one -- and what
+    // is drawn chosen is the whole tree, since the whole tree is what it is.
+    // One leg chosen is one specialization; that is a different answer, and it
+    // looks different.
+    let markup = `<g class="tv-edge tv-tree${selected.has(set) ? ' tv-selected' : ''}"`
+        + `${plan.marker ? ` data-genset="${escape(plan.marker)}"` : ''}>`;
     markup += `<polygon class="tv-marker" points="${apex.x},${apex.y} ${base.x - 9},${base.y} ${base.x + 9},${base.y}"/>`;
     markup += `<path d="M ${base.x} ${base.y} L ${base.x} ${bus}"/>`;
     const left = Math.min(...children.map(entry => centerOf(entry.rect).x), base.x);
@@ -1191,11 +1273,19 @@ function drawTree(
             { x: base.x + width / 2 + 14, y: near },
             { x: base.x - width / 2 - 14, y: near }
         ], label, plan.marker ?? plan.general);
-        markup += `<text x="${round(at.x)}" y="${round(at.y)}" fill="${theme.muted}" text-anchor="middle" `
+        markup += `<text data-for="${escape(set)}" x="${round(at.x)}" y="${round(at.y)}" `
+            + `fill="${theme.muted}" text-anchor="middle" `
             + `paint-order="stroke" stroke="${theme.background}" stroke-width="3" stroke-linejoin="round">`
             + `${escape(label)}</text>`;
     }
-    return { markup: markup + '</g>', legs };
+    // Down the stem and along the whole bar, retracing the middle: a pointer is
+    // measured against this, and every segment of it is a place the set is
+    // drawn.
+    const spine = [
+        { x: base.x, y: apex.y }, { x: base.x, y: bus },
+        { x: round(left), y: bus }, { x: round(right), y: bus }
+    ];
+    return { markup: markup + '</g>', legs, spine };
 }
 
 interface TreePlan {

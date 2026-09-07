@@ -11,6 +11,7 @@
         ".": "./out/index.js",
         "./inverses": "./out/inverses.js",
         "./palette": "./out/palette.js",
+        "./selection": "./out/selection.js",
         "./session": "./out/session.js"
     },
     "files": [

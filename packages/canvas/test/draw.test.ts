@@ -3,7 +3,7 @@ import type { ViewModel, ViewRelationEnd } from 'tonto-view';
 import { defaultDisplayOptions } from 'tonto-view';
 import { placeNewNodes } from '../src/place.js';
 import { distanceToPath, segmentHitsRect } from '../src/geometry.js';
-import { labelWidth, render } from '../src/render.js';
+import { drawTrees, labelWidth, render } from '../src/render.js';
 import { routeEdge } from '../src/route.js';
 import { FONT, multiplicityLabel, sizeOf, textWidth } from '../src/measure.js';
 
@@ -723,7 +723,7 @@ describe('drawing', () => {
             { x: horizontal![0], y: horizontal![1] },
             { x: horizontal![2], y: horizontal![3] }
         ];
-        const written = /<text x="([-\d.]+)" y="([-\d.]+)"[^>]*>PersonAgePhases[^<]*<\/text>/.exec(tree);
+        const written = /<text[^>]* x="([-\d.]+)" y="([-\d.]+)"[^>]*>PersonAgePhases[^<]*<\/text>/.exec(tree);
         expect(written).not.toBeNull();
         const at = { x: Number(written![1]), y: Number(written![2]) };
 
@@ -772,6 +772,52 @@ describe('drawing', () => {
         const chosen = render({ view, positions, display, selection: [child] });
         expect(chosen.svg).toContain(`<path data-edge="${written(child)}" class="tv-selected"`);
         expect(chosen.svg).not.toContain(`<path data-edge="${written(adult)}" class="tv-selected"`);
+    });
+
+    /**
+     * The set is a thing the model declares, so it is chosen as itself: the
+     * whole tree is drawn chosen, where one leg chosen is one specialization.
+     * It is also drawn as a line nobody routed, which is why the spine is
+     * reported apart from the paths -- a pointer near the bar is asking for the
+     * set, and a bar is 1.2px wide.
+     */
+    test('draws a generalization set as something that can be chosen and pointed at', () => {
+        const { set, view, positions } = ageSet();
+
+        const plain = render({ view, positions, display });
+        // Down the stem, then the whole bar: every part of it is the set.
+        expect(plain.spines[set]).toEqual([
+            { x: 357, y: 609 }, { x: 357, y: 666 }, { x: 177, y: 666 }, { x: 357, y: 666 }
+        ]);
+        // The label says whose it is, so clicking it asks for the set.
+        expect(plain.svg).toContain(`<text data-for="${set}"`);
+        expect(plain.svg).toContain('class="tv-edge tv-tree" data-genset=');
+
+        const chosen = render({ view, positions, display, selection: [set] });
+        expect(chosen.svg).toContain('class="tv-edge tv-tree tv-selected" data-genset=');
+        // Choosing the set is not choosing one of its branches.
+        expect(chosen.svg).not.toContain('class="tv-selected" d=');
+    });
+
+    /**
+     * A tree is derived from where its classes are, so a class being dragged
+     * has to redraw it -- and the same code has to do it, or what a drag leaves
+     * behind is not what the next full drawing produces.
+     */
+    test('redraws a tree from the classes it is drawn from', () => {
+        const { set, view, positions } = ageSet();
+        const dragged = { ...positions, 'Sample::Child': { x: 297, y: 809, width: 120, height: 42 } };
+
+        const before = drawTrees({ view, positions });
+        const after = drawTrees({ view, positions: dragged });
+
+        expect(before.markup[set]).toBe(
+            /<g class="tv-edge tv-tree"[^>]*>[\s\S]*?<\/g>/.exec(render({ view, positions, display }).svg)?.[0]);
+        expect(after.legs['gen:Sample::Child->Sample::Person']?.at(-1)).toEqual({ x: 357, y: 809 });
+        expect(after.markup[set]).not.toBe(before.markup[set]);
+        // The specializations a tree took over, which nothing else may draw.
+        expect([...after.covered].sort())
+            .toEqual(['gen:Sample::Adult->Sample::Person', 'gen:Sample::Child->Sample::Person']);
     });
 
     test('goes monochrome when colours are turned off', () => {
