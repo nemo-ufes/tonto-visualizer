@@ -144,11 +144,18 @@ function optionsFor(settings: LayoutOptions, routing: RoutingStyle): Record<stri
                 'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
                 'elk.layered.nodePlacement.bk.fixedAlignment': 'BALANCED',
                 'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
-                'elk.layered.thoroughness': '20',
-                // Ontologies are wide -- dozens of kinds under a handful of
-                // categories -- and a drawing that is four screens across and one
-                // deep is no easier to read than one that is neither.
-                'elk.aspectRatio': '1.6'
+                'elk.layered.thoroughness': '20'
+                // Nothing here bounds the width, and it is worth saying so
+                // rather than appearing to. `elk.aspectRatio` was set to 1.6 for
+                // years and did nothing at all: layered reads it only through
+                // its wrapping phase, and wrapping applies to path-like graphs
+                // -- 0.3, 1.6 and 8 produce the same drawing to the pixel on
+                // every model here, and `elk.layered.wrapping.strategy` changes
+                // none of them either. So a rank as wide as a category has
+                // kinds is as wide as the drawing gets: eight kinds of twelve
+                // subkinds each come out 17220 across and 664 deep. Bounding it
+                // means folding a rank into several rows here, which is a
+                // decision about how a taxonomy should read and not a setting.
             };
     }
 }
@@ -564,7 +571,12 @@ export async function autoLayout(
         id: 'root',
         layoutOptions: {
             ...algorithmOptions,
-            'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
+            // Only where there is a hierarchy to handle. Asked for it on a flat
+            // graph, ELK stops packing the pieces that are not joined to each
+            // other and lays them out in one row instead: thirty unconnected
+            // classes went from a block 804 by 644 to a strip 7164 by 84, and
+            // `boats` ignoring its packages from 4503 by 952 to 2697 by 1785.
+            ...(grouped ? { 'elk.hierarchyHandling': 'INCLUDE_CHILDREN' } : {}),
             // Every route comes back in one coordinate system. Without this ELK
             // reports an edge relative to whichever node it decides owns it,
             // which for an edge between two packages is neither of its ends --

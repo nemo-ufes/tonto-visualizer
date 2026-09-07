@@ -44,11 +44,60 @@ function taxonomy(count: number): ViewModel {
 
 async function arrange(view: ViewModel, grouped: boolean) {
     const sizes = Object.fromEntries(view.nodes.map(node => [node.id, sizeOf(node, display)]));
-    const laid = await autoLayout(view, sizes, {}, { ...defaultLayoutOptions, grouped });
+    // `groupByPackage` is the name the option has. It was passed as `grouped`,
+    // which `LayoutOptions` has no such field for, so every test that asked for
+    // one arrangement or the other had been getting the default both times.
+    const laid = await autoLayout(view, sizes, {}, { ...defaultLayoutOptions, groupByPackage: grouped });
     return laid.positions;
 }
 
 describe('arranging a model', () => {
+
+    test('refuses a model an algorithm cannot draw, rather than drawing it wrong', () => {
+        // `radial` wants a tree, and three classes that relate round in a ring
+        // are not one. ELK says so by throwing, which is the contract the
+        // panel's recovery rests on and the reason it has one: uncaught, this
+        // is a diagram that never appears and never says why. gUFO throws the
+        // same way; `boats` runs out of stack instead.
+        const ring = ['A', 'B', 'C'];
+        const view: ViewModel = {
+            groups: [],
+            gensets: [],
+            nodes: ring.map(name => ({
+                id: `Sample::${name}`, kind: 'class' as const, name, package: 'Sample',
+                stereotype: 'kind', color: '#FF99A3', isExternal: false, attributes: []
+            })),
+            edges: ring.map((name, index) => ({
+                kind: 'relation' as const,
+                id: `rel:Sample::${name}->Sample::${ring[(index + 1) % ring.length]}:material:`,
+                source: `Sample::${name}`,
+                target: `Sample::${ring[(index + 1) % ring.length]}`,
+                sourceEnd: { isConst: true, isAddOnly: false },
+                targetEnd: { isConst: true, isAddOnly: false }
+            }))
+        };
+        const sizes = Object.fromEntries(view.nodes.map(node => [node.id, sizeOf(node, display)]));
+        return expect(autoLayout(view, sizes, {}, { ...defaultLayoutOptions, algorithm: 'radial' }))
+            .rejects.toThrow();
+    });
+
+    test('leaves the pieces of a flat graph packed rather than in one row', async () => {
+        // Asked to handle a hierarchy that is not there, ELK stops packing the
+        // components that are not joined to each other. Every class here stands
+        // alone, so all of it is components.
+        const view = taxonomy(0);
+        for (let index = 0; index < 12; index += 1) {
+            view.nodes.push({
+                id: `Sample::Alone${index}`, kind: 'class', name: `Alone${index}`, package: 'Sample',
+                stereotype: 'kind', color: '#FF99A3', isExternal: false, attributes: []
+            });
+        }
+        const placed = await arrange(view, false);
+        const rects = Object.values(placed);
+        const width = Math.max(...rects.map(one => one.x + one.width)) - Math.min(...rects.map(one => one.x));
+        const height = Math.max(...rects.map(one => one.y + one.height)) - Math.min(...rects.map(one => one.y));
+        expect(width / height).toBeLessThan(4);
+    });
 
     test('puts a supertype above its subtypes', async () => {
         const view = taxonomy(3);
