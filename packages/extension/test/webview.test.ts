@@ -79,6 +79,39 @@ function sendModel(hidden: string[] = [], stale?: string): void {
     } }));
 }
 
+/** `Person` with a declared age phase set: two phases under one shared triangle. */
+const treeSet = 'set:Sample::PersonAgePhases';
+
+function sendTree(positions?: Record<string, { x: number; y: number; width: number; height: number }>): void {
+    const clazz = (name: string, stereotype: string) => ({
+        id: `Sample::${name}`, kind: 'class' as const, name, package: 'Sample',
+        stereotype, color: '#eee', isExternal: false, attributes: []
+    });
+    const specialization = (name: string) => ({
+        kind: 'generalization' as const,
+        id: `gen:Sample::${name}->Sample::Person`,
+        source: `Sample::${name}`, target: 'Sample::Person', genset: treeSet
+    });
+    window.dispatchEvent(new MessageEvent('message', { data: {
+        type: 'model',
+        view: {
+            groups: [], gensets: [{
+                id: treeSet, name: 'PersonAgePhases', disjoint: true, complete: true,
+                general: 'Sample::Person', specifics: ['Sample::Child', 'Sample::Adult'], categorizers: []
+            }],
+            nodes: [clazz('Person', 'kind'), clazz('Child', 'phase'), clazz('Adult', 'phase')],
+            edges: [specialization('Child'), specialization('Adult')]
+        },
+        positions: positions ?? {
+            'Sample::Person': { x: 120, y: 0, width: 160, height: 42 },
+            'Sample::Adult': { x: 0, y: 200, width: 120, height: 42 },
+            'Sample::Child': { x: 240, y: 200, width: 120, height: 42 }
+        },
+        routes: {}, display: defaultDisplayOptions, content: defaultContentOptions,
+        layout: defaultLayoutOptions, packages: ['Sample'], filters: [], title: 'sample.tonto'
+    } }));
+}
+
 function posted(type: string): Array<Record<string, unknown>> {
     return messages.filter((message): message is Record<string, unknown> =>
         typeof message === 'object' && message !== null && (message as { type?: string }).type === type);
@@ -205,34 +238,7 @@ describe('the webview and its host protocol', () => {
      * chosen line has.
      */
     test('chooses the branch of a shared tree that was clicked, and offers no bend on it', () => {
-        const set = 'set:Sample::PersonAgePhases';
-        const clazz = (name: string, stereotype: string) => ({
-            id: `Sample::${name}`, kind: 'class' as const, name, package: 'Sample',
-            stereotype, color: '#eee', isExternal: false, attributes: []
-        });
-        const specialization = (name: string) => ({
-            kind: 'generalization' as const,
-            id: `gen:Sample::${name}->Sample::Person`,
-            source: `Sample::${name}`, target: 'Sample::Person', genset: set
-        });
-        window.dispatchEvent(new MessageEvent('message', { data: {
-            type: 'model',
-            view: {
-                groups: [], gensets: [{
-                    id: set, name: 'PersonAgePhases', disjoint: true, complete: true,
-                    general: 'Sample::Person', specifics: ['Sample::Child', 'Sample::Adult'], categorizers: []
-                }],
-                nodes: [clazz('Person', 'kind'), clazz('Child', 'phase'), clazz('Adult', 'phase')],
-                edges: [specialization('Child'), specialization('Adult')]
-            },
-            positions: {
-                'Sample::Person': { x: 120, y: 0, width: 160, height: 42 },
-                'Sample::Adult': { x: 0, y: 200, width: 120, height: 42 },
-                'Sample::Child': { x: 240, y: 200, width: 120, height: 42 }
-            },
-            routes: {}, display: defaultDisplayOptions, content: defaultContentOptions,
-            layout: defaultLayoutOptions, packages: ['Sample'], filters: [], title: 'sample.tonto'
-        } }));
+        sendTree();
 
         const leg = document.querySelector('[data-edge="gen:Sample::Child->Sample::Person"]');
         expect(leg).not.toBeNull();
@@ -247,6 +253,58 @@ describe('the webview and its host protocol', () => {
         expect(document.querySelector('.tv-handles')?.children.length).toBe(0);
         // Nor is it something the panel offers to hide, as no generalization is.
         expect((document.getElementById('hide') as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    /**
+     * The set is declared in the model and drawn as one shared triangle, so it
+     * is chosen as itself -- and what an arrange then acts on is the classes it
+     * holds, since a set has no place on the canvas of its own.
+     */
+    test('chooses the generalization set from the bar its branches hang from', () => {
+        sendTree();
+        const tree = document.querySelector(`[data-genset="${treeSet}"]`)!;
+        const bar = [...tree.querySelectorAll('path')].find(path =>
+            /^M [\d.]+ ([\d.]+) L [\d.]+ \1$/.test(path.getAttribute('d') ?? ''));
+        expect(bar).toBeDefined();
+
+        bar!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1 }));
+
+        expect(posted('selected').at(-1)).toEqual({ type: 'selected', ids: [treeSet] });
+        expect(tree.classList.contains('tv-selected')).toBe(true);
+        // Nothing to take hold of: a set is not a line anybody routed.
+        expect(document.querySelector('.tv-handles')?.children.length).toBe(0);
+        // Arranging it arranges the taxonomy it draws, not the whole diagram.
+        document.getElementById('arrange')!.click();
+        expect(posted('autoLayout').at(-1)).toEqual({
+            type: 'autoLayout', only: ['Sample::Person', 'Sample::Child', 'Sample::Adult']
+        });
+    });
+
+    /**
+     * A tree is derived from where its classes are, so it has to follow one
+     * being dragged. Nothing about a leg can be nudged the way an association's
+     * endpoint can: the whole figure is drawn again.
+     */
+    test('moves a shared tree with the class being dragged', () => {
+        sendTree();
+        const legOf = () => document.querySelector('[data-edge="gen:Sample::Child->Sample::Person"]')
+            ?.getAttribute('d');
+        const before = legOf();
+
+        const child = document.querySelector('[data-node="Sample::Child"]')!;
+        child.dispatchEvent(new PointerEvent('pointerdown', {
+            bubbles: true, pointerId: 2, clientX: 300, clientY: 220
+        }));
+        document.getElementById('viewport')!.dispatchEvent(new PointerEvent('pointermove', {
+            bubbles: true, pointerId: 2, clientX: 300, clientY: 320
+        }));
+
+        expect(legOf()).not.toBe(before);
+        // Drawn from where the card now is: a hundred lower, taken to the 8px
+        // grid like every drag, and the leg ends on the card's top edge.
+        expect(legOf()).toMatch(/ 304$/);
+        document.getElementById('viewport')!.dispatchEvent(
+            new PointerEvent('pointerup', { bubbles: true, pointerId: 2 }));
     });
 
     test('does not offer to hide lines outside the association filter', () => {

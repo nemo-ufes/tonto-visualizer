@@ -62,6 +62,14 @@ not need another path that can go stale when a repository moves.
   copy operation that works even when automatic arrangement saving is off.
 - Added four storage-level tests; the repository now runs 154 tests.
 - Kept the existing `.tontoview` schema and default-view behaviour compatible.
+- Finished priority 8: the set is now chosen as itself -- clicking its bar,
+  stem or label draws the whole tree chosen, where one leg chosen is one
+  specialization, and the cursor on the `genset` line chooses it in the diagram.
+  A chosen set stands for the classes it holds wherever a selection moves
+  things, so arranging one arranges its taxonomy rather than the whole diagram.
+  A tree also follows a class being dragged now: it is a figure derived from
+  where its classes are rather than a line between two of them, so it is drawn
+  again by the same code a full rendering uses.
 - Took priority 8 while the drawing code was open. A leg of a shared tree
   carries the id of the generalization it is: clicking one chooses that
   specialization and draws it chosen, double-clicking one opens the line it is

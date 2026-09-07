@@ -454,8 +454,9 @@ to buy most of what that would.
   after this plan closed.* Each leg now carries the id of the generalization it
   is, so a branch is chosen and opened like any other line, while the group
   around it goes on naming the set -- which is what the model declares, and what
-  the stem, bar and triangle are drawn for: double-clicking those opens the
-  `genset` line instead. The two open questions were answered by what a leg *is*
+  the stem, bar and triangle are drawn for: clicking those chooses the set
+  itself, and double-clicking them opens the `genset` line. The two open
+  questions were answered by what a leg *is*
   rather than by what it looks like. It is not routed, since the tree decides
   where its branches run, so it is offered no handle to bend; and it is not
   hideable, which is not a special case at all -- no generalization is.
