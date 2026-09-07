@@ -425,7 +425,9 @@ a stereotype set over the name it belongs to overlaps by that padding on purpose
 Measured on what the glyphs actually cover it was 13 pairs and a fortieth of the
 area, and is now 14 pairs and a sixtieth -- more collisions, each far smaller.
 
-What is left: nothing on the plan. The placer still walks its own line and
+What is left from this original plan: nothing. Subsequent product work is kept
+in [ROADMAP.md](ROADMAP.md), so this document remains the record of the first
+release and the decisions behind it. The placer still walks its own line and
 settles for the least-bad spot rather than pushing a neighbour aside, which
 would need labels placed before any of them is drawn; ordering them turned out
 to buy most of what that would.

@@ -49,6 +49,16 @@
                 "category": "Tonto"
             },
             {
+                "command": "tonto.viz.openView",
+                "title": "Open Diagram View",
+                "category": "Tonto"
+            },
+            {
+                "command": "tonto.viz.saveNamedView",
+                "title": "Save Diagram as Named View",
+                "category": "Tonto"
+            },
+            {
                 "command": "tonto.viz.undo",
                 "title": "Undo Diagram Change",
                 "category": "Tonto"
@@ -71,6 +81,14 @@
                 },
                 {
                     "command": "tonto.viz.exportSvg",
+                    "when": "tontoVizOpen"
+                },
+                {
+                    "command": "tonto.viz.openView",
+                    "when": "tontoVizOpen"
+                },
+                {
+                    "command": "tonto.viz.saveNamedView",
                     "when": "tontoVizOpen"
                 }
             ],
