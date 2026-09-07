@@ -12,7 +12,9 @@ import { derive, expandInverseIds, idsAtSource, reconcile } from 'tonto-view';
 import { ViewSession } from 'tonto-view/session';
 import { autoLayout } from 'tonto-canvas';
 import { darkTheme, lightTheme, placeNewNodes, render, segmentHitsRect, sizeOf } from 'tonto-canvas/draw';
-import type { FromPanel, Rect, ToPanel } from './protocol.js';
+import { filterItemsOf, filterView } from './filters.js';
+import type { FilterItem, FromPanel, Rect, ToPanel } from './protocol.js';
+import { safeRestoredPlacements } from './restoration.js';
 import { ViewStore } from './view-store.js';
 
 const DEBOUNCE = 300;
@@ -25,6 +27,8 @@ export class DiagramPanel {
     private store: ViewStore | undefined;
     private document: vscode.TextDocument | undefined;
     private view: ViewModel = { groups: [], nodes: [], edges: [], gensets: [] };
+    /** The last successfully derived model, before modeller-owned filters. */
+    private catalog: ViewModel = { groups: [], nodes: [], edges: [], gensets: [] };
     private positions: Record<string, Rect> = {};
     private pending: NodeJS.Timeout | undefined;
     private ready = false;
@@ -35,6 +39,9 @@ export class DiagramPanel {
     private refreshes: Promise<void> = Promise.resolve();
     private availablePackages: string[] = [];
     private focusPackages: string[] = [];
+    private filters: FilterItem[] = [];
+    private visibleNodeIds = new Set<string>();
+    private hasPresentedView = false;
     private selected = new Set<string>();
     private disposal: Promise<void> | undefined;
     /** The last message built, so a panel that becomes ready late still gets it. */
@@ -128,6 +135,12 @@ export class DiagramPanel {
         this.panel.title = `Diagram: ${nameOf(document.uri)}`;
         this.session = session;
         this.store = store;
+        this.view = { groups: [], nodes: [], edges: [], gensets: [] };
+        this.catalog = { groups: [], nodes: [], edges: [], gensets: [] };
+        this.positions = {};
+        this.filters = [];
+        this.visibleNodeIds = new Set();
+        this.hasPresentedView = false;
         await this.refresh();
     }
 
@@ -319,7 +332,9 @@ export class DiagramPanel {
             return;
         }
         const errors = await session.parseErrors(document.uri.toString());
-        if (errors.length > 0 && this.view.nodes.length > 0) {
+        const content = this.effectiveContent(store.state.content);
+        if (errors.length > 0 && this.catalog.nodes.length > 0) {
+            this.installView(filterView(this.catalog, content.hidden ?? []), store);
             this.send(errors[0]);
             return;
         }
@@ -336,28 +351,17 @@ export class DiagramPanel {
         this.focusPackages = [...new Set(focused
             .flatMap(model => model.packages.map(one => one.name))
             .filter((name): name is string => name !== undefined))];
-        const content = this.effectiveContent(store.state.content);
-        this.view = derive({
+        const deriveWith = (options: ContentOptions) => derive({
             models,
             ...(this.focusPackages[0] ? { focus: this.focusPackages[0] } : {}),
             documentation: session.documentation(),
-            options: content
+            options
         });
-
-        const reconciled = reconcile(store.state, this.view);
-        const sizes = this.sizes(store.state.display);
-        const placed = placeNewNodes(this.view, sizes, reconciled.placed);
-        const resized = new Set(this.view.nodes
-            .filter(node => {
-                const before = this.positions[node.id] ?? reconciled.placed[node.id];
-                const after = placed[node.id];
-                return before !== undefined && after !== undefined
-                    && (before.width !== after.width || before.height !== after.height);
-            })
-            .map(node => node.id));
-        const isFirstDraw = Object.keys(reconciled.placed).length === 0 && this.view.nodes.length > 0;
-        this.positions = placed;
-        this.dropRoutesAffectedBy(resized, store);
+        const { hidden, ...unfiltered } = content;
+        const catalog = deriveWith(unfiltered);
+        this.catalog = catalog;
+        this.filters = filterItemsOf(catalog);
+        const isFirstDraw = this.installView(filterView(catalog, hidden ?? []), store);
         if (isFirstDraw) {
             // Nothing has been arranged yet, so this is the one time the diagram
             // may lay itself out completely.
@@ -365,6 +369,48 @@ export class DiagramPanel {
             return;
         }
         this.send(errors[0]);
+    }
+
+    /**
+     * Reconciles a visible model with its saved arrangement.
+     *
+     * A restored card is new to the current canvas even though it has an old
+     * saved position. If that place has since been occupied, hand it back to
+     * the local placer and invalidate every route that the returning rectangle
+     * can affect.
+     */
+    private installView(next: ViewModel, store: ViewStore): boolean {
+        const previous = this.positions;
+        const returning = new Set(this.hasPresentedView
+            ? next.nodes.filter(node => !this.visibleNodeIds.has(node.id)).map(node => node.id)
+            : []);
+        this.view = next;
+        const reconciled = reconcile(store.state, next);
+        const sizes = this.sizes(store.state.display);
+        const { placed: safePlaced, repositioned } = safeRestoredPlacements(
+            next.nodes.map(node => node.id), returning, sizes, reconciled.placed);
+
+        const placed = placeNewNodes(next, sizes, safePlaced);
+        const changed = new Set(returning);
+        for (const node of next.nodes) {
+            const before = previous[node.id];
+            const after = placed[node.id];
+            if (before && after && (before.width !== after.width || before.height !== after.height)) {
+                changed.add(node.id);
+            }
+        }
+        this.positions = placed;
+        for (const id of repositioned) {
+            const position = placed[id];
+            const saved = store.state.nodes[id];
+            if (position && saved) {
+                store.move({ [id]: { ...saved, x: position.x, y: position.y } });
+            }
+        }
+        this.dropRoutesAffectedBy(changed, store);
+        this.visibleNodeIds = new Set(next.nodes.map(node => node.id));
+        this.hasPresentedView = true;
+        return Object.keys(reconciled.placed).length === 0 && next.nodes.length > 0;
     }
 
     private sizes(display: DisplayOptions): Record<string, { width: number; height: number }> {
@@ -420,6 +466,7 @@ export class DiagramPanel {
             content: this.effectiveContent(store.state.content),
             layout: store.state.layout,
             packages: this.availablePackages,
+            filters: this.filters,
             title: this.document ? nameOf(this.document.uri) : 'Tonto',
             ...(stale ? { stale } : {})
         };
@@ -667,6 +714,7 @@ export class DiagramPanel {
         <button id="zoomIn" title="Zoom in">+</button>
         <button id="fit" title="Fit to view">Fit</button>
         <button id="arrange" title="Arrange the whole diagram automatically">Arrange</button>
+        <button id="hide" title="Hide the selected classes or associations" disabled>Hide</button>
         <button id="optionsButton" title="What is drawn">⚙</button>
         <button id="exportButton" title="Export as SVG or PNG">Export</button>
     </div>

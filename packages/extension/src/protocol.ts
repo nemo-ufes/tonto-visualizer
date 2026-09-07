@@ -17,6 +17,14 @@ export interface Rect {
     height: number;
 }
 
+/** One user-facing row in the class and association filter. */
+export interface FilterItem {
+    kind: 'class' | 'association';
+    /** One id normally; both declarations when an inverse pair is one line. */
+    ids: string[];
+    label: string;
+}
+
 /** Host → panel. */
 export type ToPanel =
     | {
@@ -28,6 +36,7 @@ export type ToPanel =
         content: ContentOptions;
         layout: LayoutOptions;
         packages: string[];
+        filters: FilterItem[];
         title: string;
         /** Set when the model does not parse and the picture is the last good one. */
         stale?: string;
