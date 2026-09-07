@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { cornerOf, dropHandle, handlesFor, moveHandle, resizeTo } from '../src/handles.js';
+import { overlaps, rectBetween } from '../src/geometry.js';
 import type { Point, Rect } from '../src/geometry.js';
 
 /** A line from one border to another, with one bend in the middle of it. */
@@ -116,5 +117,33 @@ describe('taking hold of a corner', () => {
         const stopped = resizeTo(card, 'top-left', { x: 400, y: 400 }, least);
         expect(stopped).toEqual({ x: 100, y: 100, width: 120, height: 40 });
         expect(cornerOf(stopped, 'bottom-right')).toEqual(cornerOf(card, 'bottom-right'));
+    });
+});
+
+describe('the rectangle a rubber band describes', () => {
+
+    test('is the same however it was dragged', () => {
+        const band = { x: 10, y: 20, width: 90, height: 60 };
+        for (const [one, other] of [
+            [{ x: 10, y: 20 }, { x: 100, y: 80 }],
+            [{ x: 100, y: 80 }, { x: 10, y: 20 }],
+            [{ x: 100, y: 20 }, { x: 10, y: 80 }],
+            [{ x: 10, y: 80 }, { x: 100, y: 20 }]
+        ] as Array<[Point, Point]>) {
+            // A rectangle with a negative width contains nothing, so a band
+            // dragged up and to the left would catch nothing at all.
+            expect(rectBetween(one, other)).toEqual(band);
+        }
+    });
+
+    test('catches a card it only touches, and misses one it does not reach', () => {
+        const caught = rectBetween({ x: 0, y: 0 }, { x: 100, y: 100 });
+        expect(overlaps(caught, { x: 90, y: 90, width: 40, height: 40 })).toBe(true);
+        expect(overlaps(caught, { x: 120, y: 0, width: 40, height: 40 })).toBe(false);
+    });
+
+    test('is empty when it was never dragged', () => {
+        expect(rectBetween({ x: 5, y: 5 }, { x: 5, y: 5 }))
+            .toEqual({ x: 5, y: 5, width: 0, height: 0 });
     });
 });

@@ -161,6 +161,14 @@ button:hover {
     fill: var(--vscode-focusBorder, #1f5c5c);
 }
 
+/* The rubber band. Dashed, so it is plainly a gesture and not a package box. */
+#canvas .tv-marquee {
+    fill: var(--vscode-focusBorder, #1f5c5c);
+    fill-opacity: 0.08;
+    stroke: var(--vscode-focusBorder, #1f5c5c);
+    pointer-events: none;
+}
+
 #canvas .tv-handle:hover {
     fill: var(--vscode-focusBorder, #1f5c5c);
     opacity: 1;

@@ -25,6 +25,22 @@ export function overlaps(one: Rect, other: Rect, margin = 0): boolean {
         && one.y + one.height + margin > other.y;
 }
 
+/**
+ * The rectangle two corners describe, whichever way round they were given.
+ *
+ * A rubber band is dragged in any of four directions, and a rectangle with a
+ * negative width is not one: it contains nothing, so a marquee dragged up and to
+ * the left would select nothing at all.
+ */
+export function rectBetween(one: Point, other: Point): Rect {
+    return {
+        x: Math.min(one.x, other.x),
+        y: Math.min(one.y, other.y),
+        width: Math.abs(other.x - one.x),
+        height: Math.abs(other.y - one.y)
+    };
+}
+
 export function boundsOf(rects: Rect[]): Rect {
     if (rects.length === 0) {
         return { x: 0, y: 0, width: 0, height: 0 };

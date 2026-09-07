@@ -13,7 +13,7 @@ import { natureLegend } from 'tonto-view/palette';
 import type { Corner, Handle, Point, Rect, Size } from 'tonto-canvas/draw';
 import {
     CORNERS, cornerOf, darkTheme, distanceToPath, drawNode, dropHandle, handlesFor, lightTheme,
-    moveHandle, render, resizeTo, routeEdge, segmentHitsRect, sizeOf
+    moveHandle, overlaps, rectBetween, render, resizeTo, routeEdge, segmentHitsRect, sizeOf
 } from 'tonto-canvas/draw';
 
 interface HostApi {
@@ -52,6 +52,8 @@ let bounds: Rect = { x: 0, y: 0, width: 1, height: 1 };
 let dragging: DragState | undefined;
 /** The polyline each edge was last drawn along, which is what a handle holds. */
 let paths: Record<string, Point[]> = {};
+/** Where the pointer last was, in diagram coordinates, for a drag that ends. */
+let lastPoint: Point | undefined;
 
 interface DragState {
     ids: string[];
@@ -63,6 +65,8 @@ interface DragState {
     route?: { edge: string; handle: Handle; from: Point[] };
     /** Set instead of `ids` when what is being dragged is the corner of a card. */
     resize?: { id: string; corner: Corner; from: Rect; least: Size };
+    /** Set instead of `ids` when what is being dragged is a rubber band. */
+    marquee?: { from: Point; add: boolean };
 }
 
 window.addEventListener('message', event => {
@@ -237,6 +241,29 @@ function handleAt(target: Element): { edge: string; handle: Handle } | undefined
     return edge && handle ? { edge, handle } : undefined;
 }
 
+/**
+ * The rubber band, over the drawing rather than in it.
+ *
+ * In the diagram's own coordinates, inside the SVG, so it pans and zooms with
+ * everything else and needs no arithmetic of its own to stay under the pointer.
+ */
+function drawMarquee(rect: Rect | undefined): void {
+    const svg = canvas.querySelector('svg');
+    svg?.querySelector('.tv-marquee')?.remove();
+    if (!svg || !rect) {
+        return;
+    }
+    const band = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    band.setAttribute('class', 'tv-marquee');
+    band.setAttribute('x', String(rect.x));
+    band.setAttribute('y', String(rect.y));
+    band.setAttribute('width', String(rect.width));
+    band.setAttribute('height', String(rect.height));
+    band.setAttribute('stroke-width', String(1 / scale));
+    band.setAttribute('stroke-dasharray', `${4 / scale} ${3 / scale}`);
+    svg.append(band);
+}
+
 /** Draws one card at its current size, without redrawing anything else. */
 function repaintNode(id: string): void {
     const node = view.nodes.find(candidate => candidate.id === id);
@@ -319,11 +346,23 @@ viewport.addEventListener('pointerdown', event => {
     if (!id) {
         const edgeGroup = target.closest('[data-edge]');
         const edgeId = edgeGroup?.getAttribute('data-edge') ?? nearestLine(event);
-        selection = edgeId ? new Set([edgeId]) : new Set();
-        applySelection();
-        reportSelection();
+        // Alt, or the middle button, is what panning is held behind once the
+        // plain drag on the background is spent on choosing things.
+        const pans = event.altKey || event.button === 1;
+        // Held shift is a rubber band being added to, so what it is adding to
+        // has to survive the press that starts it -- and moving the diagram
+        // about is not a change of mind about what is selected either.
+        if (edgeId || !(event.shiftKey || pans)) {
+            selection = edgeId ? new Set([edgeId]) : new Set();
+            applySelection();
+            reportSelection();
+        }
         if (!edgeId) {
-            dragging = { ids: [], startX: event.clientX, startY: event.clientY, moved: false, origin: {} };
+            const from = diagramPoint(event);
+            dragging = {
+                ids: [], startX: event.clientX, startY: event.clientY, moved: false, origin: {},
+                ...(pans || !from ? {} : { marquee: { from, add: event.shiftKey } })
+            };
         }
         return;
     }
@@ -353,6 +392,16 @@ viewport.addEventListener('pointermove', event => {
         return;
     }
     dragging.moved = true;
+
+    const band = dragging.marquee;
+    if (band) {
+        const at = diagramPoint(event);
+        if (at) {
+            lastPoint = at;
+            drawMarquee(rectBetween(band.from, at));
+        }
+        return;
+    }
 
     const resize = dragging.resize;
     if (resize) {
@@ -403,6 +452,23 @@ viewport.addEventListener('pointermove', event => {
 viewport.addEventListener('pointerup', () => {
     const drag = dragging;
     dragging = undefined;
+    if (drag?.marquee) {
+        drawMarquee(undefined);
+        if (drag.moved) {
+            const caught = rectBetween(drag.marquee.from, lastPoint ?? drag.marquee.from);
+            // Classes only. A marquee is drawn to gather things to move, hide or
+            // arrange, and every one of those is about the boxes; a line caught
+            // because it happens to pass through would be a fourth thing the
+            // modeller did not point at.
+            const inside = view.nodes
+                .filter(node => positions[node.id] && overlaps(positions[node.id]!, caught))
+                .map(node => node.id);
+            selection = drag.marquee.add ? new Set([...selection, ...inside]) : new Set(inside);
+            applySelection();
+            reportSelection();
+        }
+        return;
+    }
     if (drag?.resize && drag.moved) {
         keepSize(drag.resize.id, positions[drag.resize.id]!);
         return;

@@ -223,14 +223,14 @@ why its generator can only be exercised through the extension.
 
 | | |
 |---|---|
-| select | click, shift-click, marquee |
+| select | click, shift-click, drag a band over the background (shift adds) |
 | move | drag, arrow-key nudge, snap to an 8px grid |
 | route | select a line, drag a handle to bend it; double-click a bend to drop it |
 | resize | drag a card's corner; double-click a corner to fit the content |
 | hide | hide an element or a whole package, and a panel to bring it back |
 | layout | auto-layout everything, or just the selection |
 | undo/redo | over view changes only — the model is edited in the editor |
-| zoom/pan | wheel, drag, fit, 1:1 |
+| zoom/pan | wheel, alt-drag or middle-drag, fit, 1:1 |
 | export | SVG, PNG, and the `.tontoview` file itself |
 
 ## 7. What makes it *tandem* rather than a second window
@@ -316,7 +316,7 @@ Parity *and* the notation the redesign can express, in the first release:
 | M1 | `packages/view`: AST → view model, golden tests, `tonto-view` CLI dumping JSON | done |
 | M2 | `packages/canvas`: elkjs layout, sizes, routing, SVG; `--svg` from the command line | done |
 | M3 | The extension: panel, live redraw on type, last-good render, follow-active-editor, options panel, legend, package filter, SVG export | done |
-| M4 | Interaction: select, drag, snap, hide, route handles, resize, undo, auto-layout — and the `.tontoview` file that makes it stick | done, less marquee |
+| M4 | Interaction: select, marquee, drag, snap, hide, route handles, resize, undo, auto-layout — and the `.tontoview` file that makes it stick | done |
 | M5 | The rest of the notation: gensets, relation stereotypes, MLT, end decorations, datatypes, documentation | done |
 | M6 | Packaging: bundled `.vsix`, README, CI, nightly build against `tontoredesign@main` | CI and the bundle done; the marketplace listing is not |
 
@@ -369,9 +369,19 @@ already carries an optional size -- a card that was pulled bigger reports one, a
 card that was only moved does not, and a placement without one is how the file
 says "as big as what it holds".
 
-What is left, in the order it is worth doing: marquee selection, PNG export, and
-better label placement on dense models -- the placer walks its own line and
-settles for the least-bad spot rather than pushing its neighbours aside.
+Dragging the background draws a rubber band, and what it touches is selected --
+classes only, since a band is drawn to gather things to move, hide or arrange
+and every one of those is about the boxes; a line caught because it happens to
+pass through would be a fourth thing nobody pointed at. Holding shift adds to
+what is already selected rather than replacing it. That spends the plain drag
+the background used to answer with a pan, so panning moves to alt-drag and the
+middle button, where every diagram holds it -- and neither panning nor starting
+a band with shift held clears the selection, which the plain drag used to do on
+the way past.
+
+What is left, in the order it is worth doing: PNG export, and better label
+placement on dense models -- the placer walks its own line and settles for the
+least-bad spot rather than pushing its neighbours aside.
 
 ## 12. Risks
 
