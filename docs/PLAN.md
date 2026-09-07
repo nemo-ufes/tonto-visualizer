@@ -414,6 +414,14 @@ the harder half of the same problem and untouched.
 - **Layout quality.** A layered algorithm on a dense ontology can still produce
   a thicket. Mitigation: the modeller can move anything, and what they move
   stays moved — which is the reason for the rewrite in the first place.
+- **Nothing bounds the width.** A rank is as wide as a category has kinds, and
+  the drawing is as wide as its widest rank: eight kinds of twelve subkinds each
+  come out 17220 across and 664 deep. `elk.aspectRatio` was set for years and
+  did nothing — layered reads it only through its wrapping phase, and wrapping
+  is for path-like graphs; 0.3, 1.6 and 8 draw the same picture to the pixel.
+  The option has been removed rather than left looking like a defence. Bounding
+  the width means folding a rank into several rows here, which is a decision
+  about how a taxonomy should read rather than a setting to find.
 - **The submodule pin.** Covered by the nightly build.
 - **Scale.** SVG is comfortable to a couple of thousand elements; beyond that a
   view is a subset, which the package filter and hidden-element list already are.

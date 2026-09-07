@@ -131,22 +131,46 @@ export class DiagramPanel {
         await this.refresh();
     }
 
-    async autoLayoutNow(only?: string[]): Promise<void> {
+    /**
+     * Arranges the diagram, and says whether it could.
+     *
+     * An algorithm can refuse: ELK's `radial` wants a tree, and `boats` and
+     * `gufo` are not one -- one throws `not a tree`, the other runs out of
+     * stack. Nothing caught either, so choosing radial on such a model drew
+     * nothing at all, and the first draw of a view file that had radial saved in
+     * it left the panel empty with no word of why. A picture is meant to survive
+     * a model that does not parse; it had better survive one that does.
+     */
+    async autoLayoutNow(only?: string[]): Promise<boolean> {
         const store = this.store;
         if (!store) {
-            return;
+            return false;
         }
         const request = ++this.layoutRequest;
         const view = this.view;
         const previous = this.positions;
         const sizes = this.sizes(store.state.display);
-        const laid = await autoLayout(view, sizes, this.positions, {
-            ...store.state.layout,
-            routing: store.state.display.routing,
-            ...(only ? { only } : {})
-        });
+        let laid;
+        try {
+            laid = await autoLayout(view, sizes, this.positions, {
+                ...store.state.layout,
+                routing: store.state.display.routing,
+                ...(only ? { only } : {})
+            });
+        } catch (error) {
+            if (request !== this.layoutRequest || store !== this.store || view !== this.view) {
+                return false;
+            }
+            const message = error instanceof Error ? error.message : String(error);
+            vscode.window.showErrorMessage(
+                `${store.state.layout.algorithm} could not arrange this model: ${message}`);
+            // Everything stays where it was, and is drawn: the arrangement that
+            // failed is the one nobody sees.
+            this.send();
+            return false;
+        }
         if (request !== this.layoutRequest || store !== this.store || view !== this.view) {
-            return;
+            return false;
         }
         this.positions = laid.positions;
         store.move(Object.fromEntries(Object.entries(laid.positions).map(([id, rect]) => [id, rect])));
@@ -177,6 +201,7 @@ export class DiagramPanel {
             this.dropRoutesAffectedBy(moved, store, replaced);
         }
         this.send();
+        return true;
     }
 
     async autoLayoutSelectedOrAll(): Promise<void> {
@@ -487,7 +512,13 @@ export class DiagramPanel {
                 if (store) {
                     store.begin('Layout option');
                     store.update({ layout: { ...store.state.layout, ...message.layout } });
-                    await this.autoLayoutNow();
+                    if (!await this.autoLayoutNow()) {
+                        // Taken back exactly as the modeller would have taken it
+                        // back, so the options panel goes on saying what is
+                        // actually drawing the diagram.
+                        store.undo();
+                        this.send();
+                    }
                 }
                 return;
             case 'content':
