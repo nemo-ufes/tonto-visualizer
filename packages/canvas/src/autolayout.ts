@@ -545,6 +545,29 @@ export async function autoLayout(
 
     const grouped = settings.groupByPackage && supportsGroups(settings.algorithm);
     const algorithmOptions = optionsFor(settings, routing);
+    /**
+     * A datatype nothing is joined to is put after the model, not into it.
+     *
+     * Attributes are written inside the card, so a datatype or an enumeration
+     * usually has no line at all -- and a node with no line is free to be
+     * seated wherever a rank has room. In `parties` that was the corridor
+     * between a relator and the class it mediates: `Address` landed between
+     * `EmploymentContract` and `Employee`, and the mediation was drawn round
+     * it, changing direction for a class it has nothing to do with. Which is
+     * the picture saying something the model does not.
+     *
+     * Only the ones with no edge, and only datatypes and enumerations: a class
+     * that happens to be undrawn today is still part of the taxonomy and keeps
+     * its rank, and a datatype something does point at is drawn where it is
+     * pointed at from.
+     */
+    const joined = new Set(view.edges.flatMap(edge => [edge.source, edge.target]));
+    const kindOf = new Map(view.nodes.map(node => [node.id, node.kind]));
+    const appendix = (id: string): Pick<ElkNode, 'layoutOptions'> | Record<string, never> =>
+        settings.algorithm === 'layered' && !joined.has(id)
+            && (kindOf.get(id) === 'datatype' || kindOf.get(id) === 'enumeration')
+            ? { layoutOptions: { 'elk.layered.layering.layerConstraint': 'LAST' } }
+            : {};
     const children: ElkNode[] = grouped
         ? view.groups
             .map(group => ({
@@ -561,10 +584,10 @@ export async function autoLayout(
                 },
                 children: group.nodes
                     .filter(id => subject.has(id))
-                    .map(id => ({ id, ...sizeOf(id) }))
+                    .map(id => ({ id, ...sizeOf(id), ...appendix(id) }))
             }))
             .filter(group => (group.children?.length ?? 0) > 0)
-        : nodes.map(node => ({ id: node.id, ...sizeOf(node.id) }));
+        : nodes.map(node => ({ id: node.id, ...sizeOf(node.id), ...appendix(node.id) }));
 
     const attempt = async (turnedMediations: Set<string>): Promise<{ positions: Positions; routes: Record<string, Point[]> }> => {
     const graph: ElkNode = {

@@ -179,6 +179,57 @@ describe('arranging a model', () => {
         expect([...new Set(output.paths['complex-physical']!.map(point => point.x))]).toHaveLength(1);
     });
 
+    /**
+     * A datatype nothing points at has no rank of its own to take, so ELK is
+     * free to seat it wherever a rank has room -- which in `parties` was the
+     * corridor between a relator and the class it mediates. The mediation was
+     * then drawn round it, changing direction for a class it has nothing to do
+     * with. Attributes are written inside the card, so this is the ordinary
+     * case for a datatype rather than a corner of one.
+     */
+    test('puts a datatype nothing points at after the model rather than into it', async () => {
+        const view = taxonomy(2);
+        view.nodes.push({
+            id: 'Sample::Address', kind: 'datatype', name: 'Address', package: 'Sample',
+            stereotype: 'datatype', color: '#FFFFFF', isExternal: false,
+            attributes: [{
+                name: 'street', type: 'string', stereotypes: [],
+                isOrdered: false, isConst: false, isAddOnly: false, isDerived: false
+            }]
+        });
+        view.groups[0]!.nodes.push('Sample::Address');
+
+        const positions = await arrange(view, true);
+        const classes = view.nodes.filter(node => node.kind === 'class');
+        const lowest = Math.max(...classes.map(node => positions[node.id]!.y));
+        expect(positions['Sample::Address']!.y).toBeGreaterThanOrEqual(lowest);
+    });
+
+    /** A datatype something does point at is drawn where it is pointed at from. */
+    test('leaves a datatype that is joined to something in its rank', async () => {
+        const view = taxonomy(1);
+        view.nodes.push({
+            id: 'Sample::Sub0Sub', kind: 'class', name: 'Sub0Sub', package: 'Sample',
+            stereotype: 'subkind', color: '#FF99A3', isExternal: false, attributes: []
+        }, {
+            id: 'Sample::Address', kind: 'datatype', name: 'Address', package: 'Sample',
+            stereotype: 'datatype', color: '#FFFFFF', isExternal: false, attributes: []
+        });
+        view.groups[0]!.nodes.push('Sample::Sub0Sub', 'Sample::Address');
+        view.edges.push({
+            kind: 'generalization', id: 'gen:Sample::Sub0Sub->Sample::Sub0',
+            source: 'Sample::Sub0Sub', target: 'Sample::Sub0'
+        }, {
+            kind: 'relation', id: 'rel:Sample::Root->Sample::Address::',
+            source: 'Sample::Root', target: 'Sample::Address',
+            sourceEnd: { isConst: false, isAddOnly: false },
+            targetEnd: { isConst: false, isAddOnly: false }
+        });
+
+        const positions = await arrange(view, true);
+        expect(positions['Sample::Address']!.y).toBeLessThan(positions['Sample::Sub0Sub']!.y);
+    });
+
     test('lays out an inverse pair as the one association that is drawn', async () => {
         const one = taxonomy(1);
         const extra = {
