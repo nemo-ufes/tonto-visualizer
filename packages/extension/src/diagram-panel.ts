@@ -39,6 +39,13 @@ export class DiagramPanel {
     private disposal: Promise<void> | undefined;
     /** The last message built, so a panel that becomes ready late still gets it. */
     private last: ToPanel | undefined;
+    /** Rasterising is a round trip to the panel, so each one is answered by id. */
+    private rasterRequest = 0;
+    private readonly rasters = new Map<number, {
+        resolve: (bytes: Uint8Array) => void;
+        reject: (error: Error) => void;
+        timer: NodeJS.Timeout;
+    }>();
 
     private constructor(private readonly panel: vscode.WebviewPanel, private readonly extensionUri: vscode.Uri) {
         panel.webview.html = this.html();
@@ -177,14 +184,26 @@ export class DiagramPanel {
         await this.autoLayoutNow(only.length > 0 ? only : undefined);
     }
 
-    async exportSvg(): Promise<void> {
+    /**
+     * Writes the diagram out, as the drawing or as a picture of it.
+     *
+     * Without a format the file decides: the dialog offers both, and a name
+     * ending in `.png` is a request for one. Which is how a Save As has always
+     * worked, and one button fewer on a toolbar that is already full.
+     */
+    async exportDiagram(format?: 'svg' | 'png'): Promise<void> {
         const store = this.store;
         if (!store || !this.document) {
             return;
         }
+        const suggested = format ?? 'svg';
         const target = await vscode.window.showSaveDialog({
-            defaultUri: this.document.uri.with({ path: this.document.uri.path.replace(/\.tonto$/, '.svg') }),
-            filters: { SVG: ['svg'] }
+            defaultUri: this.document.uri.with({
+                path: this.document.uri.path.replace(/\.tonto$/, `.${suggested}`)
+            }),
+            filters: format === 'png' ? { PNG: ['png'] }
+                : format === 'svg' ? { SVG: ['svg'] }
+                    : { SVG: ['svg'], PNG: ['png'] }
         });
         if (!target) {
             return;
@@ -196,8 +215,45 @@ export class DiagramPanel {
             display: store.state.display,
             theme: isDark(vscode.window.activeColorTheme) ? darkTheme : lightTheme
         });
-        await vscode.workspace.fs.writeFile(target, Buffer.from(drawn.svg, 'utf8'));
+        const wanted = format ?? (target.path.toLowerCase().endsWith('.png') ? 'png' : 'svg');
+        try {
+            const bytes = wanted === 'png'
+                ? await this.rasterise(drawn.svg)
+                : Buffer.from(drawn.svg, 'utf8');
+            await vscode.workspace.fs.writeFile(target, bytes);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            vscode.window.showErrorMessage(`Could not write the diagram: ${message}`);
+            return;
+        }
         vscode.window.showInformationMessage(`Diagram written to ${target.fsPath}`);
+    }
+
+    /** Kept for the command id the extension has always contributed. */
+    async exportSvg(): Promise<void> {
+        await this.exportDiagram('svg');
+    }
+
+    /**
+     * Asks the panel to draw the SVG as pixels, since only a browser can.
+     *
+     * Twice the size, because a diagram exported to be looked at is read on a
+     * screen that is usually denser than the one it was drawn on, and a class
+     * name at one pixel per point is soft on every one of them.
+     */
+    private rasterise(svg: string): Promise<Uint8Array> {
+        if (!this.ready) {
+            return Promise.reject(new Error('the diagram panel is not open'));
+        }
+        const id = ++this.rasterRequest;
+        return new Promise<Uint8Array>((resolve, reject) => {
+            const timer = setTimeout(() => {
+                this.rasters.delete(id);
+                reject(new Error('the panel did not answer in time'));
+            }, 20000);
+            this.rasters.set(id, { resolve, reject, timer });
+            this.post({ type: 'rasterise', id, svg, scale: 2 });
+        });
     }
 
     private schedule(): void {
@@ -472,8 +528,21 @@ export class DiagramPanel {
                 await this.stepBack(false);
                 return;
             case 'export':
-                await this.exportSvg();
+                await this.exportDiagram(message.format);
                 return;
+            case 'raster': {
+                const waiting = this.rasters.get(message.id);
+                if (waiting) {
+                    this.rasters.delete(message.id);
+                    clearTimeout(waiting.timer);
+                    if (message.data) {
+                        waiting.resolve(Buffer.from(message.data, 'base64'));
+                    } else {
+                        waiting.reject(new Error(message.error ?? 'the panel could not draw it'));
+                    }
+                }
+                return;
+            }
             case 'selected':
                 this.selected = new Set(message.ids);
                 return;
@@ -568,7 +637,7 @@ export class DiagramPanel {
         <button id="fit" title="Fit to view">Fit</button>
         <button id="arrange" title="Arrange the whole diagram automatically">Arrange</button>
         <button id="optionsButton" title="What is drawn">⚙</button>
-        <button id="exportButton" title="Export as SVG">Export</button>
+        <button id="exportButton" title="Export as SVG or PNG">Export</button>
     </div>
     <div id="options" class="panel" hidden></div>
     <div id="viewport">

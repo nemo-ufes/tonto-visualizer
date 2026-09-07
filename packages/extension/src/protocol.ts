@@ -33,7 +33,16 @@ export type ToPanel =
         stale?: string;
     }
     | { type: 'select'; ids: string[] }
-    | { type: 'theme'; dark: boolean };
+    | { type: 'theme'; dark: boolean }
+    /**
+     * Draw this SVG as pixels and send them back.
+     *
+     * The one thing the host cannot do for itself: rasterising needs a browser,
+     * and the extension host is Node. So the picture is still rendered here,
+     * from the state here -- the panel is asked to photograph it, not to
+     * produce it, and what is exported is what an SVG export would have been.
+     */
+    | { type: 'rasterise'; id: number; svg: string; scale: number };
 
 /** Panel → host. */
 export type FromPanel =
@@ -49,7 +58,9 @@ export type FromPanel =
     | { type: 'autoLayout'; only?: string[] }
     | { type: 'hide'; ids: string[] }
     | { type: 'show'; ids: string[] }
-    | { type: 'export'; format: 'svg' }
+    /** Without a format, the file the modeller names in the dialog decides. */
+    | { type: 'export'; format?: 'svg' | 'png' }
+    | { type: 'raster'; id: number; data?: string; error?: string }
     /** Take back the last view change, or put it back. */
     | { type: 'undo' }
     | { type: 'redo' };

@@ -17,7 +17,10 @@ export function activate(context: vscode.ExtensionContext): void {
             await DiagramPanel.current?.autoLayoutSelectedOrAll();
         }),
         vscode.commands.registerCommand('tonto.viz.exportSvg', async () => {
-            await DiagramPanel.current?.exportSvg();
+            await DiagramPanel.current?.exportDiagram('svg');
+        }),
+        vscode.commands.registerCommand('tonto.viz.exportPng', async () => {
+            await DiagramPanel.current?.exportDiagram('png');
         }),
         // The panel binds these to its own keys as well: a webview only sees a
         // keystroke while it has focus, and the palette is where a modeller
