@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'vitest';
-import type { ViewModel } from 'tonto-view';
+import type { ViewModel, ViewRelationEnd } from 'tonto-view';
 import { defaultDisplayOptions } from 'tonto-view';
 import { placeNewNodes } from '../src/place.js';
 import { segmentHitsRect } from '../src/geometry.js';
-import { render } from '../src/render.js';
+import { labelWidth, render } from '../src/render.js';
 import { routeEdge } from '../src/route.js';
 import { FONT, multiplicityLabel, sizeOf, textWidth } from '../src/measure.js';
 
@@ -318,6 +318,38 @@ describe('drawing', () => {
         expect(drawn.svg).toContain('«kind»');
         expect(drawn.svg).toContain('name: string');
         expect(Object.keys(drawn.paths)).toEqual(['gen:Sample::Employee->Sample::Person']);
+    });
+
+    test('measures how much room an edge wants by its longest label', () => {
+        // Labels are placed widest first, since each takes the best place left
+        // and the one with the least choice of where to go should not be the
+        // one left over. What decides the order is the longest thing the edge
+        // has to write anywhere on itself.
+        const between = (id: string, name?: string, end?: ViewRelationEnd) => ({
+            kind: 'relation' as const, id, source: 'Sample::Person', target: 'Sample::Employee',
+            ...(name ? { name } : {}),
+            sourceEnd: end ?? { isConst: true, isAddOnly: false },
+            targetEnd: { isConst: true, isAddOnly: false }
+        });
+        const bare = between('a');
+        const named = between('b', 'employs');
+        const decorated = between('c', undefined,
+            { role: 'coordinators', isConst: true, isAddOnly: true, redefines: 'Organization.staff' });
+
+        expect(labelWidth(bare, display)).toBe(0);
+        expect(labelWidth(named, display)).toBeGreaterThan(0);
+        // A role name with two property strings after it needs a stretch of
+        // clear space; a name on its own needs far less.
+        expect(labelWidth(decorated, display)).toBeGreaterThan(labelWidth(named, display));
+        // And what is not drawn asks for nothing.
+        expect(labelWidth(decorated, { ...display, showRoleNames: false, showEndDecorations: false }))
+            .toBe(0);
+        expect(labelWidth(named, { ...display, showRelationNames: false })).toBe(0);
+        // A generalization writes nothing along itself at all.
+        expect(labelWidth({
+            kind: 'generalization', id: 'gen:Sample::Employee->Sample::Person',
+            source: 'Sample::Employee', target: 'Sample::Person'
+        }, display)).toBe(0);
     });
 
     test('never leaves a label where a class hides it', () => {

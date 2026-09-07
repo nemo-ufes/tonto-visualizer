@@ -215,28 +215,39 @@ export function render(input: RenderInput): Rendered {
     // that reads as a line -- but a cardinality hidden behind one has simply
     // gone missing, and the reader has no way to know it was there.
     let labelMarkup = '';
-    const edgeMarkup = drawn
+    // Every line that is drawn, with the labels it carries. An inverse pair is
+    // drawn from what both halves say, so the half that keeps the line carries
+    // the other's ends and its name.
+    const lines = drawn
+        .filter(edge => !trees.covered.has(edge.id) && positions[edge.source] && positions[edge.target])
         .map(edge => {
-            if (trees.covered.has(edge.id)) {
-                return '';
-            }
-            const source = positions[edge.source];
-            const target = positions[edge.target];
-            if (!source || !target) {
-                return '';
-            }
-            const points = paths[edge.id]!;
-            // An inverse pair is drawn from what both halves say, so the
-            // half that keeps the line carries the other's ends and its name.
             const partner = edge.kind === 'relation' ? inverses.partnerOf.get(edge.id) : undefined;
-            const both = edge.kind === 'relation' && partner ? mergedWith(edge, partner) : edge;
-            labelMarkup += drawEdgeLabels(both, points, display, theme, placer, partner);
-            return drawEdge(
-                both, points, theme,
-                selected.has(edge.id) || (partner !== undefined && selected.has(partner.id))
-            );
-        })
+            return {
+                edge: edge.kind === 'relation' && partner ? mergedWith(edge, partner) : edge,
+                partner,
+                points: paths[edge.id]!,
+                isSelected: selected.has(edge.id) || (partner !== undefined && selected.has(partner.id))
+            };
+        });
+
+    const edgeMarkup = lines
+        .map(one => drawEdge(one.edge, one.points, theme, one.isSelected))
         .join('');
+
+    /**
+     * Labels are placed widest first, not in the order the lines are drawn.
+     *
+     * Each one takes the best place left, so what goes first gets the choice.
+     * A long role name with two property strings after it needs a stretch of
+     * clear space and has few to choose from; a `*` fits almost anywhere. Placed
+     * in the order the model happens to declare its relations, the `*` took the
+     * one clear stretch and `{addOnly} {redefines Entity.parts}` was left to
+     * print itself across whatever was already there -- which on gUFO is what
+     * struck `wasTerminatedIn` through.
+     */
+    for (const one of [...lines].sort((a, b) => labelWidth(b.edge, display) - labelWidth(a.edge, display))) {
+        labelMarkup += drawEdgeLabels(one.edge, one.points, display, theme, placer, one.partner);
+    }
 
     // Sized after everything is placed, and around what was placed. A label
     // that could not find room near its line ends up some way from it, and a
@@ -372,6 +383,27 @@ function drawEdge(edge: ViewEdge, points: Point[], theme: Theme, isSelected: boo
             ? arrowAt(points[points.length - 1]!, points[points.length - 2] ?? points[0]!)
             : relationDecoration(edge, points, theme);
     return `<g class="${classes}" data-edge="${escape(edge.id)}">${path}${decoration}</g>`;
+}
+
+/** How much room an edge's labels want, which is how hard they are to place. */
+export function labelWidth(edge: ViewEdge, display: DisplayOptions): number {
+    if (edge.kind !== 'relation') {
+        return 0;
+    }
+    const ends = [edge.sourceEnd, edge.targetEnd].map(end => {
+        const parts = [
+            display.showRoleNames ? end.role : undefined,
+            display.showEndDecorations && end.isAddOnly ? '{addOnly}' : undefined,
+            display.showEndDecorations && end.subsets ? `{subsets ${end.subsets}}` : undefined,
+            display.showEndDecorations && end.redefines ? `{redefines ${end.redefines}}` : undefined
+        ].filter(Boolean).join(' ');
+        return textWidth(parts, FONT.edge);
+    });
+    const middle = Math.max(
+        display.showRelationNames && edge.name ? textWidth(edge.name, FONT.edge) : 0,
+        display.showRelationStereotypes && edge.stereotype ? textWidth(`«${edge.stereotype}»`, FONT.edgeStereotype) : 0
+    );
+    return Math.max(middle, ...ends);
 }
 
 function drawEdgeLabels(
