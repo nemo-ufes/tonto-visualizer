@@ -110,6 +110,18 @@ button:hover {
 }
 
 /*
+ * A label is a target for the line it belongs to.
+ *
+ * SVG hit-tests text against the glyphs it painted, so a pointer landing
+ * between two letters -- or in the counter of an `o` -- falls through to
+ * whatever is behind. Double-clicking «componenthood» to open the relation it
+ * names worked or did not depending on which letter it was aimed at.
+ */
+#canvas .tv-labels text {
+    pointer-events: all;
+}
+
+/*
  * The handles on the selected line. Drawn over the diagram by the panel and
  * never by `render`, which also draws the export.
  *

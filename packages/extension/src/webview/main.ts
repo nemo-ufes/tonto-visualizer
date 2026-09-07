@@ -270,6 +270,19 @@ function nearestLine(event: { clientX: number; clientY: number }): string | unde
     return best?.edge;
 }
 
+/**
+ * The line a label belongs to, for a pointer that is on the label.
+ *
+ * Labels are drawn in a layer of their own, over everything, so what is under
+ * the pointer on one is a `<text>` with no line anywhere above it -- and being
+ * placed a little off its line, it is often too far from it to be found by
+ * distance either. Each carries the id of what it says something about, which
+ * is the answer without either guess.
+ */
+function labelOwner(target: Element): string | undefined {
+    return target.closest('[data-for]')?.getAttribute('data-for') ?? undefined;
+}
+
 /** The handle a pointer is on, and the line it belongs to. */
 function handleAt(target: Element): { edge: string; handle: Handle } | undefined {
     const dot = target.closest('[data-handle]');
@@ -383,7 +396,9 @@ viewport.addEventListener('pointerdown', event => {
 
     if (!id) {
         const edgeGroup = target.closest('[data-edge]');
-        const edgeId = edgeGroup?.getAttribute('data-edge') ?? nearestLine(event);
+        const edgeId = edgeGroup?.getAttribute('data-edge')
+            ?? labelOwner(target)
+            ?? nearestLine(event);
         // Alt, or the middle button, is what panning is held behind once the
         // plain drag on the background is spent on choosing things.
         const pans = event.altKey || event.button === 1;
@@ -391,7 +406,12 @@ viewport.addEventListener('pointerdown', event => {
         // has to survive the press that starts it -- and moving the diagram
         // about is not a change of mind about what is selected either.
         if (edgeId || !(event.shiftKey || pans)) {
-            selection = edgeId ? new Set([edgeId]) : new Set();
+            // Shift adds a line to the selection as it adds a class: choosing
+            // three lines to hide them meant clicking each of them and losing
+            // the last two.
+            selection = edgeId
+                ? new Set(event.shiftKey ? [...selection, edgeId] : [edgeId])
+                : new Set();
             applySelection();
             reportSelection();
         }
@@ -629,15 +649,21 @@ viewport.addEventListener('dblclick', event => {
         return;
     }
     const held = handleAt(under);
-    if (held) {
-        // Only a bend can be dropped. A handle on a stretch is not one yet.
-        if (held.handle.kind === 'bend') {
-            keepRoute(held.edge, dropHandle(paths[held.edge]!, held.handle.index));
-        }
+    if (held?.handle.kind === 'bend') {
+        // Only a bend can be dropped. A handle on a stretch is not one yet, and
+        // swallowing the gesture there would make the line's own double-click
+        // stop working wherever a handle happens to sit: selecting a line draws
+        // one on the middle of every stretch, which is exactly where its labels
+        // are, so double-clicking the label of a chosen line did nothing at all.
+        keepRoute(held.edge, dropHandle(paths[held.edge]!, held.handle.index));
         return;
     }
     const target = under.closest('[data-node]') ?? under.closest('[data-edge]');
-    const id = target?.getAttribute('data-node') ?? target?.getAttribute('data-edge') ?? nearestLine(event);
+    const id = target?.getAttribute('data-node')
+        ?? target?.getAttribute('data-edge')
+        ?? labelOwner(under)
+        ?? held?.edge
+        ?? nearestLine(event);
     if (id) {
         host.postMessage({ type: 'reveal', id });
     } else {

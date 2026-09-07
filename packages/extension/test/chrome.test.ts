@@ -34,6 +34,19 @@ describe('the panel chrome', () => {
     });
 
     /**
+     * A `<text>` hit-tests against its glyphs, so the gaps inside and between
+     * letters fall through to whatever is behind -- and the labels sit in their
+     * own group over the drawing, so a click aimed at a role name usually
+     * landed on the background and cleared the selection instead of choosing
+     * the line the name belongs to.
+     */
+    test('lets a label be aimed at as a whole word, not glyph by glyph', () => {
+        const labels = /#canvas \.tv-labels text \{([^}]*)\}/.exec(stylesheet);
+        expect(labels).not.toBeNull();
+        expect(labels![1]).toContain('pointer-events: all');
+    });
+
+    /**
      * Exporting a PNG means drawing the diagram into a canvas, and the only way
      * to hand an SVG to an `Image` inside the panel is a `data:` URI -- a blob
      * is not one of the things the policy admits. Take `data:` out of `img-src`
