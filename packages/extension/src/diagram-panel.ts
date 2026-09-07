@@ -174,7 +174,15 @@ export class DiagramPanel {
         if (!document) {
             return;
         }
-        const picked = await vscode.window.showQuickPick(await viewChoicesFor(document.uri), {
+        const open = this.store?.location.toString();
+        // Which one is open is said in its own row rather than by moving it to
+        // the top: the list is short and in a settled order, and a name a
+        // reader is looking for should be where it was last time.
+        const choices = (await viewChoicesFor(document.uri)).map(choice =>
+            choice.uri.toString() === open
+                ? { ...choice, description: `${choice.description} — open` }
+                : choice);
+        const picked = await vscode.window.showQuickPick(choices, {
             title: 'Open Diagram View',
             placeHolder: 'Choose an arrangement of this model'
         });
@@ -629,6 +637,9 @@ export class DiagramPanel {
             case 'reveal':
                 await this.reveal(message.id);
                 return;
+            case 'chooseView':
+                await this.chooseView();
+                return;
             case 'display':
                 if (store) {
                     store.begin('Display option');
@@ -813,7 +824,7 @@ export class DiagramPanel {
 <body>
 <div id="shell">
     <div id="toolbar">
-        <span id="title" class="title"></span>
+        <button id="title" class="title" title="Choose a view of this model"></button>
         <span id="stale" class="stale" hidden></span>
         <span class="spacer"></span>
         <button id="zoomOut" title="Zoom out">−</button>

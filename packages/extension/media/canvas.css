@@ -43,12 +43,29 @@ body {
     background: var(--vscode-editorWidget-background, transparent);
 }
 
+/* A button, because it opens the view picker and a reader has to be able to
+   reach it by keyboard as well as by pointer -- but it reads as the title it
+   is, with the caret as the only sign that it does anything. */
 .title {
     font-weight: 600;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 40%;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: inherit;
+    padding: 0 4px;
+}
+
+.title::after {
+    content: " ⌄";
+    color: var(--chrome-muted);
+}
+
+.title:hover {
+    background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.18));
 }
 
 .stale {
