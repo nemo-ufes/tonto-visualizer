@@ -70,6 +70,48 @@ kind Tree
         expect(grouped.map(edge => edge.source)).toEqual(['Parties::Child', 'Parties::Adult']);
     });
 
+    /**
+     * `genset X where A, B specializes C` is the one form in which a class
+     * never repeats the specialization, and the specializations it declares
+     * were absent from the picture altogether -- boats drew `FunctionalMotor`
+     * and `BrokenMotor` as two cards standing on their own, half a diagram from
+     * the `Motor` they are the phases of.
+     */
+    test('draws the generalizations a set declares, where the class does not', async () => {
+        const view = await viewOfText(`
+package Sample
+kind Motor
+phase FunctionalMotor
+phase BrokenMotor
+disjoint complete genset MotorPhase where FunctionalMotor, BrokenMotor specializes Motor
+`);
+        const set = view.gensets[0]!;
+        const drawn = view.edges.filter(edge => edge.kind === 'generalization');
+        expect(drawn.map(edge => [edge.source, edge.target])).toEqual([
+            ['Sample::FunctionalMotor', 'Sample::Motor'],
+            ['Sample::BrokenMotor', 'Sample::Motor']
+        ]);
+        // Grouped, so the two of them are drawn as one triangle, and written
+        // where the set writes them: double-clicking a leg opens the `genset`
+        // line, since that is the only place the specialization is stated.
+        expect(drawn.every(edge => edge.kind === 'generalization' && edge.genset === set.id)).toBe(true);
+        const leg = drawn[0]!;
+        expect(leg.kind === 'generalization' && leg.source_?.line).toBe(set.source!.line);
+    });
+
+    test('states a specialization once, however many times the model writes it', async () => {
+        const view = await viewOfText(`
+package Sample
+kind Person
+phase Child specializes Person
+phase Adult specializes Person
+disjoint complete genset AgePhases where Child, Adult specializes Person
+`);
+        const drawn = view.edges.filter(edge => edge.kind === 'generalization');
+        expect(drawn).toHaveLength(2);
+        expect(drawn.map(edge => edge.id)).toEqual([...new Set(drawn.map(edge => edge.id))]);
+    });
+
     test('puts the diamond on the end that holds the whole', async () => {
         const view = await viewOfFixture();
         const parthood = relation(view, 'has');
