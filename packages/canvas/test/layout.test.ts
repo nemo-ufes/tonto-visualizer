@@ -187,6 +187,119 @@ describe('arranging a model', () => {
      * with. Attributes are written inside the card, so this is the ordinary
      * case for a datatype rather than a corner of one.
      */
+    /**
+     * A whole is read above its parts, wherever the diamond is written: an
+     * internal `@componenthood` puts the whole at the source, and `--<>`
+     * reverses that reading without reversing the line. The layering ranks a
+     * source above its target and knows nothing of diamonds, so half of every
+     * model's parthoods used to come out upside down -- `Staff <>-- SeniorStaff`
+     * on `university`, with the sub-collection over the collection.
+     */
+    test('puts a whole above its parts, whichever end carries the diamond', async () => {
+        const clazz = (name: string) => ({
+            id: `Sample::${name}`, kind: 'class' as const, name, package: 'Sample',
+            stereotype: 'kind', color: '#FF99A3', isExternal: false, attributes: []
+        });
+        const plainEnd = { isConst: false, isAddOnly: false };
+        const view: ViewModel = {
+            groups: [{
+                id: 'pkg:Sample', name: 'Sample', isExternal: false,
+                nodes: ['Sample::Wheel', 'Sample::Car', 'Sample::Engine']
+            }],
+            nodes: [clazz('Wheel'), clazz('Car'), clazz('Engine')],
+            edges: [
+                // Written from the part, which is what `--<>` is for.
+                {
+                    kind: 'relation', id: 'wheels', stereotype: 'componenthood',
+                    source: 'Sample::Wheel', target: 'Sample::Car', whole: 'target',
+                    sourceEnd: plainEnd, targetEnd: { ...plainEnd, isWhole: true }
+                },
+                {
+                    kind: 'relation', id: 'engine', stereotype: 'componenthood',
+                    source: 'Sample::Car', target: 'Sample::Engine', whole: 'source',
+                    sourceEnd: { ...plainEnd, isWhole: true }, targetEnd: plainEnd
+                }
+            ],
+            gensets: []
+        };
+
+        const positions = await arrange(view, true);
+        expect(positions['Sample::Car']!.y).toBeLessThan(positions['Sample::Wheel']!.y);
+        expect(positions['Sample::Car']!.y).toBeLessThan(positions['Sample::Engine']!.y);
+    });
+
+    /**
+     * The constituted above what constitutes it, which is the same reading as a
+     * whole over its parts and needs the same handling, since a constitution
+     * carries no diamond to say which end is which. The language fixes the
+     * direction for one pair -- a process is constituted by the events in it --
+     * and the view model resolves the end, so this is only about the ranking.
+     */
+    test('puts what is constituted above what constitutes it', async () => {
+        const clazz = (name: string, stereotype: string) => ({
+            id: `Sample::${name}`, kind: 'class' as const, name, package: 'Sample',
+            stereotype, color: '#FF99A3', isExternal: false, attributes: []
+        });
+        const plainEnd = { isConst: false, isAddOnly: false };
+        const view: ViewModel = {
+            groups: [{
+                id: 'pkg:Sample', name: 'Sample', isExternal: false,
+                nodes: ['Sample::Marble', 'Sample::Statue', 'Sample::Match', 'Sample::Goal']
+            }],
+            nodes: [
+                clazz('Marble', 'quantity'), clazz('Statue', 'kind'),
+                clazz('Match', 'process'), clazz('Goal', 'event')
+            ],
+            edges: [
+                {
+                    kind: 'relation', id: 'marble', stereotype: 'constitution',
+                    source: 'Sample::Marble', target: 'Sample::Statue', constituted: 'target',
+                    sourceEnd: plainEnd, targetEnd: plainEnd
+                },
+                // The one pair the language writes one way only: the process is
+                // the source and the events constituting it are the target.
+                {
+                    kind: 'relation', id: 'match', stereotype: 'constitution',
+                    source: 'Sample::Match', target: 'Sample::Goal', constituted: 'source',
+                    sourceEnd: plainEnd, targetEnd: plainEnd
+                }
+            ],
+            gensets: []
+        };
+
+        const positions = await arrange(view, true);
+        expect(positions['Sample::Statue']!.y).toBeLessThan(positions['Sample::Marble']!.y);
+        expect(positions['Sample::Match']!.y).toBeLessThan(positions['Sample::Goal']!.y);
+    });
+
+    /**
+     * A type above what instantiates it. `instantiation: [EVERYTHING, ['type']]`
+     * in the language's end-nature table puts the type at the target end, which
+     * is the end a layered algorithm ranks lower, so every `instanceOf` in the
+     * examples came out with the type under its instances -- 8 of 8.
+     */
+    test('puts a type above what instantiates it', async () => {
+        const clazz = (name: string, stereotype: string) => ({
+            id: `Sample::${name}`, kind: 'class' as const, name, package: 'Sample',
+            stereotype, color: '#D3D3FC', isExternal: false, attributes: []
+        });
+        const view: ViewModel = {
+            groups: [{
+                id: 'pkg:Sample', name: 'Sample', isExternal: false,
+                nodes: ['Sample::Car', 'Sample::CarType']
+            }],
+            nodes: [clazz('Car', 'kind'), { ...clazz('CarType', 'type'), isPowerType: true }],
+            edges: [{
+                kind: 'instantiation', id: 'inst:Sample::Car->Sample::CarType',
+                source: 'Sample::Car', target: 'Sample::CarType'
+            }],
+            gensets: []
+        };
+
+        const positions = await arrange(view, true);
+        expect(positions['Sample::CarType']!.y).toBeLessThan(positions['Sample::Car']!.y);
+    });
+
     test('puts a datatype nothing points at after the model rather than into it', async () => {
         const view = taxonomy(2);
         view.nodes.push({

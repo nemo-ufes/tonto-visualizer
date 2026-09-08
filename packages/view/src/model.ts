@@ -96,6 +96,16 @@ export interface ViewRelation {
     /** A parthood is drawn with a diamond; this says which end holds it. */
     whole?: 'source' | 'target';
     /**
+     * Which end of a constitution holds the constituted thing.
+     *
+     * There is no diamond to say so, and the language fixes the direction for
+     * one pair only -- a process is constituted by the events in it -- so this
+     * is resolved where the language can be asked and read from the way the
+     * relation is written everywhere else. Nothing in the notation draws it; it
+     * is what lets an arrangement put the statue above its marble.
+     */
+    constituted?: 'source' | 'target';
+    /**
      * The id of the relation this one is the inverse of, on both halves of the
      * pair however the model wrote it. The two state one association twice, so
      * a drawing may show them as one line.

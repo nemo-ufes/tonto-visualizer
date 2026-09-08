@@ -120,6 +120,34 @@ disjoint complete genset AgePhases where Child, Adult specializes Person
         expect(parthood.targetEnd).toMatchObject({ cardinality: '4..*', role: 'wheels' });
     });
 
+    /**
+     * A constitution has no diamond, and the language fixes its direction for
+     * one pair only: "a process is constituted by a certain series of events",
+     * the single crossing in its end-nature table. Everywhere else the reading
+     * is the one its own completion offers -- `@constitution` runs from what
+     * constitutes to what is constituted.
+     */
+    test('reads which end of a constitution holds the constituted thing', async () => {
+        const view = await viewOfText(`
+package Sample
+quantity Marble {
+    @constitution [1] -- [0..1] Statue
+}
+kind Statue of functional-complexes
+process Match {
+    @constitution (const) [1] -- [1..*] (addOnly) Goal
+}
+event Goal
+`);
+        const constitutions = view.edges.filter(edge => edge.kind === 'relation' && edge.constituted);
+        expect(constitutions.map(edge => [edge.source, edge.kind === 'relation' && edge.constituted])).toEqual([
+            ['Sample::Marble', 'target'],
+            // The one pair whose direction the language fixes, and the one that
+            // reads the other way: the process is the constituted end.
+            ['Sample::Match', 'source']
+        ]);
+    });
+
     test('keeps the end decorations UML writes on the end', async () => {
         const view = await viewOfFixture();
         const mediations = view.edges.filter(edge => edge.kind === 'relation' && edge.stereotype === 'mediation');

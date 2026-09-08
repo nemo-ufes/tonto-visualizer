@@ -119,3 +119,22 @@ not need another path that can go stale when a repository moves.
 - Lines passing behind an unrelated class, over the six models: 4, 1, 13, 8, 0,
   1 before, and 3, 2, 9, 8, 0, 0 after -- with five generalizations drawn on
   `pets` that were not being drawn at all. The repository now runs 169 tests.
+- Gave the three other vertical readings the treatment the generalization
+  already had, since a layered algorithm ranks a source above its target and
+  they all read the other way round: a whole above its parts, whichever end the
+  diamond is on; what is constituted above what constitutes it, the statue above
+  its marble and the process above the events in it; and a type above what
+  instantiates it, which is where the language's end-nature table puts it. Eight
+  instantiations out of eight in the examples had been drawn with the type under
+  its instances.
+- Which end of a constitution is the constituted one is now derived where the
+  language can be asked. It fixes the direction of one pair -- a process is
+  constituted by the events in it, the single crossing in its end-nature table
+  -- and elsewhere the reading is its own completion's: `@constitution` runs
+  from what constitutes to what is constituted.
+- The cost, measured: `university` and `boats` each draw one or two more lines
+  behind a class the line has nothing to do with, which the router bends around
+  rather than hiding, and `boats` loses the seat of one relator whose middle the
+  settle step can no longer reach. Parthood on its own is a pure gain, and the
+  three together cost less than constitution does on its own. The repository now
+  runs 173 tests.
