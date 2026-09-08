@@ -89,3 +89,33 @@ not need another path that can go stale when a repository moves.
   model exists -- as views of `employment.tonto`; and the panel remembered a
   named view only while it stayed on one document, so following the editor to
   another model and back silently reopened the default arrangement.
+
+### 2026-09-08
+
+- Reviewed the arrangement against the constructs the language offers, by
+  measuring six models and looking at the drawings:
+  [LAYOUT-REVIEW.md](LAYOUT-REVIEW.md). It reads the taxonomy, the packages and
+  the relators, and is blind to the generalization sets, parthood, `instanceOf`,
+  the categorizers, the aspects that are not relators, and the natures.
+- A generalization set now declares its generalizations, as the language says
+  it does. `genset X where A, B specializes C` is the one form in which the
+  class writes no `specializes` of its own, and those specializations had been
+  absent from the picture altogether -- no line, no rank, no triangle. Eight of
+  them across the examples; `boats` had been drawing `FunctionalMotor` and
+  `BrokenMotor` as two loose cards half a diagram from `Motor`.
+- What counts as a relator is now the nature the language resolves rather than
+  the `relator` keyword, in the layout as well as in the drawing, which had
+  disagreed about it: gUFO declares seven relator-natured classes and writes the
+  keyword on none of them.
+- A relator now looks around the middle of its relata for a clear place, not
+  only along the line back to where the ranking left it -- which finds nothing
+  when a relatum stands on that line, as one does for a relator of three. It
+  takes a place only where the move hides no line behind a class that has
+  nothing to do with it.
+- The pass that turns a relator's mediations round for the ranking is judged
+  rather than skipped. It had been unreachable on any model holding a single
+  generalization, which is every ontology anyone draws, and the test covering it
+  used the one shape that could still reach it.
+- Lines passing behind an unrelated class, over the six models: 4, 1, 13, 8, 0,
+  1 before, and 3, 2, 9, 8, 0, 0 after -- with five generalizations drawn on
+  `pets` that were not being drawn at all. The repository now runs 169 tests.
