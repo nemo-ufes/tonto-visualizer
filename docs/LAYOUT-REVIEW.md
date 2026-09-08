@@ -22,7 +22,8 @@ which does it leave on the table?
 | relator, mediation | a relator is seated between the classes it mediates, and half a relator's mediations may be turned round for the ranking |
 | parthood | handed over whole -> part, whichever end the diamond is written on |
 | constitution | handed over constituted -> constituent, which the language decides for a process and its events and the written direction decides elsewhere |
-| `instanceOf` | handed over type -> instance, since the language's end-nature table puts the type at the target |
+| `instanceOf` | the type is seated to the left of what instantiates it, level with it |
+| characterization | the aspect is seated to the right of what bears it, level with it |
 | inverse pair | one association, drawn and laid out once |
 | datatype, enumeration | one with no edge at all is constrained to the last layer, out of the corridors between classes |
 
@@ -47,9 +48,9 @@ for the triangle it belongs to.
 ranked above what instantiates it, but a categorizer is still placed with no
 regard for the triangle it categorizes.
 
-**The other aspects.** A mode or a quality is existentially dependent on its
-bearer exactly as a relator is on its relata, and `characterization` and
-`externalDependence` say so; there is no rule for them. The event vocabulary --
+**The other aspects.** An extrinsic mode's `externalDependence` has no rule --
+a relator's mediations and a mode's characterization now do. The event
+vocabulary --
 `participation`, `historicalDependence`, `creation`, `termination`,
 `triggering` -- carries a temporal reading that no option expresses;
 `participational` at 1444px and `historicalDependence` at 1368px on `pets` are
@@ -177,15 +178,58 @@ around classes it does not hold. That is a property of grouping, not of the
 relator rule, and it is why the settle step now refuses the move it used to make
 there -- the move it made was worth one hidden line and no seat.
 
+## What was changed after that: the two readings that go across
+
+A level is not a rank, and neither is an inherence. Ranking a high-order type
+above what instantiates it says `Car` is a kind of `CarType`, which is what a
+generalization says and not what an instantiation does; hanging a quality under
+its bearer draws it where a subtype belongs. Both read across the page, so both
+are now seated across it, by a pass of their own (`settleBeside`):
+
+- a **high-order type** goes to the **left** of what instantiates it, level
+  with it -- `instantiation: [EVERYTHING, ['type']]` puts the type at the target
+  end, and an `instanceOf` clause is derived the same way round;
+- an **aspect** goes to the **right** of what bears it, level with it --
+  `characterization` runs "from the mode or quality to its bearer, which is
+  always exactly one", so the source is the aspect.
+
+A class in a hierarchy takes the hierarchy with it, since a power type over its
+own subtypes is one piece; where the two are in one hierarchy -- gUFO's `Aspect`
+both specializes and characterizes its `ConcreteIndividual` -- there is nothing
+to settle and the pass leaves it alone. The place is taken only where it is
+clear and where the move hides no line; a type that finds no room beside its
+class is offered the room above it instead, and anything still without a place
+stays where the layering left it.
+
+With the type seated rather than ranked, the layering is asked for nothing at
+all on an instantiation. Asked for a rank instead, it pulled the whole drawing
+about: `university` went from no line passing behind a class to five, and `boats`
+lost the seat of a relator. Both come back.
+
+| model | type left of its instances | aspect right of its bearer | lines through unrelated classes |
+|---|---|---|---|
+| university | **1/1** | – | 5 → **0** |
+| pets | – | 0/1 | 2 → 2 |
+| boats | 1/3 | **2/2** | 10 → **8** |
+| gufo | – | 0/1, and rightly | 8 → 8 |
+| showcase | **1/1** | – | 0 → 0 |
+| parties | – | – | 0 → 0 |
+
+The two that are not seated are both blocked by a hierarchy that will not fit
+in the room beside the class: `pets` would have to bring `LegalPosition`'s three
+extrinsic modes with it, and `boats` `CarType` and `CarModel` together, into a
+rank whose left-hand side is full of classes nothing joins to. They keep the
+column the layering gave them, which still reads as a level.
+
 ## What is worth doing next, in payoff order
 
 1. **Teach `enforceTaxonomyRanks` the generalization sets**: one rank for a
    set's specifics, contiguous and in declaration order, with the categorizer
    beside the bar. It is a change to how a row is built and sorted, not a new
    pass.
-2. **Generalize the aspect rule** from relators to modes and qualities, through
-   `characterization` and `externalDependence`, using the same nature the
-   language resolves.
+2. **Make room rather than looking for it.** Both readings that go across fail
+   the same way -- the rank beside the class is full -- and a pass that opened a
+   column would seat them where searching cannot.
 3. **Place external elements at the periphery**, as an unattached datatype
    already is.
 4. **Seat a relator whose relata are in another package**, which grouping

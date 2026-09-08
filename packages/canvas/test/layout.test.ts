@@ -273,12 +273,12 @@ describe('arranging a model', () => {
     });
 
     /**
-     * A type above what instantiates it. `instantiation: [EVERYTHING, ['type']]`
-     * in the language's end-nature table puts the type at the target end, which
-     * is the end a layered algorithm ranks lower, so every `instanceOf` in the
-     * examples came out with the type under its instances -- 8 of 8.
+     * A type beside what instantiates it, and to its left. A level is not a
+     * rank: ranking the type above `Car` says `Car` is a kind of `CarType`,
+     * which is what a generalization says and not what an instantiation does.
+     * The `«instantiation»` line reads across, so the arrangement puts it across.
      */
-    test('puts a type above what instantiates it', async () => {
+    test('puts a type to the left of what instantiates it, and level with it', async () => {
         const clazz = (name: string, stereotype: string) => ({
             id: `Sample::${name}`, kind: 'class' as const, name, package: 'Sample',
             stereotype, color: '#D3D3FC', isExternal: false, attributes: []
@@ -297,7 +297,42 @@ describe('arranging a model', () => {
         };
 
         const positions = await arrange(view, true);
-        expect(positions['Sample::CarType']!.y).toBeLessThan(positions['Sample::Car']!.y);
+        const car = positions['Sample::Car']!;
+        const type = positions['Sample::CarType']!;
+        expect(type.x + type.width).toBeLessThanOrEqual(car.x);
+        expect(type.y + type.height / 2).toBe(car.y + car.height / 2);
+    });
+
+    /**
+     * An aspect beside what bears it, and to its right. A quality drawn under
+     * its bearer is drawn where a subtype belongs; `characterization` runs from
+     * the mode or the quality to its bearer, so the source is the aspect.
+     */
+    test('puts an aspect to the right of what bears it, and level with it', async () => {
+        const clazz = (name: string, stereotype: string, color: string) => ({
+            id: `Sample::${name}`, kind: 'class' as const, name, package: 'Sample',
+            stereotype, color, isExternal: false, attributes: []
+        });
+        const plainEnd = { isConst: false, isAddOnly: false };
+        const view: ViewModel = {
+            groups: [{
+                id: 'pkg:Sample', name: 'Sample', isExternal: false,
+                nodes: ['Sample::Heart', 'Sample::HeartStrength']
+            }],
+            nodes: [clazz('Heart', 'kind', '#FF99A3'), clazz('HeartStrength', 'quality', '#70D7FF')],
+            edges: [{
+                kind: 'relation', id: 'strength', stereotype: 'characterization',
+                source: 'Sample::HeartStrength', target: 'Sample::Heart',
+                sourceEnd: plainEnd, targetEnd: { ...plainEnd, isConst: true }
+            }],
+            gensets: []
+        };
+
+        const positions = await arrange(view, true);
+        const heart = positions['Sample::Heart']!;
+        const strength = positions['Sample::HeartStrength']!;
+        expect(strength.x).toBeGreaterThanOrEqual(heart.x + heart.width);
+        expect(strength.y + strength.height / 2).toBe(heart.y + heart.height / 2);
     });
 
     test('puts a datatype nothing points at after the model rather than into it', async () => {
