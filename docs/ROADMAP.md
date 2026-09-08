@@ -138,3 +138,15 @@ not need another path that can go stale when a repository moves.
   settle step can no longer reach. Parthood on its own is a pure gain, and the
   three together cost less than constitution does on its own. The repository now
   runs 173 tests.
+- Seated the two readings that go across the drawing rather than down it. A
+  high-order type is put to the left of what instantiates it and an aspect to
+  the right of what bears it, level with it in both cases: a level is not a
+  rank, and a quality hanging under its bearer is drawn where a subtype belongs.
+  A class in a hierarchy takes the hierarchy with it, and where the two are in
+  one hierarchy -- gUFO's `Aspect` both specializes and characterizes its
+  `ConcreteIndividual` -- there is nothing to settle.
+- With the type seated rather than ranked, the layering is asked for nothing on
+  an instantiation. Asked for a rank instead, as it was for a day, it pulled the
+  whole drawing about: `university` went from no line passing behind a class to
+  five, and `boats` lost a relator's seat. Both come back, and `boats` is down
+  to 8 such lines from the 13 it started at. 175 tests.

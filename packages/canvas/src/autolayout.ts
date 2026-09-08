@@ -16,6 +16,11 @@
  * the nature the language resolves rather than the keyword the model happens to
  * use -- see `ontology.ts`.
  *
+ * Not everything a model states reads down the page. A high-order type is
+ * seated to the left of what instantiates it and an aspect to the right of what
+ * bears it, level with it and beside it, because a level and an inherence are
+ * not ranks -- see `settleBeside`.
+ *
  * ELK first sees the whole graph, because associations carry useful information
  * about which classes belong near one another and in which order. Its direction
  * priority only affects cycle breaking, though; it cannot stop associations
@@ -49,6 +54,9 @@ const PARTIAL_STEP = 40;
 /** How far a relator looks around the middle of its relata for a clear place. */
 const SETTLE_STEP = 24;
 const SETTLE_RINGS = [1, 2, 3, 4, 5, 6];
+/** The room left between a class and what is seated beside it, and how far out to look. */
+const BESIDE_GAP = 60;
+const BESIDE_STEPS = 8;
 
 /**
  * ELK ships one bundle for CommonJS and for the browser, so the constructor
@@ -173,17 +181,17 @@ function optionsFor(settings: LayoutOptions, routing: RoutingStyle): Record<stri
  * Which way an edge is handed to the layering, and how hard it is asked for.
  *
  * A layered algorithm ranks the source of an edge above its target, so an edge
- * whose picture reads the other way round is handed over reversed. Four do:
+ * whose picture reads the other way round is handed over reversed. Three do:
  *
  * - a generalization, written specific -> general and read general above it;
- * - an instantiation, whose target is the type -- the language's end-nature
- *   table says so, `instantiation: [EVERYTHING, ['type']]` -- and a type is
- *   read above what instantiates it, as the abstract is read above the
- *   concrete everywhere else in the drawing;
  * - a parthood, where the whole is read above the part and the diamond says
  *   which end holds it;
  * - a constitution, where the constituted is read above what constitutes it,
  *   the statue above its marble and the process above the events in it.
+ *
+ * Two more are ranked by nothing at all, because they do not read down the
+ * drawing: an instantiation and a characterization are seated across it by
+ * `settleBeside`.
  *
  * Which way round the edge goes is what decides the drawing; the priority
  * beside it only matters where ELK has to break a cycle, and 0, 1, 3 and 6 draw
@@ -201,7 +209,12 @@ function handedOver(edge: ViewEdge, turned: boolean): { reversed: boolean; layou
         return { reversed: true, layoutOptions: asks(10, 10) };
     }
     if (edge.kind === 'instantiation' || edge.stereotype === 'instantiation') {
-        return { reversed: true, layoutOptions: asks(3) };
+        // A level is not a rank: `settleBeside` puts the type beside what
+        // instantiates it, so the layering is asked for nothing here. Asked for
+        // a rank instead -- the type above, which is where it goes when there is
+        // no room beside -- it pulled the whole drawing about: `university` went
+        // from no line passing behind a class to five.
+        return { reversed: false, layoutOptions: asks(0) };
     }
     if (edge.whole) {
         return { reversed: edge.whole === 'target', layoutOptions: asks(3) };
@@ -381,6 +394,121 @@ function settleRelators(
 }
 
 /**
+ * Seats what a reader looks for *beside* something rather than above or below it.
+ *
+ * Two relations read across rather than down, and a layered algorithm has no
+ * way of saying so -- every edge it is given asks for a rank of its own.
+ *
+ * A high-order type goes to the left of what instantiates it. The language's
+ * end-nature table puts the type at the target end of an `@instantiation`, and
+ * an `instanceOf` clause is derived the same way round; ranking it as a
+ * supertype would say it is one, and it is not: `Car` is not a `CarType`, it is
+ * an instance of it, and the level beside the model is where that reads.
+ *
+ * An aspect goes to the right of what bears it -- `characterization` runs from
+ * the mode or the quality to its bearer, "which is always exactly one", so the
+ * source is the aspect. A quality hanging under its bearer is drawn where a
+ * subtype belongs; beside it is where something inhering in it belongs.
+ *
+ * Neither is forced. The place is taken where it is clear and where the move
+ * hides no line, and the arrangement is left as it was where it is not: this
+ * is a preference about how a model reads, not a constraint the drawing must
+ * satisfy at the cost of overlapping boxes.
+ */
+function settleBeside(
+    view: ViewModel,
+    positions: Positions,
+    only: ReadonlySet<string>,
+    componentOf?: ReadonlyMap<string, readonly string[]>
+): void {
+    const covered = inversePairs(view.edges).covered;
+    const seated = new Set<string>();
+    for (const edge of view.edges) {
+        const beside = besideOf(edge);
+        if (!beside || covered.has(edge.id) || edge.source === edge.target) {
+            continue;
+        }
+        const { moved, anchor, side } = beside;
+        if (seated.has(moved) || !only.has(moved) || !only.has(anchor)) {
+            continue;
+        }
+        const rect = positions[moved];
+        const beside_ = positions[anchor];
+        if (!rect || !beside_) {
+            continue;
+        }
+        // A class in a hierarchy takes the hierarchy with it: a power type over
+        // its own subtypes is one piece, and moving the top of it out from over
+        // the rest would say the model has two of them.
+        const block = (componentOf?.get(moved) ?? [moved]).filter(id => positions[id] !== undefined);
+        // Where the two are in one hierarchy -- gUFO's `Aspect` both
+        // specializes and characterizes its `ConcreteIndividual` -- the move
+        // takes the class it is measured against with it and settles nothing.
+        if (block.includes(anchor)) {
+            continue;
+        }
+        const others = Object.entries(positions)
+            .filter(([id]) => !block.includes(id))
+            .map(([, one]) => one);
+        // Level with it and beside it first, moving further along the level as
+        // far as that is worth going. Then, only for a type, over the class
+        // instead: a level of its own above the model still reads as a level,
+        // where a type under what instantiates it reads as its subtype.
+        const level = Math.round(beside_.y + beside_.height / 2 - rect.height / 2);
+        const alongside = (step: number) => ({
+            x: Math.round(side === 'left'
+                ? beside_.x - BESIDE_GAP - step * SETTLE_STEP - rect.width
+                : beside_.x + beside_.width + BESIDE_GAP + step * SETTLE_STEP),
+            y: level
+        });
+        const over = (step: number) => ({
+            x: Math.round(beside_.x - step * SETTLE_STEP),
+            y: Math.round(beside_.y - BESIDE_GAP - rect.height)
+        });
+        const wanted = [
+            ...Array.from({ length: BESIDE_STEPS }, (_, step) => alongside(step)),
+            ...(side === 'left' ? Array.from({ length: BESIDE_STEPS }, (_, step) => over(step)) : [])
+        ];
+        const hidden = () => block.reduce(
+            (total, id) => total + linesThrough(view, positions, covered, { id, rect: positions[id]! }), 0);
+        const before = hidden();
+        for (const place of wanted) {
+            const shift = { x: place.x - rect.x, y: place.y - rect.y };
+            const shifted = new Map(block.map(id => [id, {
+                ...positions[id]!,
+                x: positions[id]!.x + shift.x,
+                y: positions[id]!.y + shift.y
+            }]));
+            if ([...shifted.values()].some(one => others.some(other => overlaps(one, other, 24)))) {
+                continue;
+            }
+            const was = new Map(block.map(id => [id, positions[id]!]));
+            for (const [id, one] of shifted) {
+                positions[id] = one;
+            }
+            if (hidden() <= before) {
+                seated.add(moved);
+                break;
+            }
+            for (const [id, one] of was) {
+                positions[id] = one;
+            }
+        }
+    }
+}
+
+/** Which end of an edge belongs beside the other, and on which side of it. */
+function besideOf(edge: ViewEdge): { moved: string; anchor: string; side: 'left' | 'right' } | undefined {
+    if (edge.kind === 'instantiation' || (edge.kind === 'relation' && edge.stereotype === 'instantiation')) {
+        return { moved: edge.target, anchor: edge.source, side: 'left' };
+    }
+    if (edge.kind === 'relation' && edge.stereotype === 'characterization') {
+        return { moved: edge.source, anchor: edge.target, side: 'right' };
+    }
+    return undefined;
+}
+
+/**
  * The lines an arrangement hides behind a class that has nothing to do with
  * them -- the defect this drawing fights hardest, since a line that disappears
  * behind a class is read as ending there.
@@ -436,7 +564,7 @@ function enforceTaxonomyRanks(
     positions: Positions,
     subject: ReadonlySet<string>,
     settings: LayoutOptions
-): Set<string> | undefined {
+): Ranking | undefined {
     const generalizations = view.edges.filter(edge => edge.kind === 'generalization'
         && subject.has(edge.source) && subject.has(edge.target));
     if (generalizations.length === 0) {
@@ -579,7 +707,20 @@ function enforceTaxonomyRanks(
             occupied.push(moved);
         }
     }
-    return taxonomy;
+    return {
+        taxonomy,
+        // A class in a hierarchy cannot be moved out of it on its own, so
+        // whatever moves it afterwards moves the hierarchy it stands in.
+        componentOf: new Map(proposed.flatMap(component => component.ids.map(id => [id, component.ids])))
+    };
+}
+
+/** What the taxonomy pass decided, for the passes that run after it. */
+interface Ranking {
+    /** Every class whose rank comes from a generalization. */
+    taxonomy: Set<string>;
+    /** The hierarchy each of them stands in, which is what moves as one piece. */
+    componentOf: Map<string, readonly string[]>;
 }
 
 /**
@@ -741,7 +882,8 @@ export async function autoLayout(
         children,
         edges: view.edges
             .filter(edge => !inverses.covered.has(edge.id)
-                && subject.has(edge.source) && subject.has(edge.target))
+                && subject.has(edge.source) && subject.has(edge.target)
+)
             .map((edge): ElkEdge => {
                 const over = handedOver(edge, turnedMediations.has(edge.id));
                 if (over.reversed) {
@@ -782,9 +924,11 @@ export async function autoLayout(
         .map(id => [id, { ...positions[id]! }]));
     if (settings.algorithm === 'layered' && !request.only) {
         const ranked = enforceTaxonomyRanks(view, positions, subject, settings);
-        settleRelators(view, positions, subject, ranked ? settings.direction : undefined, ranked);
+        settleRelators(view, positions, subject, ranked ? settings.direction : undefined, ranked?.taxonomy);
+        settleBeside(view, positions, subject, ranked?.componentOf);
     } else {
         settleRelators(view, positions, subject);
+        settleBeside(view, positions, subject);
     }
     if (request.only) {
         placePartialLayout(positions, current, subject);
