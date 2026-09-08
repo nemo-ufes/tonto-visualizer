@@ -339,9 +339,14 @@ class Derivation {
     private addGenset(declaration: GeneralizationSet, owner: Package): void {
         const id = gensetId(owner.name, declaration.name);
         const general = declaration.general?.ref ? this.idOf.get(declaration.general.ref) : undefined;
-        const specifics = declaration.specifics
-            .map(specific => (specific.ref ? this.idOf.get(specific.ref) : undefined))
-            .filter((value): value is string => value !== undefined);
+        // The reference is kept beside the id: a generalization the set states
+        // itself is written at the specific's name inside the set, and that is
+        // the only place there is to open.
+        const named = declaration.specifics.flatMap(reference => {
+            const specific = reference.ref ? this.idOf.get(reference.ref) : undefined;
+            return specific ? [{ reference, id: specific }] : [];
+        });
+        const specifics = named.map(entry => entry.id);
         const categorizers = declaration.categorizers
             .map(categorizer => (categorizer.ref ? this.idOf.get(categorizer.ref) : undefined))
             .filter((value): value is string => value !== undefined);
@@ -357,10 +362,17 @@ class Derivation {
             ...this.locatedAt(declaration)
         });
 
-        // The generalizations the set groups are already edges; marking them is
-        // what lets the canvas draw one shared triangle instead of several.
+        // A generalization set declares generalizations -- the language checks
+        // its specifics against the same table the `specializes` clause uses --
+        // so the set is a second place they can be written. Where the class
+        // writes it too, the edge is already here and marking it is what lets
+        // the canvas draw one shared triangle instead of several; where only the
+        // set writes it, as `genset X where A, B specializes C` usually does,
+        // there was no edge at all. The specialization was then absent from the
+        // picture entirely: no line, no rank, and a phase left floating beside
+        // the kind it partitions.
         if (general) {
-            for (const specific of specifics) {
+            for (const { reference, id: specific } of named) {
                 const edge = this.edges.find(
                     candidate => candidate.kind === 'generalization'
                         && candidate.source === specific
@@ -368,6 +380,17 @@ class Derivation {
                 );
                 if (edge && edge.kind === 'generalization') {
                     edge.genset = id;
+                } else if (this.nodes.has(specific) && this.nodes.has(general)) {
+                    // Classes only. A set over relations names edges rather than
+                    // nodes, and a line between two lines is not drawn here.
+                    this.addEdge({
+                        kind: 'generalization',
+                        id: generalizationId(specific, general),
+                        source: specific,
+                        target: general,
+                        genset: id,
+                        ...this.locatedAtSpecialization(declaration, reference)
+                    });
                 }
             }
         }
