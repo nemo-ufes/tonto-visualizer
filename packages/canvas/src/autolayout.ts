@@ -33,7 +33,7 @@
  */
 
 import * as elkModule from 'elkjs/lib/elk.bundled.js';
-import type { LayoutOptions, ViewModel } from 'tonto-view';
+import type { LayoutOptions, ViewEdge, ViewModel } from 'tonto-view';
 import { defaultLayoutOptions, inversePairs } from 'tonto-view';
 import type { Point, Rect, Size } from './geometry.js';
 import { borderPoint, boundsOf, centerOf, overlaps, segmentHitsRect } from './geometry.js';
@@ -167,6 +167,55 @@ function optionsFor(settings: LayoutOptions, routing: RoutingStyle): Record<stri
                 // decision about how a taxonomy should read and not a setting.
             };
     }
+}
+
+/**
+ * Which way an edge is handed to the layering, and how hard it is asked for.
+ *
+ * A layered algorithm ranks the source of an edge above its target, so an edge
+ * whose picture reads the other way round is handed over reversed. Four do:
+ *
+ * - a generalization, written specific -> general and read general above it;
+ * - an instantiation, whose target is the type -- the language's end-nature
+ *   table says so, `instantiation: [EVERYTHING, ['type']]` -- and a type is
+ *   read above what instantiates it, as the abstract is read above the
+ *   concrete everywhere else in the drawing;
+ * - a parthood, where the whole is read above the part and the diamond says
+ *   which end holds it;
+ * - a constitution, where the constituted is read above what constitutes it,
+ *   the statue above its marble and the process above the events in it.
+ *
+ * Which way round the edge goes is what decides the drawing; the priority
+ * beside it only matters where ELK has to break a cycle, and 0, 1, 3 and 6 draw
+ * these six models to the pixel. A generalization still asks for 10, because a
+ * rank is what it is, and the rest ask for a little more than an association's
+ * nothing: a parthood chain that runs back into a taxonomy is a cycle, and the
+ * edge to give up on there is the association.
+ */
+function handedOver(edge: ViewEdge, turned: boolean): { reversed: boolean; layoutOptions: Record<string, string> } {
+    const asks = (direction: number, straightness?: number) => ({
+        'elk.layered.priority.direction': String(direction),
+        ...(straightness === undefined ? {} : { 'elk.layered.priority.straightness': String(straightness) })
+    });
+    if (edge.kind === 'generalization') {
+        return { reversed: true, layoutOptions: asks(10, 10) };
+    }
+    if (edge.kind === 'instantiation' || edge.stereotype === 'instantiation') {
+        return { reversed: true, layoutOptions: asks(3) };
+    }
+    if (edge.whole) {
+        return { reversed: edge.whole === 'target', layoutOptions: asks(3) };
+    }
+    if (edge.constituted) {
+        return { reversed: edge.constituted === 'target', layoutOptions: asks(3) };
+    }
+    if (edge.stereotype === 'mediation') {
+        // A mediation should come out straight where it can: it is the line
+        // that says what the relator is between. Turned, it is what seats the
+        // relator in a rank between its relata rather than above both.
+        return { reversed: turned, layoutOptions: asks(4, 8) };
+    }
+    return { reversed: turned, layoutOptions: asks(0) };
 }
 
 /** Algorithms that understand a node containing other nodes. */
@@ -670,6 +719,8 @@ export async function autoLayout(
         : nodes.map(node => ({ id: node.id, ...sizeOf(node.id), ...appendix(node.id) }));
 
     const attempt = async (turnedMediations: Set<string>): Promise<{ positions: Positions; routes: Record<string, Point[]> }> => {
+    /** The edges handed to ELK the other way round, which their routes come back. */
+    const upside = new Set<string>();
     const graph: ElkNode = {
         id: 'root',
         layoutOptions: {
@@ -692,27 +743,15 @@ export async function autoLayout(
             .filter(edge => !inverses.covered.has(edge.id)
                 && subject.has(edge.source) && subject.has(edge.target))
             .map((edge): ElkEdge => {
-                if (edge.kind === 'generalization') {
-                    return {
-                        id: edge.id,
-                        sources: [edge.target],
-                        targets: [edge.source],
-                        layoutOptions: {
-                            'elk.layered.priority.direction': '10',
-                            'elk.layered.priority.straightness': '10'
-                        }
-                    };
+                const over = handedOver(edge, turnedMediations.has(edge.id));
+                if (over.reversed) {
+                    upside.add(edge.id);
                 }
-                const turned = turnedMediations.has(edge.id);
                 return {
                     id: edge.id,
-                    sources: [turned ? edge.target : edge.source],
-                    targets: [turned ? edge.source : edge.target],
-                    layoutOptions: edge.kind === 'relation' && edge.stereotype === 'mediation'
-                        // A mediation should come out straight where it can: it
-                        // is the line that says what the relator is between.
-                        ? { 'elk.layered.priority.direction': '4', 'elk.layered.priority.straightness': '8' }
-                        : { 'elk.layered.priority.direction': '0' }
+                    sources: [over.reversed ? edge.target : edge.source],
+                    targets: [over.reversed ? edge.source : edge.target],
+                    layoutOptions: over.layoutOptions
                 };
             })
     };
@@ -785,10 +824,11 @@ export async function autoLayout(
                     }
                     continue;
                 }
-                // Selected mediations may be handed to ELK backwards for
-                // ranking. Stored routes always follow the view model's
+                // Several kinds of edge are handed to ELK backwards, so that
+                // the end the picture reads as higher is the one it ranks
+                // first. Stored routes always follow the view model's
                 // source -> target direction.
-                const reversed = turnedMediations.has(edge.id);
+                const reversed = upside.has(edge.id);
                 const ordered = reversed ? points.reverse() : points;
                 const oldSource = elkPositions[definition.source];
                 const oldTarget = elkPositions[definition.target];

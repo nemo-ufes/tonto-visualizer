@@ -4,7 +4,7 @@ A review of `packages/canvas/src/autolayout.ts` against the constructs Tonto
 actually offers, made by measuring the arrangement of `university`, `pets`,
 `boats`, `gufo`, `showcase` and the `parties` fixture and by looking at the
 drawings. It is a record of where the arrangement reads the ontology and where
-it reads a graph, and of what was done about the first two of those.
+it reads a graph, and of what has been done about it since.
 
 ## The question
 
@@ -20,6 +20,9 @@ which does it leave on the table?
 | generalization | handed to ELK reversed, with the direction and straightness priorities, and then re-ranked from generalizations alone per connected component, so an association cannot invent a hierarchy level |
 | package | a compound node, with the spacings repeated on it, so a package's classes stay together |
 | relator, mediation | a relator is seated between the classes it mediates, and half a relator's mediations may be turned round for the ranking |
+| parthood | handed over whole -> part, whichever end the diamond is written on |
+| constitution | handed over constituted -> constituent, which the language decides for a process and its events and the written direction decides elsewhere |
+| `instanceOf` | handed over type -> instance, since the language's end-nature table puts the type at the target |
 | inverse pair | one association, drawn and laid out once |
 | datatype, enumeration | one with no edge at all is constrained to the last layer, out of the corridors between classes |
 
@@ -40,18 +43,9 @@ across it: `Sortal` sits inside the `endurantTypesByRigidity` row on gUFO, and
 the high-order type that classifies the specifics -- is placed with no regard
 for the triangle it belongs to.
 
-**Parthood.** `edge.whole` is derived from the language's own `wholeEndOf` and
-never consulted. Whole above part came out in 7 of 11 parthoods on `boats` and
-0 of 2 on `gufo`; a weak direction priority oriented whole → part would cost
-almost nothing.
-
-**`instanceOf` and power types.** An instantiation falls through to the default
-branch and gets `elk.layered.priority.direction: '0'`, and unlike a
-generalization it is not reversed -- so ELK ranks the instance above the type.
-The higher-order type was drawn below its instances in 4 cases out of 4
-(`CarType`, `CarModel`, `MarriageType`, `PersonType`). Whichever way an MLT
-level should read, right now it is incidental rather than decided.
-`isPowerType` reaches only the label.
+**Power types.** `isPowerType` reaches only the label. A high-order type is now
+ranked above what instantiates it, but a categorizer is still placed with no
+regard for the triangle it categorizes.
 
 **The other aspects.** A mode or a quality is existentially dependent on its
 bearer exactly as a relator is on its relata, and `characterization` and
@@ -129,6 +123,53 @@ behind a class that is not at either end of them:
 | showcase | 0 → 0 | 0 → 0 |
 | parties | 1 → 0 | 1 → 1 |
 
+## What was changed next: the three vertical readings
+
+A layered algorithm ranks an edge's source above its target, and four kinds of
+edge in a UFO model read the other way round or not at all. Only the
+generalization was handed over reversed; the rest were plain associations with
+no direction asked for, so how they came out was incidental. All four now go
+through one function, `handedOver`:
+
+- **parthood**, whole above part, reversed when the diamond is on the target;
+- **constitution**, the constituted above what constitutes it -- the statue
+  above its marble, the process above the events in it. There is no diamond to
+  say which end that is, so `packages/view` resolves it: the language fixes the
+  direction of one pair, "a process is constituted by a certain series of
+  events", the single crossing in its end-nature table, and everywhere else the
+  reading is the one the language's own completion offers -- `@constitution`
+  "runs from what constitutes to what is constituted";
+- **`instanceOf` and `@instantiation`**, the type above what instantiates it,
+  since `instantiation: [EVERYTHING, ['type']]` puts the type at the target end;
+- **mediation**, turned or not, as before.
+
+Which way round the edge goes is the whole of it: the direction priority beside
+it is read only when ELK breaks a cycle, and 0, 1, 3 and 6 draw all six models
+to the pixel. Measured, before and after:
+
+| model | whole above part | type above its instances | constituted above constituent | lines through unrelated classes |
+|---|---|---|---|---|
+| university | 3/4 → **4/4** | 0/1 → **1/1** | – | 3 → 5 |
+| pets | 1/1 | – | – | 2 → 2 |
+| boats | 7/11 | 0/6 → **6/6** | 1/3 → **3/3** | 9 → 10 |
+| gufo | 0/2 | – | – | 8 → 8 |
+| showcase | 2/2 | 0/1 → **1/1** | – | 0 → 0 |
+| parties | 1/1 | – | – | 0 → 0 |
+
+Eight instantiations out of eight now read downwards from the type, where none
+did. The costs are two: `university` and `boats` each gain lines that pass
+behind a class -- which the router bends around rather than hiding, so they are
+bends rather than the defect itself -- and `boats` loses the seat of one
+relator, `Employment`, which the settle step can no longer reach a clear place
+for. Taken separately, parthood alone is a pure gain (`university` 3 lines
+through to none), constitution alone the most expensive (`boats` 9 to 15), and
+the three together cost less than constitution alone does.
+
+`boats` keeps 4 parthoods with the part above the whole, and all four are the
+same shape: a part that is also a subtype, where `enforceTaxonomyRanks` puts it
+back under its supertype afterwards. That is the taxonomy winning, which is the
+order this drawing is meant to be read in.
+
 `parties` keeps its stranded relator: `EmploymentContract` is declared in
 `Employment` and mediates two classes in `Parties`, and with the packages drawn
 as boxes there is nowhere between them for it to go that does not put one box
@@ -142,13 +183,16 @@ there -- the move it made was worth one hidden line and no seat.
    set's specifics, contiguous and in declaration order, with the categorizer
    beside the bar. It is a change to how a row is built and sorted, not a new
    pass.
-2. **Give parthood a weak whole → part direction priority.** `edge.whole` is
-   already there.
-3. **Decide what `instanceOf` means vertically** -- reverse it as a
-   generalization is reversed, or say in the docstring that MLT levels are
-   deliberately unranked.
-4. **Generalize the aspect rule** from relators to modes and qualities, through
+2. **Generalize the aspect rule** from relators to modes and qualities, through
    `characterization` and `externalDependence`, using the same nature the
    language resolves.
-5. **Place external elements at the periphery**, as an unattached datatype
+3. **Place external elements at the periphery**, as an unattached datatype
    already is.
+4. **Seat a relator whose relata are in another package**, which grouping
+   currently makes impossible -- either by letting a package box be drawn
+   around what it holds rather than around a bounding rectangle, or by saying
+   that a cross-package relator is one of the things a hand arrangement is for.
+5. **Rank a parthood that runs against a taxonomy.** `boats` draws 7 of its 11
+   parthoods with the whole above the part and the other 4 are all in the same
+   shape: a part that is also a subtype of something, where the taxonomy's rank
+   wins and should.

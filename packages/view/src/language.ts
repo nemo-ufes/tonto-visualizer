@@ -40,6 +40,8 @@ export { getRelationSource, isParthood, wholeEndOf } from 'tonto-language';
 
 // eslint-disable-next-line no-restricted-imports -- see the note above.
 export { getEffectiveNatures } from '../../../vendor/tontoredesign/packages/language/out/utils/natures.js';
+// eslint-disable-next-line no-restricted-imports -- see the note above.
+export { classifiesOnly } from '../../../vendor/tontoredesign/packages/language/out/utils/nature-reasoning.js';
 export type { EffectiveNatures, NatureOrigin } from '../../../vendor/tontoredesign/packages/language/out/utils/natures.js';
 export { isUltimateSortal } from '../../../vendor/tontoredesign/packages/language/out/validation/stereotype-model.js';
 

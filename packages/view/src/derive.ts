@@ -22,6 +22,7 @@ import type {
     RelationEndTarget
 } from './language.js';
 import {
+    classifiesOnly,
     getEffectiveNatures,
     getRelationSource,
     isClassDeclaration,
@@ -321,6 +322,9 @@ class Derivation {
             this.inverses.push({ relation, inverse: relation.inverseOf.ref });
         }
         const whole = isParthood(relation) ? wholeEndOf(relation) : undefined;
+        const constituted = relation.stereotype === 'constitution'
+            ? constitutedEndOf(relation)
+            : undefined;
         this.addEdge({
             kind: 'relation',
             id,
@@ -331,6 +335,7 @@ class Derivation {
             sourceEnd: this.endOf(relation.sourceMeta, cardinality(relation.sourceCardinality), whole === 'source'),
             targetEnd: this.endOf(relation.targetMeta, cardinality(relation.targetCardinality), whole === 'target'),
             ...(whole ? { whole } : {}),
+            ...(constituted ? { constituted } : {}),
             ...(relation.specializes?.$refText ? { specializes: relation.specializes.$refText } : {}),
             ...this.documentedRelation(relation)
         });
@@ -574,6 +579,36 @@ class Derivation {
                 endCharacter: range.end.character
             }
         };
+    }
+}
+
+/**
+ * Which end of a constitution holds the thing that is constituted.
+ *
+ * The language fixes the direction of one pair and one only: "a process is
+ * constituted by a certain series of events", the single crossing in its
+ * end-nature table, written `process -- event` and refused the other way
+ * round. Everywhere else the direction is the modeller's, and the language
+ * reads what they wrote the way its own completion does -- `@constitution` "runs
+ * from what constitutes to what is constituted, so written in a body it says
+ * what *this* makes up".
+ */
+function constitutedEndOf(relation: Relation): 'source' | 'target' {
+    const source = getRelationSource(relation);
+    const target = relation.target?.ref;
+    if (source && isClassDeclaration(source) && target && isClassDeclaration(target)
+        && classifiesOnlySafely(source, 'processes') && classifiesOnlySafely(target, 'events')) {
+        return 'source';
+    }
+    return 'target';
+}
+
+/** As `getEffectiveNaturesSafely`, and for the same reason. */
+function classifiesOnlySafely(declaration: ClassDeclaration, nature: string): boolean {
+    try {
+        return classifiesOnly(declaration, nature);
+    } catch {
+        return false;
     }
 }
 
