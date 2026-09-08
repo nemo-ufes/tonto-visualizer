@@ -13,6 +13,7 @@ import { inversePairs } from 'tonto-view/inverses';
 import type { Point, Rect } from './geometry.js';
 import { alongPath, boundsOf, centerOf, distanceToPath, segmentHitsRect } from './geometry.js';
 import { attributeLines, FONT, multiplicityLabel, NODE, nodeLabel, stereotypeLabel, textWidth } from './measure.js';
+import { isRelator } from './ontology.js';
 import type { Positions } from './place.js';
 import { assignPorts, endKey } from './ports.js';
 import { routeEdge } from './route.js';
@@ -85,9 +86,7 @@ function isClear(positions: Record<string, Rect>, one: string, other: string, vi
 function mediationsThrough(
     view: ViewModel, positions: Record<string, Rect>, covered: ReadonlySet<string> = new Set()
 ): Set<string> {
-    const relators = new Set(view.nodes
-        .filter(node => node.stereotype === 'relator' || node.natures?.natures.includes('relators'))
-        .map(node => node.id));
+    const relators = new Set(view.nodes.filter(isRelator).map(node => node.id));
     const mediations = view.edges.filter(edge =>
         edge.kind === 'relation' && edge.stereotype === 'mediation' && edge.source !== edge.target
         && !covered.has(edge.id));
