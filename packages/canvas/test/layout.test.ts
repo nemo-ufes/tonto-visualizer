@@ -387,6 +387,60 @@ describe('packages and the layout', () => {
         expect(within(relator.y, relata[0]!.y, relata[1]!.y)).toBe(true);
     });
 
+    /**
+     * The keyword is the ordinary way of saying it and not the only one. gUFO
+     * declares seven relator-natured classes and writes `relator` on none of
+     * them, and the drawing was already aiming their mediations through the
+     * middle of the box while the arrangement left the box wherever the ranking
+     * happened to put it.
+     */
+    test('seats a relator the model declares by its nature rather than its keyword', async () => {
+        const clazz = (name: string, stereotype: string, natures?: string[]) => ({
+            id: `Sample::${name}`, kind: 'class' as const, name, package: 'Sample',
+            stereotype, color: '#99FF99', isExternal: false, attributes: [],
+            ...(natures ? { natures: { natures, origin: 'declared' } } : {})
+        });
+        const view: ViewModel = {
+            groups: [{
+                id: 'pkg:Sample', name: 'Sample', isExternal: false,
+                nodes: ['Sample::Person', 'Sample::Organization', 'Sample::Employment', 'Sample::Contract']
+            }],
+            nodes: [
+                clazz('Person', 'kind'), clazz('Organization', 'kind'),
+                clazz('Contract', 'category', ['relators']),
+                // A taxonomy in the model, which is every model anyone draws.
+                clazz('Employment', 'subkind', ['relators'])
+            ],
+            edges: [
+                {
+                    kind: 'generalization', id: 'gen',
+                    source: 'Sample::Employment', target: 'Sample::Contract'
+                },
+                {
+                    kind: 'relation', id: 'r1', stereotype: 'mediation',
+                    source: 'Sample::Employment', target: 'Sample::Person'
+                },
+                {
+                    kind: 'relation', id: 'r2', stereotype: 'mediation',
+                    source: 'Sample::Employment', target: 'Sample::Organization'
+                }
+            ],
+            gensets: []
+        };
+
+        const positions = await arrange(view, true);
+        const centre = (id: string) => {
+            const rect = positions[id]!;
+            return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+        };
+        const relator = centre('Sample::Employment');
+        const relata = [centre('Sample::Person'), centre('Sample::Organization')];
+        const within = (value: number, one: number, other: number) =>
+            value >= Math.min(one, other) - 24 && value <= Math.max(one, other) + 24;
+        expect(within(relator.x, relata[0]!.x, relata[1]!.x)).toBe(true);
+        expect(within(relator.y, relata[0]!.y, relata[1]!.y)).toBe(true);
+    });
+
     test('does not settle an unselected relator during a partial layout', async () => {
         const clazz = (name: string, stereotype: string) => ({
             id: `Sample::${name}`, kind: 'class' as const, name, package: 'Sample',

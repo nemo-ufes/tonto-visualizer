@@ -11,6 +11,11 @@
  * general, which is how the language writes it and the opposite of how the
  * picture reads.
  *
+ * A relator is then seated between the classes it mediates, because that is
+ * where a reader looks for a reified relationship. What counts as a relator is
+ * the nature the language resolves rather than the keyword the model happens to
+ * use -- see `ontology.ts`.
+ *
  * ELK first sees the whole graph, because associations carry useful information
  * about which classes belong near one another and in which order. Its direction
  * priority only affects cycle breaking, though; it cannot stop associations
@@ -31,7 +36,8 @@ import * as elkModule from 'elkjs/lib/elk.bundled.js';
 import type { LayoutOptions, ViewModel } from 'tonto-view';
 import { defaultLayoutOptions, inversePairs } from 'tonto-view';
 import type { Point, Rect, Size } from './geometry.js';
-import { borderPoint, boundsOf, centerOf, overlaps } from './geometry.js';
+import { borderPoint, boundsOf, centerOf, overlaps, segmentHitsRect } from './geometry.js';
+import { isRelator } from './ontology.js';
 import type { Positions } from './place.js';
 import type { RoutingStyle } from './route.js';
 import { routeEdge } from './route.js';
@@ -40,6 +46,9 @@ const GROUP_PADDING = 18;
 const GROUP_HEADER = 20;
 const PARTIAL_GAP = 24;
 const PARTIAL_STEP = 40;
+/** How far a relator looks around the middle of its relata for a clear place. */
+const SETTLE_STEP = 24;
+const SETTLE_RINGS = [1, 2, 3, 4, 5, 6];
 
 /**
  * ELK ships one bundle for CommonJS and for the browser, so the constructor
@@ -247,10 +256,11 @@ function settleRelators(
     rankDirection?: LayoutOptions['direction'],
     ranked?: ReadonlySet<string>
 ): void {
-    const relators = view.nodes.filter(node => node.stereotype === 'relator' && only.has(node.id));
+    const relators = view.nodes.filter(node => isRelator(node) && only.has(node.id));
     if (relators.length === 0) {
         return;
     }
+    const covered = inversePairs(view.edges).covered;
 
     for (const relator of relators) {
         const rect = positions[relator.id];
@@ -275,20 +285,92 @@ function settleRelators(
         const others = Object.entries(positions)
             .filter(([id]) => id !== relator.id)
             .map(([, one]) => one);
-        for (const share of [1, 0.8, 0.6, 0.4, 0.2]) {
-            const locked = ranked?.has(relator.id) ?? false;
-            const candidate = {
-                x: locked && rankDirection === 'RIGHT' ? rect.x : Math.round(rect.x + (middle.x - rect.x) * share),
-                y: locked && rankDirection === 'DOWN' ? rect.y : Math.round(rect.y + (middle.y - rect.y) * share),
-                width: rect.width,
-                height: rect.height
-            };
-            if (!others.some(one => overlaps(candidate, one, 24))) {
+        const locked = ranked?.has(relator.id) ?? false;
+        // A relator that is itself in a taxonomy keeps the rank the hierarchy
+        // gave it: between its relata is worth less than under its supertype.
+        const held = (candidate: Rect): Rect => ({
+            ...candidate,
+            ...(locked && rankDirection === 'RIGHT' ? { x: rect.x } : {}),
+            ...(locked && rankDirection === 'DOWN' ? { y: rect.y } : {})
+        });
+        const away = (candidate: Rect) => Math.hypot(candidate.x - middle.x, candidate.y - middle.y);
+        // The middle first, then the nearest clear place to it. Walking only
+        // the line back towards where the relator already is finds nothing when
+        // a relatum stands on that line, which is the ordinary case for a
+        // relator of three: `ClinicVisit` was left over its `Pet`, `PetClinic`
+        // and `Veterinarian` rather than among them, because every share of the
+        // way to the middle put it through the class it mediates.
+        const rings = SETTLE_RINGS.flatMap(ring => partialRing(ring).map(offset => ({
+            x: middle.x + offset.x * SETTLE_STEP,
+            y: middle.y + offset.y * SETTLE_STEP
+        })));
+        // Part of the way there is still an improvement, and on a crowded
+        // drawing it is often all there is: a relator that cannot reach the
+        // middle of three classes can still stop being drawn above all three.
+        const along = [0.8, 0.6, 0.4, 0.2].map(share => ({
+            x: rect.x + (middle.x - rect.x) * share,
+            y: rect.y + (middle.y - rect.y) * share
+        }));
+        const candidates = [middle, ...rings, ...along]
+            .map(at => held({ x: Math.round(at.x), y: Math.round(at.y), width: rect.width, height: rect.height }))
+            .filter(candidate => away(candidate) < away(rect))
+            .sort((one, other) => away(one) - away(other));
+        // Free is not the same as better. A relator seated between its relata
+        // is drawn where the lines between everything else already run, and a
+        // move that takes it off its rank can put two of them behind a class
+        // that has nothing to do with either -- which is read as the line
+        // ending there. So a place is taken only if it costs no such line.
+        const before = linesThrough(view, positions, covered, { id: relator.id, rect });
+        for (const candidate of candidates) {
+            if (!others.some(one => overlaps(candidate, one, 24))
+                && linesThrough(view, positions, covered, { id: relator.id, rect: candidate }) <= before) {
                 positions[relator.id] = candidate;
                 break;
             }
         }
     }
+}
+
+/**
+ * The lines an arrangement hides behind a class that has nothing to do with
+ * them -- the defect this drawing fights hardest, since a line that disappears
+ * behind a class is read as ending there.
+ *
+ * Centre to centre, because the router and the ports are not available here and
+ * because it is the same edges over the same boxes on either side of every
+ * comparison it is used for. Given a `focus`, only the lines that box decides
+ * are counted: the ones that touch it, and the ones that would pass behind it.
+ */
+function linesThrough(
+    view: ViewModel,
+    positions: Positions,
+    covered: ReadonlySet<string>,
+    focus?: { id: string; rect: Rect }
+): number {
+    const at = (node: string) => (focus && node === focus.id ? focus.rect : positions[node]);
+    let count = 0;
+    for (const edge of view.edges) {
+        const source = at(edge.source);
+        const target = at(edge.target);
+        if (covered.has(edge.id) || !source || !target || edge.source === edge.target) {
+            continue;
+        }
+        const from = centerOf(source);
+        const to = centerOf(target);
+        const touches = focus !== undefined && (edge.source === focus.id || edge.target === focus.id);
+        for (const [other, box] of Object.entries(positions)) {
+            if (other === edge.source || other === edge.target) {
+                continue;
+            }
+            if (focus && !touches && other !== focus.id) {
+                continue;
+            }
+            if (segmentHitsRect(from, to, focus && other === focus.id ? focus.rect : box, 0)) {
+                count += 1;
+            }
+        }
+    }
+    return count;
 }
 
 /**
@@ -468,7 +550,7 @@ function enforceTaxonomyRanks(
  */
 function mediationsToTurn(view: ViewModel, grouped: boolean, only: Set<string>): Set<string> {
     const relators = new Set(view.nodes
-        .filter(node => node.stereotype === 'relator' && only.has(node.id))
+        .filter(node => isRelator(node) && only.has(node.id))
         .map(node => node.id));
     const packageOf = new Map(view.nodes.map(node => [node.id, node.package]));
     // Kept by relatum rather than by edge: a relator that mediates one class
@@ -534,8 +616,6 @@ export async function autoLayout(
     const routing = request.routing ?? 'straight';
     const subject = new Set(request.only ?? view.nodes.map(node => node.id));
     const inverses = inversePairs(view.edges);
-    const hasTaxonomy = view.edges.some(edge => edge.kind === 'generalization'
-        && subject.has(edge.source) && subject.has(edge.target));
     const nodes = view.nodes.filter(node => subject.has(node.id));
     if (nodes.length === 0) {
         return { positions: current, routes: {} };
@@ -742,13 +822,17 @@ export async function autoLayout(
 
     // Turning a relator's mediations round is not free: it changes the ranking
     // for everything, and on one model it lengthened enough lines to cost a
-    // dozen labels their place. So the plain layout comes first, and only the
-    // relators it strands are worth turning -- and the turn is kept only if it
-    // seats more of them.
+    // dozen labels their place. So the plain layout comes first, only the
+    // relators it strands are worth turning, and the turn is kept only if it
+    // seats more of them while hiding no more lines behind classes they have
+    // nothing to do with.
+    //
+    // That cost used to be answered by refusing to try: the second attempt was
+    // skipped whenever the model held a generalization, which is every ontology
+    // anyone draws, so the turn was reachable only on a model with no taxonomy
+    // at all -- the shape of the test that covers it, and of nothing else.
+    // Judging the attempt is what the refusal stood in for, so it is judged.
     const plain = await attempt(new Set());
-    if (settings.algorithm === 'layered' && hasTaxonomy && !request.only) {
-        return plain;
-    }
     const stranded = strandedRelators(view, plain.positions, subject);
     if (stranded.size === 0) {
         return plain;
@@ -758,14 +842,16 @@ export async function autoLayout(
         return plain;
     }
     const turned = await attempt(turnedMediations);
-    return strandedRelators(view, turned.positions, subject).size < stranded.size ? turned : plain;
+    const seatsMore = strandedRelators(view, turned.positions, subject).size < stranded.size;
+    const hidden = (positions: Positions) => linesThrough(view, positions, inverses.covered);
+    return seatsMore && hidden(turned.positions) <= hidden(plain.positions) ? turned : plain;
 }
 
 /** The relators that did not land between the classes they mediate. */
 function strandedRelators(view: ViewModel, positions: Positions, only: ReadonlySet<string>): Set<string> {
     const centre = (rect: Rect) => ({ x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 });
     const stranded = new Set<string>();
-    for (const relator of view.nodes.filter(node => node.stereotype === 'relator' && only.has(node.id))) {
+    for (const relator of view.nodes.filter(node => isRelator(node) && only.has(node.id))) {
         const rect = positions[relator.id];
         const relata = [...new Set(view.edges
             .filter(edge => edge.kind === 'relation' && edge.stereotype === 'mediation'
