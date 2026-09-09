@@ -275,8 +275,11 @@ ranks out itself:
 
 - a corridor is deepened by **one line of text for every labelled association
   that crosses it**, bounded at twice the rank spacing;
-- the gap between two neighbours in a rank is opened to **the widest reading
-  written between them**, plus room for the triangle after a name.
+- the gap between two neighbours in a rank is opened to fit **each of the
+  readings written between them**, plus room for the triangle after a name --
+  each, not the widest, because two associations between one pair write two
+  labels there and the space for one is where `«bringingAbout» broughtAboutBy`
+  and `«triggering» contributedToTrigger` were drawn over each other.
 
 A line each rather than a block each is what measurement chose: labels share a
 corridor side by side as well as one above another, and reserving a whole block
@@ -284,7 +287,7 @@ each spread the drawing enough to bring the next pair together.
 
 | model | overlapping label pairs | of the label area | size |
 |---|---|---|---|
-| gufo | 21 → **7** | 2.4% → **0.3%** | 1772x936 → 1812x1132 |
+| gufo | 21 → **6** | 2.4% → **0.18%** | 1772x936 → 1911x1132 |
 | boats | 14 → **6** | 1.4% → **0.6%** | unchanged |
 | pets | 1 → 1 | 1.2% | unchanged |
 | university, showcase, parties | 0 → 0 | 0% | unchanged |
@@ -293,6 +296,16 @@ More pairs than the ink would suggest, and that is the shape of the answer: what
 is left are slivers where whole labels used to be struck through each other.
 gUFO pays a fifth of its height for it; nothing else changes size at all, and
 `boats` draws two fewer lines behind unrelated classes into the bargain.
+
+**Two other ways of making room, measured and dropped.** Widening a gap by the
+*lines* that pass through it -- eight to twenty pixels a line -- bought gUFO one
+collision for a fifth of its width and cost `university` its clean sheet.
+Raising `nodeSpacing` itself, which is the obvious answer to a crowded drawing,
+makes it worse: at 80 gUFO goes from 7 overlapping pairs to 8 and `showcase`
+from none to two, at 100 gUFO reaches 13. Longer lines do not carry more text;
+they carry the same text past more of everything else. Room has to be made where
+the text is, which is why both rules that survived are about what is written
+rather than about how much space there is.
 
 **What did not work.** ELK can be handed the labels themselves -- an edge label
 with a width and a height, which its layered algorithm reserves space for with
