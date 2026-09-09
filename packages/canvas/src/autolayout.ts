@@ -423,8 +423,9 @@ function settleBeside(
 ): void {
     const covered = inversePairs(view.edges).covered;
     const seated = new Set<string>();
+    const lonely = relatorsOfOne(view, only);
     for (const edge of view.edges) {
-        const beside = besideOf(edge);
+        const beside = besideOf(edge, lonely);
         if (!beside || covered.has(edge.id) || edge.source === edge.target) {
             continue;
         }
@@ -465,14 +466,44 @@ function settleBeside(
             x: Math.round(beside_.x - step * SETTLE_STEP),
             y: Math.round(beside_.y - BESIDE_GAP - rect.height)
         });
+        // A relator that mediates one class is dependent on it and on nothing
+        // else, so any side of it is a reading; the side is a preference, and
+        // being beside the class at all is the point. A type and an aspect have
+        // a side of their own to be on, and keep it.
+        const opposite = (step: number) => ({
+            x: Math.round(side === 'left'
+                ? beside_.x + beside_.width + BESIDE_GAP + step * SETTLE_STEP
+                : beside_.x - BESIDE_GAP - step * SETTLE_STEP - rect.width),
+            y: level
+        });
+        const steps = (place: (step: number) => Point) =>
+            Array.from({ length: BESIDE_STEPS }, (_, step) => place(step));
         const wanted = [
-            ...Array.from({ length: BESIDE_STEPS }, (_, step) => alongside(step)),
-            ...(side === 'left' ? Array.from({ length: BESIDE_STEPS }, (_, step) => over(step)) : [])
+            ...steps(alongside),
+            ...(lonely.has(moved) ? steps(opposite) : []),
+            ...(side === 'left' || lonely.has(moved) ? steps(over) : [])
         ];
+        // A relator looking all round its class must not end up further from it
+        // than the layering already left it, since any side will do and the
+        // point is to be near. Measured between the cards rather than between
+        // their centres: a card beside another is centres further apart than a
+        // card under it -- a card is wider than it is tall -- and that would
+        // reject the very move this is for. A type and an aspect have a side of
+        // their own and are not held to it at all.
+        const clearance = (place: Point) => {
+            const one = { ...rect, x: place.x, y: place.y };
+            const across = Math.max(beside_.x - (one.x + one.width), one.x - (beside_.x + beside_.width), 0);
+            const down = Math.max(beside_.y - (one.y + one.height), one.y - (beside_.y + beside_.height), 0);
+            return Math.hypot(across, down);
+        };
+        const limit = lonely.has(moved) ? clearance({ x: rect.x, y: rect.y }) : Infinity;
         const hidden = () => block.reduce(
             (total, id) => total + linesThrough(view, positions, covered, { id, rect: positions[id]! }), 0);
         const before = hidden();
         for (const place of wanted) {
+            if (clearance(place) >= limit) {
+                continue;
+            }
             const shift = { x: place.x - rect.x, y: place.y - rect.y };
             const shifted = new Map(block.map(id => [id, {
                 ...positions[id]!,
@@ -498,14 +529,51 @@ function settleBeside(
 }
 
 /** Which end of an edge belongs beside the other, and on which side of it. */
-function besideOf(edge: ViewEdge): { moved: string; anchor: string; side: 'left' | 'right' } | undefined {
+function besideOf(
+    edge: ViewEdge, lonely: ReadonlyMap<string, string>
+): { moved: string; anchor: string; side: 'left' | 'right' } | undefined {
     if (edge.kind === 'instantiation' || (edge.kind === 'relation' && edge.stereotype === 'instantiation')) {
         return { moved: edge.target, anchor: edge.source, side: 'left' };
     }
     if (edge.kind === 'relation' && edge.stereotype === 'characterization') {
         return { moved: edge.source, anchor: edge.target, side: 'right' };
     }
+    if (edge.kind === 'relation' && edge.stereotype === 'mediation') {
+        const relator = lonely.has(edge.source) ? edge.source : lonely.has(edge.target) ? edge.target : undefined;
+        return relator ? { moved: relator, anchor: lonely.get(relator)!, side: 'right' } : undefined;
+    }
     return undefined;
+}
+
+/**
+ * The relators that mediate one class and nothing else, by the class they
+ * mediate.
+ *
+ * Every other rule about relators is about betweenness, and betweenness needs
+ * two: `settleRelators`, `strandedRelators` and `mediationsToTurn` all pass
+ * over a relator with one relatum, so nothing at all held `Marriage` -- which
+ * `involves [2] (const spouses) Spouse`, one line and one relatum -- anywhere
+ * near the `Spouse` it involves. It came out a thousand pixels away on `boats`,
+ * with the longest line in the drawing, and no rule considered that wrong.
+ *
+ * Two spouses stated as `[2]` on one mediation and two stated as two mediations
+ * to the same class are the same relator; both leave it dependent on one class
+ * and on nothing else, which is what an aspect is. So it is seated where an
+ * aspect is seated: beside what it depends on.
+ */
+function relatorsOfOne(view: ViewModel, only: ReadonlySet<string>): Map<string, string> {
+    const mediations = view.edges.filter(edge => edge.kind === 'relation' && edge.stereotype === 'mediation');
+    const lonely = new Map<string, string>();
+    for (const node of view.nodes.filter(node => isRelator(node) && only.has(node.id))) {
+        const relata = new Set(mediations
+            .filter(edge => edge.source === node.id || edge.target === node.id)
+            .map(edge => (edge.source === node.id ? edge.target : edge.source))
+            .filter(id => id !== node.id && only.has(id)));
+        if (relata.size === 1) {
+            lonely.set(node.id, [...relata][0]!);
+        }
+    }
+    return lonely;
 }
 
 /**

@@ -19,7 +19,7 @@ which does it leave on the table?
 |---|---|
 | generalization | handed to ELK reversed, with the direction and straightness priorities, and then re-ranked from generalizations alone per connected component, so an association cannot invent a hierarchy level |
 | package | a compound node, with the spacings repeated on it, so a package's classes stay together |
-| relator, mediation | a relator is seated between the classes it mediates, and half a relator's mediations may be turned round for the ranking |
+| relator, mediation | a relator is seated between the classes it mediates -- or beside the one class, where it mediates one -- and half a relator's mediations may be turned round for the ranking |
 | parthood | handed over whole -> part, whichever end the diamond is written on |
 | constitution | handed over constituted -> constituent, which the language decides for a process and its events and the written direction decides elsewhere |
 | `instanceOf` | the type is seated to the left of what instantiates it, level with it |
@@ -220,6 +220,37 @@ in the room beside the class: `pets` would have to bring `LegalPosition`'s three
 extrinsic modes with it, and `boats` `CarType` and `CarModel` together, into a
 rank whose left-hand side is full of classes nothing joins to. They keep the
 column the layering gave them, which still reads as a level.
+
+## A relator of one, which no rule held
+
+`Marriage` on `boats` is written `@mediation relation Marriage -- involves --
+[2] (const spouses) Spouse`: two spouses, stated as a cardinality on one
+mediation. So the relator has one relatum, and every rule about relators is
+about betweenness, which needs two -- `settleRelators`, `strandedRelators` and
+`mediationsToTurn` all pass over it at `relata.length < 2`. Nothing held it
+anywhere near the class it involves, and nothing counted that as a defect: it
+came out 1083px from `Spouse`, the longest line in the drawing, and the
+stranded-relator count said zero.
+
+A relator that mediates one class is dependent on that class and on nothing
+else, which is what an aspect is, so it is now seated the way an aspect is: at
+the class's side. The side is a preference rather than the point -- the right
+first, as an aspect's is, then the left, then above -- and the move is taken
+only while it brings the two cards closer than the layering left them.
+Measured between the cards rather than between their centres, because a card
+beside another has its centre further away than a card under it, and measuring
+centres would refuse the very move this is for.
+
+Two spouses written as `[2]` and two written as two mediations to the same class
+are the same relator, and both are covered: `Supervision`, which mediates
+`Person` twice, was 320px from it and is now 222.
+
+| model | relator | before | after |
+|---|---|---|---|
+| boats | `Marriage` -> `Spouse` | 1083px | **180px** |
+| boats | `Supervision` -> `Person` | 320px | **222px** |
+| showcase | `Marriage` -> `Spouse` | 366px | 366px, the rank being full either side |
+| gufo | `Relator` -> `Endurant` | 434px | 434px, and rightly: it specializes what it mediates, so moving it would take the class with it |
 
 ## What is worth doing next, in payoff order
 

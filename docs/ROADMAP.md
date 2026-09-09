@@ -150,3 +150,12 @@ not need another path that can go stale when a repository moves.
   whole drawing about: `university` went from no line passing behind a class to
   five, and `boats` lost a relator's seat. Both come back, and `boats` is down
   to 8 such lines from the 13 it started at. 175 tests.
+- Seated a relator that mediates one class beside that class. `Marriage` on
+  `boats` involves `[2] (const spouses) Spouse` -- two spouses as a cardinality
+  on one mediation -- so it has one relatum, and every rule about relators is
+  about betweenness, which needs two: `settleRelators`, `strandedRelators` and
+  `mediationsToTurn` all passed over it. It was drawn 1083px from the `Spouse`
+  it involves, the longest line in the drawing, and the stranded count said
+  zero. Such a relator is dependent on one class and nothing else, which is what
+  an aspect is, so it is seated where an aspect is: 180px now, and `Supervision`
+  -- which mediates `Person` twice -- 222px from 320. 176 tests.
