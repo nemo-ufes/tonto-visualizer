@@ -26,6 +26,7 @@ which does it leave on the table?
 | characterization | the aspect is seated to the right of what bears it, level with it |
 | inverse pair | one association, drawn and laid out once |
 | datatype, enumeration | one with no edge at all is constrained to the last layer, out of the corridors between classes |
+| a relation's label | the corridor between two ranks is deepened by a line for every labelled association crossing it, and the gap between two neighbours in a rank is opened to fit what is written between them |
 
 Measured over the six models, supertypes are above their subtypes everywhere.
 That part works, and it is the part a reader of a class diagram most depends on.
@@ -251,6 +252,59 @@ are the same relator, and both are covered: `Supervision`, which mediates
 | boats | `Supervision` -> `Person` | 320px | **222px** |
 | showcase | `Marriage` -> `Spouse` | 366px | 366px, the rank being full either side |
 | gufo | `Relator` -> `Endurant` | 434px | 434px, and rightly: it specializes what it mediates, so moving it would take the class with it |
+
+## Room for what is written
+
+Every association writes its stereotype and its name in the middle of itself,
+and until now nothing in the arrangement knew that. A corridor between two ranks
+was one `rankSpacing` however many lines had to be written in it, and the gap
+between two neighbours in a rank was one `nodeSpacing` however long the label
+between them was. The label placer runs afterwards and can only choose among the
+places a finished drawing offers; where the drawing has already decided there is
+no room, its best answer is the least bad collision.
+
+gUFO is the model that shows it. Nine label blocks shared one hundred-pixel
+corridor between the `Endurant`/`Situation`/`Event` row and the `Object`/`Aspect`
+row -- `«participation»` printed over `contributedToTrigger`, `{redefines
+Entity.parts}` through `«bringingAbout»`, a `*` on a role name -- and
+`«bringingAbout» broughtAboutBy`, a hundred and seventy pixels of text, was
+written along a sixty-pixel gap between `Situation` and `Event`.
+
+Both halves are now the arrangement's business, in the one pass that lays the
+ranks out itself:
+
+- a corridor is deepened by **one line of text for every labelled association
+  that crosses it**, bounded at twice the rank spacing;
+- the gap between two neighbours in a rank is opened to **the widest reading
+  written between them**, plus room for the triangle after a name.
+
+A line each rather than a block each is what measurement chose: labels share a
+corridor side by side as well as one above another, and reserving a whole block
+each spread the drawing enough to bring the next pair together.
+
+| model | overlapping label pairs | of the label area | size |
+|---|---|---|---|
+| gufo | 21 → **7** | 2.4% → **0.3%** | 1772x936 → 1812x1132 |
+| boats | 14 → **6** | 1.4% → **0.6%** | unchanged |
+| pets | 1 → 1 | 1.2% | unchanged |
+| university, showcase, parties | 0 → 0 | 0% | unchanged |
+
+More pairs than the ink would suggest, and that is the shape of the answer: what
+is left are slivers where whole labels used to be struck through each other.
+gUFO pays a fifth of its height for it; nothing else changes size at all, and
+`boats` draws two fewer lines behind unrelated classes into the bargain.
+
+**What did not work.** ELK can be handed the labels themselves -- an edge label
+with a width and a height, which its layered algorithm reserves space for with
+label dummy nodes -- and that is the textbook answer. Measured here it helped
+`boats` (14 overlapping pairs to 10) and made gUFO worse (21 to 26), whichever
+of `MEDIAN_LAYER`, `SPACE_EFFICIENT_LAYER` and `WIDEST_LAYER` placed the centre
+labels. The reason is that it reserves room between ranks only, while gUFO's
+collisions are as often between an end decoration and the centre label of the
+line beside it; and for a straight drawing ELK's own edge routing, which is what
+the rest of its label handling serves, is thrown away here anyway. Deepening the
+corridor is the same idea applied where this repository already decides the
+geometry.
 
 ## What is worth doing next, in payoff order
 

@@ -50,6 +50,16 @@ const WIDE = new Set([...'mwMW@%«»&']);
 const NARROW_FACTOR = 0.62;
 const WIDE_FACTOR = 1.42;
 
+/**
+ * The height of one line of what is written along an edge: a stereotype line is
+ * shorter than a name line, since it is set smaller.
+ *
+ * Here rather than in the renderer because the arrangement needs it too: the
+ * corridor between two ranks has to be deep enough for the lines that cross it
+ * to have somewhere to write themselves.
+ */
+export const LINE = { stereotype: 12, name: 14 } as const;
+
 export function textWidth(text: string, size: number, bold = false): number {
     let units = 0;
     for (const character of text) {
