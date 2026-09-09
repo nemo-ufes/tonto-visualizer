@@ -159,3 +159,16 @@ not need another path that can go stale when a repository moves.
   zero. Such a relator is dependent on one class and nothing else, which is what
   an aspect is, so it is seated where an aspect is: 180px now, and `Supervision`
   -- which mediates `Person` twice -- 222px from 320. 176 tests.
+- Made room in the arrangement for what a relation writes on itself. A corridor
+  between two ranks is deepened by a line of text for every labelled association
+  crossing it, and the gap between two neighbours in a rank is opened to the
+  widest reading written between them. gUFO had nine label blocks sharing one
+  hundred-pixel corridor and `«bringingAbout» broughtAboutBy` -- a hundred and
+  seventy pixels of text -- written along a sixty-pixel gap. Overlapping label
+  pairs: gUFO 21 to 7 and the ink they cover 2.4% of the label area to 0.3%;
+  `boats` 14 to 6 and 1.4% to 0.6%, with two fewer lines drawn behind unrelated
+  classes. gUFO pays a fifth of its height; no other model changes size.
+- Handing ELK the labels themselves, which is the textbook answer, was tried and
+  measured first: it helped `boats` and made gUFO worse under every centre-label
+  placement strategy, since it reserves room between ranks only and a straight
+  drawing throws ELK's edge routing away. 178 tests.

@@ -4,7 +4,7 @@ import { defaultDisplayOptions, defaultLayoutOptions } from 'tonto-view';
 import { autoLayout } from '../src/autolayout.js';
 import type { Point, Rect } from '../src/geometry.js';
 import { overlaps } from '../src/geometry.js';
-import { sizeOf } from '../src/measure.js';
+import { FONT, sizeOf, textWidth } from '../src/measure.js';
 import { render } from '../src/render.js';
 
 const display = { ...defaultDisplayOptions };
@@ -126,6 +126,66 @@ describe('arranging a model', () => {
         const distance = (placed: typeof positions) => placed['Sample::Sub0']!.y - placed['Sample::Root']!.y;
         expect(distance(positions)).toBe(distance(baseline));
         expect(distance(positions)).toBeGreaterThan(0);
+    });
+
+    /**
+     * The corridor between two ranks is where every association crossing it
+     * writes its stereotype and its name, and it used to be one `rankSpacing`
+     * however many had to be written there: on gUFO nine labels shared a
+     * hundred pixels, `«participation»` printed over `contributedToTrigger`.
+     */
+    test('deepens a corridor for the labels that have to cross it', async () => {
+        const withCrossings = (labelled: boolean) => {
+            const view = taxonomy(3);
+            const plainEnd = { isConst: false, isAddOnly: false };
+            for (let index = 0; index < 3; index += 1) {
+                view.edges.push({
+                    kind: 'relation', id: `crossing${index}`,
+                    source: 'Sample::Root', target: `Sample::Sub${index}`,
+                    ...(labelled ? { stereotype: 'material', name: `reaches${index}` } : {}),
+                    sourceEnd: plainEnd, targetEnd: plainEnd
+                });
+            }
+            return view;
+        };
+
+        const gapOf = (positions: Record<string, Rect>) =>
+            positions['Sample::Sub0']!.y - (positions['Sample::Root']!.y + positions['Sample::Root']!.height);
+        const bare = gapOf(await arrange(withCrossings(false), true));
+        const labelled = gapOf(await arrange(withCrossings(true), true));
+        expect(bare).toBeGreaterThanOrEqual(defaultLayoutOptions.rankSpacing - 1);
+        // A line each for the three that cross it, and nothing for the
+        // generalizations, which write nothing between the ranks.
+        expect(labelled).toBeGreaterThan(bare + 40);
+    });
+
+    /**
+     * The same defect along the other axis: an association between two classes
+     * in one rank is as long as the gap between them, and `«bringingAbout»
+     * broughtAboutBy` is a hundred and seventy pixels of text.
+     */
+    test('opens the gap in a rank for what is written between two neighbours', async () => {
+        const withLabel = (labelled: boolean) => {
+            const view = taxonomy(2);
+            view.edges.push({
+                kind: 'relation', id: 'sideways',
+                source: 'Sample::Sub0', target: 'Sample::Sub1',
+                ...(labelled ? { stereotype: 'bringingAbout', name: 'broughtAboutBy' } : {}),
+                sourceEnd: { isConst: false, isAddOnly: false },
+                targetEnd: { isConst: false, isAddOnly: false }
+            });
+            return view;
+        };
+        const gapOf = (positions: Record<string, Rect>) => {
+            const [left, right] = [positions['Sample::Sub0']!, positions['Sample::Sub1']!]
+                .sort((one, other) => one.x - other.x);
+            return right!.x - (left!.x + left!.width);
+        };
+
+        const bare = gapOf(await arrange(withLabel(false), true));
+        const labelled = gapOf(await arrange(withLabel(true), true));
+        expect(bare).toBe(defaultLayoutOptions.nodeSpacing);
+        expect(labelled).toBeGreaterThan(textWidth('broughtAboutBy', FONT.edge));
     });
 
     test('centres a generalization when an association joins the same classes', async () => {

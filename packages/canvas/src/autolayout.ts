@@ -42,6 +42,7 @@ import type { LayoutOptions, ViewEdge, ViewModel } from 'tonto-view';
 import { defaultLayoutOptions, inversePairs } from 'tonto-view';
 import type { Point, Rect, Size } from './geometry.js';
 import { borderPoint, boundsOf, centerOf, overlaps, segmentHitsRect } from './geometry.js';
+import { FONT, LINE, textWidth } from './measure.js';
 import { isRelator } from './ontology.js';
 import type { Positions } from './place.js';
 import type { RoutingStyle } from './route.js';
@@ -57,6 +58,8 @@ const SETTLE_RINGS = [1, 2, 3, 4, 5, 6];
 /** The room left between a class and what is seated beside it, and how far out to look. */
 const BESIDE_GAP = 60;
 const BESIDE_STEPS = 8;
+/** What a label needs beyond its text: the triangle after a name, and air. */
+const LABEL_AIR = 24;
 
 /**
  * ELK ships one bundle for CommonJS and for the browser, so the constructor
@@ -706,6 +709,7 @@ function enforceTaxonomyRanks(
     }
 
     const proposed = components.map(ids => {
+        const held = new Set(ids);
         const originals = ids.map(id => positions[id]!).filter((rect): rect is Rect => rect !== undefined);
         const crossLow = Math.min(...originals.map(rect => rect[cross]));
         const crossHigh = Math.max(...originals.map(rect => rect[cross] + rect[crossSize]));
@@ -731,16 +735,19 @@ function enforceTaxonomyRanks(
                 + settings.nodeSpacing * Math.max(rowIds.length - 1, 0);
             let along = crossMiddle - length / 2;
             const thickness = Math.max(...rowRects.map(rect => rect[primarySize]));
-            for (const id of rowIds) {
+            rowIds.forEach((id, index) => {
                 const rect = positions[id]!;
                 rects.set(id, {
                     ...rect,
                     [primary]: Math.round(at),
                     [cross]: Math.round(along)
                 });
-                along += rect[crossSize] + settings.nodeSpacing;
-            }
-            at += thickness + settings.rankSpacing;
+                const next = rowIds[index + 1];
+                along += rect[crossSize] + (next
+                    ? Math.max(settings.nodeSpacing, writtenBetween(view, id, next))
+                    : 0);
+            });
+            at += thickness + settings.rankSpacing + writtenAcross(view, held, ranks, rank, settings);
         }
         return { ids, rects, original: boundsOf(originals) };
     }).sort((one, other) => one.original.y - other.original.y || one.original.x - other.original.x);
@@ -781,6 +788,71 @@ function enforceTaxonomyRanks(
         // whatever moves it afterwards moves the hierarchy it stands in.
         componentOf: new Map(proposed.flatMap(component => component.ids.map(id => [id, component.ids])))
     };
+}
+
+/**
+ * How much deeper a corridor between two ranks has to be for what is written in
+ * it.
+ *
+ * Every association that crosses the gap writes its stereotype and its name in
+ * the middle of itself, which is in the gap. Nothing before this counted them:
+ * the corridor was one `rankSpacing` however many lines had to be written
+ * there, and on gUFO nine of them shared a hundred pixels -- `«participation»`
+ * over `contributedToTrigger`, `{redefines Entity.parts}` through
+ * `«bringingAbout»`, a `*` on top of a role name. The placer that comes later
+ * can only choose among places on a drawing that has already decided there is
+ * no room.
+ *
+ * A line each, not a block each: labels share a corridor side by side as well
+ * as one above another, and measured over the six models a line each is what
+ * clears them -- a block each spreads the drawing and brings the next pair
+ * together. Bounded at twice the spacing, since a corridor deep enough to lose
+ * the rank below it off the screen has stopped being a corridor.
+ */
+function writtenAcross(
+    view: ViewModel,
+    held: ReadonlySet<string>,
+    ranks: ReadonlyMap<string, number>,
+    rank: number,
+    settings: LayoutOptions
+): number {
+    const crossing = view.edges.filter(edge => edge.kind === 'relation'
+        && (edge.stereotype !== undefined || edge.name !== undefined)
+        && held.has(edge.source) && held.has(edge.target)
+        && Math.min(ranks.get(edge.source)!, ranks.get(edge.target)!) <= rank
+        && Math.max(ranks.get(edge.source)!, ranks.get(edge.target)!) > rank);
+    return Math.min(crossing.length * LINE.name, settings.rankSpacing * 2);
+}
+
+/**
+ * How far apart two neighbours in a rank have to be for what is written between
+ * them.
+ *
+ * The other half of the same defect: an association between two classes in one
+ * rank is as long as the gap between them, and the gap was `nodeSpacing`
+ * whatever it had to carry. On gUFO that is `«bringingAbout» broughtAboutBy`
+ * between `Situation` and `Event` -- a hundred and seventy pixels of text on a
+ * sixty pixel line, printed over the `hasEventProperPart` above it.
+ *
+ * The widest reading between the pair, since an inverse pair writes two and the
+ * block is as wide as the wider, plus room for the triangle that follows a name
+ * and the air a label is drawn with.
+ */
+function writtenBetween(view: ViewModel, one: string, other: string): number {
+    let widest = 0;
+    for (const edge of view.edges) {
+        const between = (edge.source === one && edge.target === other)
+            || (edge.source === other && edge.target === one);
+        if (edge.kind !== 'relation' || !between) {
+            continue;
+        }
+        widest = Math.max(
+            widest,
+            edge.name ? textWidth(edge.name, FONT.edge) : 0,
+            edge.stereotype ? textWidth(`\u00ab${edge.stereotype}\u00bb`, FONT.edgeStereotype) : 0
+        );
+    }
+    return widest === 0 ? 0 : widest + LABEL_AIR;
 }
 
 /** What the taxonomy pass decided, for the passes that run after it. */

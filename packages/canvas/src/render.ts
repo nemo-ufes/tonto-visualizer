@@ -12,7 +12,9 @@ import type { DisplayOptions } from 'tonto-view';
 import { inversePairs } from 'tonto-view/inverses';
 import type { Point, Rect } from './geometry.js';
 import { alongPath, boundsOf, centerOf, distanceToPath, segmentHitsRect } from './geometry.js';
-import { attributeLines, FONT, multiplicityLabel, NODE, nodeLabel, stereotypeLabel, textWidth } from './measure.js';
+import {
+    attributeLines, FONT, LINE, multiplicityLabel, NODE, nodeLabel, stereotypeLabel, textWidth
+} from './measure.js';
 import { isRelator } from './ontology.js';
 import type { Positions } from './place.js';
 import { assignPorts, endKey } from './ports.js';
@@ -1005,7 +1007,6 @@ function centreLabel(
 }
 
 /** Height of each line of a centre label, and how far the triangle stands off. */
-const LINE = { stereotype: 12, name: 14 } as const;
 const MARKER = 9;
 
 /** The direction the line runs at the point nearest `at`, source to target. */
