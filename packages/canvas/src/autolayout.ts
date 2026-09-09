@@ -839,20 +839,26 @@ function writtenAcross(
  * and the air a label is drawn with.
  */
 function writtenBetween(view: ViewModel, one: string, other: string): number {
-    let widest = 0;
+    const each: number[] = [];
     for (const edge of view.edges) {
         const between = (edge.source === one && edge.target === other)
             || (edge.source === other && edge.target === one);
         if (edge.kind !== 'relation' || !between) {
             continue;
         }
-        widest = Math.max(
-            widest,
+        const width = Math.max(
             edge.name ? textWidth(edge.name, FONT.edge) : 0,
             edge.stereotype ? textWidth(`\u00ab${edge.stereotype}\u00bb`, FONT.edgeStereotype) : 0
         );
+        if (width > 0) {
+            each.push(width);
+        }
     }
-    return widest === 0 ? 0 : widest + LABEL_AIR;
+    // Room for each of them, not for the widest: two associations between one
+    // pair of classes write two labels in that gap, and the space for one is
+    // where `«bringingAbout» broughtAboutBy` and `«triggering»
+    // contributedToTrigger` were drawn over each other on gUFO.
+    return each.reduce((total, width) => total + width + LABEL_AIR, 0);
 }
 
 /** What the taxonomy pass decided, for the passes that run after it. */

@@ -172,3 +172,16 @@ not need another path that can go stale when a repository moves.
   measured first: it helped `boats` and made gUFO worse under every centre-label
   placement strategy, since it reserves room between ranks only and a straight
   drawing throws ELK's edge routing away. 178 tests.
+- The gap between two neighbours in a rank now fits each of the readings written
+  between them rather than the widest of them: two associations between one pair
+  write two labels there, which is why `«bringingAbout» broughtAboutBy` and
+  `«triggering» contributedToTrigger` were drawn over each other between gUFO's
+  `Situation` and `Event`. gUFO: 7 overlapping label pairs to 6, and the ink they
+  cover 0.29% of the label area to 0.18%, for 5% more width; nothing else moves.
+- Two other ways of making room were measured and dropped. Widening a gap by the
+  lines passing through it bought one collision for a fifth of gUFO's width and
+  cost `university` its clean sheet. Raising `nodeSpacing` -- the obvious answer
+  to a crowded drawing -- makes it worse: at 80 gUFO goes from 7 pairs to 8 and
+  `showcase` from none to two; at 100 gUFO reaches 13. A longer line carries the
+  same text past more of everything else, so the room has to be made where the
+  text is.

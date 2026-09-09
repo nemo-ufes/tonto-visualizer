@@ -182,10 +182,23 @@ describe('arranging a model', () => {
             return right!.x - (left!.x + left!.width);
         };
 
+        const twice = withLabel(true);
+        twice.edges.push({
+            kind: 'relation', id: 'sideways2',
+            source: 'Sample::Sub0', target: 'Sample::Sub1',
+            stereotype: 'triggering', name: 'contributedToTrigger',
+            sourceEnd: { isConst: false, isAddOnly: false },
+            targetEnd: { isConst: false, isAddOnly: false }
+        });
+
         const bare = gapOf(await arrange(withLabel(false), true));
         const labelled = gapOf(await arrange(withLabel(true), true));
+        const both = gapOf(await arrange(twice, true));
         expect(bare).toBe(defaultLayoutOptions.nodeSpacing);
         expect(labelled).toBeGreaterThan(textWidth('broughtAboutBy', FONT.edge));
+        // Two associations between one pair write two labels there, and the
+        // room for one is where they were drawn over each other.
+        expect(both).toBeGreaterThan(labelled + textWidth('contributedToTrigger', FONT.edge));
     });
 
     test('centres a generalization when an association joins the same classes', async () => {
