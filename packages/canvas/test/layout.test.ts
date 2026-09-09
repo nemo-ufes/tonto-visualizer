@@ -589,6 +589,41 @@ describe('packages and the layout', () => {
         expect(within(relator.y, relata[0]!.y, relata[1]!.y)).toBe(true);
     });
 
+    /**
+     * A relator that mediates one class is dependent on that class and on
+     * nothing else, and every other rule about relators is about betweenness --
+     * which needs two. So nothing held `Marriage`, which `involves [2] (const
+     * spouses) Spouse` in one line and one relatum: on `boats` it came out a
+     * thousand pixels from the `Spouse` it involves, with the longest line in
+     * the drawing, and no rule considered that wrong.
+     */
+    test('seats a relator that mediates one class beside that class', async () => {
+        const clazz = (name: string, stereotype: string, color: string) => ({
+            id: `Sample::${name}`, kind: 'class' as const, name, package: 'Sample',
+            stereotype, color, isExternal: false, attributes: []
+        });
+        const view: ViewModel = {
+            groups: [{
+                id: 'pkg:Sample', name: 'Sample', isExternal: false,
+                nodes: ['Sample::Spouse', 'Sample::Marriage']
+            }],
+            nodes: [clazz('Spouse', 'role', '#FFDADD'), clazz('Marriage', 'relator', '#99FF99')],
+            edges: [{
+                kind: 'relation', id: 'involves', stereotype: 'mediation',
+                source: 'Sample::Marriage', target: 'Sample::Spouse',
+                sourceEnd: { isConst: false, isAddOnly: false },
+                targetEnd: { cardinality: '2', role: 'spouses', isConst: true, isAddOnly: false }
+            }],
+            gensets: []
+        };
+
+        const positions = await arrange(view, true);
+        const spouse = positions['Sample::Spouse']!;
+        const marriage = positions['Sample::Marriage']!;
+        expect(marriage.y + marriage.height / 2).toBe(spouse.y + spouse.height / 2);
+        expect(marriage.x).toBeGreaterThanOrEqual(spouse.x + spouse.width);
+    });
+
     test('does not settle an unselected relator during a partial layout', async () => {
         const clazz = (name: string, stereotype: string) => ({
             id: `Sample::${name}`, kind: 'class' as const, name, package: 'Sample',
