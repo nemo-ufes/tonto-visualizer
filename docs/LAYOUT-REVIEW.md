@@ -319,6 +319,41 @@ the rest of its label handling serves, is thrown away here anyway. Deepening the
 corridor is the same idea applied where this repository already decides the
 geometry.
 
+## How much room a drawing needs
+
+The two rules above make room where a label has to go. They do not answer the
+prior question: how much room the drawing starts with. The default was 60
+between neighbours and 100 between ranks, and on gUFO's
+`Endurant`/`Situation`/`Event` neighbourhood -- eight labelled associations
+meeting three classes -- that is not enough to tell one association's labels
+from the next's, whatever the arrangement does with them.
+
+Six things were tried against it, and only the last one works:
+
+| tried | result |
+|---|---|
+| handing ELK the edge labels, so its layered algorithm reserves space | `boats` better, gUFO worse, under every centre-label strategy |
+| `elk.spacing.edgeEdge` and `elk.spacing.edgeNode` | nothing: a straight drawing discards ELK's routes |
+| widening a gap by the lines passing through it | one collision for a fifth of gUFO's width, and `university` worse |
+| `elk.margins` per class, sized by the associations meeting it | inert: the JSON API ignores node margins in elkjs 0.12 |
+| making the label placer cheaper to move, and its reach longer | nothing: the candidates, not the cost, are the limit |
+| **more room between the classes** | the neighbourhood reads |
+
+The measurements are worth reading carefully, because they say something that
+looks like a contradiction: counting label collisions, more spacing changes
+almost nothing -- gUFO sits at about half its labels touching another or having
+a line through them at 60, at 100 and at 140. Counting is not reading. What
+changes is that at 60 the eight stereotypes of that neighbourhood are one grey
+mass and at 100 each sits on its own line, which no collision count expresses:
+the labels were never *overlapping*, they were merely indistinguishable.
+
+So the default is now 100 and 140, and -- since how much room a model needs is a
+property of the model -- the panel offers the three spacings the preview this
+replaces offered: tight (60/100, what it was), comfortable (100/140, the
+default) and roomy (150/200). A taxonomy of bare classes reads at the tight one;
+a neighbourhood where a dozen associations meet two classes may want the roomy
+one, and no arrangement can make text fit where it will not fit.
+
 ## What is worth doing next, in payoff order
 
 1. **Teach `enforceTaxonomyRanks` the generalization sets**: one rank for a

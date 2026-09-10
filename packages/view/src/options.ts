@@ -86,7 +86,14 @@ export interface LayoutOptions {
     algorithm: 'layered' | 'stress' | 'mrtree' | 'radial' | 'force';
     /** Which way generalizations point. Down is what a class diagram is read as. */
     direction: 'DOWN' | 'RIGHT';
-    /** Between neighbours in a rank. */
+    /**
+     * Between neighbours in a rank.
+     *
+     * Room for what is written where two classes meet, which is more than room
+     * for the boxes: every association ending at a class writes its
+     * multiplicity and its role name within a few dozen pixels of that border,
+     * and an ontology crowds a handful of classes with a dozen lines each.
+     */
     nodeSpacing: number;
     /** Between one rank and the next -- a supertype and its subtypes. */
     rankSpacing: number;
@@ -98,11 +105,39 @@ export interface LayoutOptions {
     groupByPackage: boolean;
 }
 
+/**
+ * The three spacings the panel offers, which is what the preview this replaces
+ * offered and for the same reason: how much room a drawing needs is a property
+ * of the model, not of the tool. A taxonomy of bare classes reads at the tight
+ * one; a neighbourhood where a dozen associations meet two classes needs the
+ * roomy one, and no arrangement can make that text fit where it will not fit.
+ */
+export const spacings = {
+    tight: { nodeSpacing: 60, rankSpacing: 100 },
+    comfortable: { nodeSpacing: 100, rankSpacing: 140 },
+    roomy: { nodeSpacing: 150, rankSpacing: 200 }
+} as const;
+
+export type SpacingName = keyof typeof spacings;
+
+/** The spacing a layout is at, for a panel that offers the three by name. */
+export function spacingOf(layout: Pick<LayoutOptions, 'nodeSpacing' | 'rankSpacing'>): SpacingName {
+    const named = (Object.entries(spacings) as Array<[SpacingName, typeof spacings[SpacingName]]>)
+        .find(([, one]) => one.nodeSpacing === layout.nodeSpacing && one.rankSpacing === layout.rankSpacing);
+    return named?.[0] ?? 'comfortable';
+}
+
 export const defaultLayoutOptions: LayoutOptions = {
     algorithm: 'layered',
     direction: 'DOWN',
-    nodeSpacing: 60,
-    rankSpacing: 100,
+    // Wider than a drawing of bare boxes would need, because a drawing of bare
+    // boxes is not what this is: on gUFO, where a dozen associations meet
+    // `Event` and `Endurant`, 60 and 100 put every stereotype, role name and
+    // multiplicity of that neighbourhood into the same handful of pixels, and
+    // the region could not be read at all. Measured collisions barely move
+    // between the two -- what moves is whether the labels of one association
+    // can be told from the labels of the next, which is what a reader is doing.
+    ...spacings.comfortable,
     groupByPackage: true
 };
 
