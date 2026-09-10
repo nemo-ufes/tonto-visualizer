@@ -10,6 +10,7 @@
     "exports": {
         ".": "./out/index.js",
         "./inverses": "./out/inverses.js",
+        "./options": "./out/options.js",
         "./palette": "./out/palette.js",
         "./selection": "./out/selection.js",
         "./session": "./out/session.js"

@@ -12,6 +12,8 @@ import type { ContentOptions, DisplayOptions, EdgeRoute, LayoutOptions, ViewMode
 import { natureLegend } from 'tonto-view/palette';
 // By subpath, as the canvas imports `inversePairs`: the package's own entry
 // pulls in the derivation, and with it Langium and half of Node.
+import type { SpacingName } from 'tonto-view/options';
+import { spacingOf, spacings } from 'tonto-view/options';
 import { nodesInSelection } from 'tonto-view/selection';
 import type { Corner, Handle, Point, Rect, Size } from 'tonto-canvas/draw';
 import {
@@ -903,6 +905,18 @@ function fillOptions(): void {
             toggle('Cluster packages', layout?.groupByPackage ?? true,
                 value => host.postMessage({ type: 'layout', layout: { groupByPackage: value } }))
         );
+    }
+    // Offered wherever an arrangement uses them, which is every algorithm: how
+    // much room a drawing needs is a property of the model rather than of the
+    // tool, and a neighbourhood where a dozen associations meet two classes
+    // cannot be read at the spacing a bare taxonomy is comfortable at.
+    if (layout) {
+        arrangement.push(choice('Spacing', [
+            ['tight', 'Tight'],
+            ['comfortable', 'Comfortable'],
+            ['roomy', 'Roomy']
+        ], spacingOf(layout),
+            value => host.postMessage({ type: 'layout', layout: { ...spacings[value as SpacingName] } })));
     }
     optionsPanel.append(section('Shape', arrangement));
     optionsPanel.append(section('Drawn', displayRows.map(([key, label]) =>

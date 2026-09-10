@@ -185,3 +185,20 @@ not need another path that can go stale when a repository moves.
   `showcase` from none to two; at 100 gUFO reaches 13. A longer line carries the
   same text past more of everything else, so the room has to be made where the
   text is.
+- Opened the default spacing to 100 between neighbours and 140 between ranks,
+  and gave the panel the three spacings the PlantUML preview offered: tight
+  (60/100, what the default was), comfortable and roomy. gUFO's
+  `Endurant`/`Situation`/`Event` neighbourhood -- eight labelled associations
+  meeting three classes -- could not be read at the old default, and reads at
+  the new one.
+- The measurement said otherwise and was wrong to. Counting labels that touch
+  another label or carry a line through them, gUFO sits at about half of them at
+  60, at 100 and at 140 alike; what changes is that at 60 the eight stereotypes
+  of that neighbourhood are one grey mass and at 100 each is on its own line.
+  Counting is not reading, and the drawings decided this one.
+- Four other ways to the same end were measured and dropped: ELK's own edge
+  labels, its edge-edge and edge-node spacings, a gap widened by the lines
+  passing through it, and `elk.margins` per class -- which the JSON API ignores
+  in elkjs 0.12 entirely. Making the label placer cheaper to move and its reach
+  longer changed nothing either: what limits it is the candidates it is offered,
+  which all lie along its own line. 181 tests.

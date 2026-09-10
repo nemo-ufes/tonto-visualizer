@@ -232,6 +232,28 @@ describe('the webview and its host protocol', () => {
     });
 
     /**
+     * How much room a drawing needs is a property of the model rather than of
+     * the tool: a taxonomy of bare classes reads at the tight spacing, and a
+     * neighbourhood where a dozen associations meet two classes cannot be read
+     * at it however the boxes are arranged. So the three are offered, as the
+     * preview this replaces offered them, and the panel sends both numbers.
+     */
+    test('offers the three spacings and sends the one chosen', () => {
+        sendModel();
+        openOptions();
+
+        const spacing = chooser('Spacing');
+        expect([...spacing.options].map(option => option.value)).toEqual(['tight', 'comfortable', 'roomy']);
+        expect(spacing.value).toBe('comfortable');
+
+        spacing.value = 'roomy';
+        spacing.dispatchEvent(new Event('change', { bubbles: true }));
+        expect(posted('layout').at(-1)).toEqual({
+            type: 'layout', layout: { nodeSpacing: 150, rankSpacing: 200 }
+        });
+    });
+
+    /**
      * A branch of a shared tree is a generalization: it can be chosen and it
      * can be opened. What it cannot be is routed -- the tree decides where its
      * branches run -- so it is offered no handle to bend, which every other
