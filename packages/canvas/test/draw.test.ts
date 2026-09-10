@@ -469,6 +469,30 @@ describe('drawing', () => {
         expect(gap).toBeLessThan(40);
     });
 
+    /**
+     * Which end the triangle stands at is a question about the drawing, not
+     * about the model. `Contract binds Employee` reads source to target
+     * whichever side of the page the arrangement puts them on, and with the
+     * target on the left the reading runs leftwards -- so the triangle belongs
+     * before the name, where the reading is going. After it, pointing back over
+     * the word just read, is what gUFO drew as `broughtAboutBy ◀`.
+     */
+    test('puts the triangle before the name when the reading runs to the left', () => {
+        const view = related();
+        const leftwards = {
+            'Sample::Contract': { x: 400, y: 0, width: 120, height: 42 },
+            'Sample::Employee': { x: 0, y: 0, width: 120, height: 42 }
+        };
+        const svg = render({ view, positions: leftwards, display }).svg;
+        const name = svg.match(/<text[^>]*? x="([-\d.]+)" y="([-\d.]+)"[^>]*>binds</)!;
+        const triangle = svg.match(/<polygon class="tv-reading" points="([-\d.]+),([-\d.]+) ([-\d.]+),/)!;
+        const gap = Number(triangle[1]) - Number(name[1]);
+        expect(gap).toBeLessThan(0);
+        expect(gap).toBeGreaterThan(-40);
+        // Still pointing the way it reads, which is now leftwards.
+        expect(Number(triangle[3]) - Number(triangle[1])).toBeGreaterThan(0);
+    });
+
     test('draws an inverse pair as one line', () => {
         const output = drawnPair();
         // Two relations, one association: two lines between the same pair of

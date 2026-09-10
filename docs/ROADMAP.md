@@ -202,3 +202,11 @@ not need another path that can go stale when a repository moves.
   in elkjs 0.12 entirely. Making the label placer cheaper to move and its reach
   longer changed nothing either: what limits it is the candidates it is offered,
   which all lie along its own line. 181 tests.
+- The reading triangle now stands on the side the reading is going rather than
+  on the side the model is written. `Contract binds Employee` reads source to
+  target whichever way the arrangement lays the two out, and where the target
+  came out on the left the triangle was drawn after the name, pointing back over
+  the word just read: gUFO printed `broughtAboutBy ◀`, `hasReifiedQualityValue
+  ◀` and `hasEventProperPart ◀`, and now writes the triangle first. A
+  vertical reading keeps it after the name, which is where a reader looks. 182
+  tests.
