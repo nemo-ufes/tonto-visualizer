@@ -981,24 +981,36 @@ function centreLabel(
 
     let markup = '';
     let top = at.y - height / 2;
+    const along = directionNear(points, at);
     for (const one of lines) {
         if (one.stereotype) {
             markup += label(at.x, top + LINE.stereotype - 2, one.stereotype, theme, 'middle', 'tv-edge-stereotype', owner);
             top += LINE.stereotype;
         }
         if (one.name) {
-            // The name keeps the middle and the triangle sits just off the end
-            // it points at, which is where a reader expects the arrow of
-            // "A has B ▶" to be -- and of "◀ B is had by A" on the way back.
+            // The name keeps the middle and the triangle stands off the end it
+            // points at: "A has B ▶", and "◀ B is had by A" on the way back.
+            //
+            // Which end that is, is a question about the drawing rather than
+            // about the model. A reading runs source to target or target to
+            // source, but either can come out pointing left on the page --
+            // whichever of the two classes the arrangement put on the right --
+            // and the triangle then belongs on the left of the name, where the
+            // reading is going. Taking the side from the model instead printed
+            // `broughtAboutBy ◀` on gUFO: an arrow after the name, pointing
+            // back over it at the word it had just been read past.
             const baseline = top + LINE.name - 3;
             const marker = markerOf(one);
             const back = one.direction === 'backward' ? -1 : 1;
-            const centre = at.x - back * marker / 2;
+            const reading = { x: along.x * back, y: along.y * back };
+            // A vertical reading has no side to prefer, and after the name is
+            // where a reader looks first.
+            const side = reading.x < 0 ? -1 : 1;
+            const centre = at.x - side * marker / 2;
             markup += label(centre, baseline, one.name, theme, 'middle', undefined, owner);
             if (marker > 0) {
-                const along = directionNear(points, at);
-                const tip = { x: centre + back * (nameWidth(one) / 2 + marker), y: baseline - 3.5 };
-                markup += readingTriangle(tip, { x: along.x * back, y: along.y * back });
+                const tip = { x: centre + side * (nameWidth(one) / 2 + marker), y: baseline - 3.5 };
+                markup += readingTriangle(tip, reading);
             }
             top += LINE.name;
         }
