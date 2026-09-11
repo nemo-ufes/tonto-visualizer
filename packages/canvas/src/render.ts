@@ -14,6 +14,7 @@ import type { Point, Rect } from './geometry.js';
 import { alongPath, boundsOf, centerOf, distanceToPath, segmentHitsRect } from './geometry.js';
 import { attributeLines, FONT, multiplicityLabel, NODE, nodeLabel, stereotypeLabel, textWidth } from './measure.js';
 import type { Positions } from './place.js';
+import type { TreeStem } from './ports.js';
 import { assignPorts, endKey } from './ports.js';
 import { routeEdge } from './route.js';
 import type { Theme } from './theme.js';
@@ -165,6 +166,13 @@ export function render(input: RenderInput): Rendered {
         .filter((rect): rect is Rect => rect !== undefined);
     const groups = display.showPackageGroups ? groupBoxes(view, positions) : [];
 
+    // Decided before ports are assigned, not only before routing: a tree's
+    // member edges take no share of the border themselves -- the shared stem
+    // does, in their place -- so the fan has to know which edges those are
+    // before it runs, not skip them only once it comes time to draw.
+    const trees = planTrees(view, positions);
+    const stems = treeStems(trees.plans, positions);
+
     // Where each line meets each box, spread along the border so that two
     // associations between the same neighbours do not arrive as one line --
     // except at a relator, where a mediation is anchored on the ray out of the
@@ -174,15 +182,14 @@ export function render(input: RenderInput): Rendered {
     // either, or the line that is drawn arrives beside the space kept for it.
     const inverses = inversePairs(view.edges);
     const drawn = view.edges.filter(edge => !inverses.covered.has(edge.id));
-    const ports = assignPorts(drawn, positions, mediationsThrough(view, positions, inverses.covered));
+    const portInput = drawn.filter(edge => !trees.covered.has(edge.id));
+    const assigned = assignPorts(portInput, positions, mediationsThrough(view, positions, inverses.covered), stems);
+    const ports = assigned.ends;
     const loops = loopIndex(view);
 
     // Every route is computed before any label is placed. A label belongs to one
     // line and has to be read against it, so the placer has to know where all of
     // them run -- including the ones drawn after it.
-    // Decided before anything is routed: the edges a tree takes over are not
-    // lines of their own.
-    const trees = planTrees(view, positions);
     const paths: Record<string, Point[]> = {};
     const bends: Point[] = [];
     for (const edge of drawn) {
@@ -210,7 +217,7 @@ export function render(input: RenderInput): Rendered {
     const placer = new LabelPlacer(rects, groups.map(group => group.rect), { ...paths });
     const buses: BusLine[] = [];
     const treeMarkup = trees.plans
-        .map(plan => drawTree(plan, positions, theme, placer, rects, buses))
+        .map(plan => drawTree(plan, positions, theme, placer, rects, buses, assigned.stems))
         .join('');
 
     // Labels are drawn last, over the boxes. A line may pass behind a class --
@@ -1078,9 +1085,43 @@ interface BusLine {
     right: number;
 }
 
+/** The key `assignPorts` was given the tree's stem under, and this looks it back up by. */
+function treeStemId(plan: TreePlan): string {
+    return `tree:${plan.marker ?? plan.general}`;
+}
+
+/**
+ * Where each generalization tree reaches towards, so `assignPorts` can give
+ * its shared stem a fan slot on the general's border beside whatever
+ * associations leave from the same side -- instead of the tree choosing a
+ * place of its own that knows nothing about them.
+ */
+function treeStems(plans: TreePlan[], positions: Positions): TreeStem[] {
+    const stems: TreeStem[] = [];
+    for (const plan of plans) {
+        const general = positions[plan.general];
+        const children = plan.children.map(id => positions[id]).filter((rect): rect is Rect => rect !== undefined);
+        if (!general || children.length < 2) {
+            continue;
+        }
+        const below = children.every(rect => rect.y >= general.y + general.height);
+        stems.push({
+            id: treeStemId(plan),
+            node: plan.general,
+            towards: {
+                x: children.reduce((sum, rect) => sum + centerOf(rect).x, 0) / children.length,
+                y: below
+                    ? Math.min(...children.map(rect => rect.y))
+                    : Math.max(...children.map(rect => rect.y + rect.height))
+            }
+        });
+    }
+    return stems;
+}
+
 function drawTree(
     plan: TreePlan, positions: Positions, theme: Theme, placer: LabelPlacer, obstacles: Rect[] = [],
-    buses: BusLine[] = []
+    buses: BusLine[] = [], stems: ReadonlyMap<string, Point> = new Map()
 ): string {
     const general = positions[plan.general];
     const children = plan.children
@@ -1093,11 +1134,16 @@ function drawTree(
     const below = children.every(entry => entry.rect.y >= general.y + general.height);
 
     const direction = below ? 1 : -1;
-    // Each of a parent's trees gets its own place along the border, as an
-    // association would.
+    // Each of a parent's trees gets its own place along the border, from the
+    // same fan `assignPorts` spread the associations along -- reserved there by
+    // a stem standing in for the whole tree, so the triangle does not land on
+    // a line one of its own siblings already claimed. Only a tree `assignPorts`
+    // was never told about -- none should exist -- falls back to dividing the
+    // border evenly by lane.
+    const stem = stems.get(treeStemId(plan));
     const span = Math.max(general.width - 28, 0);
     const apex = {
-        x: Math.round(general.x + (general.width - span) / 2
+        x: stem ? Math.round(stem.x) : Math.round(general.x + (general.width - span) / 2
             + span * (plan.lane.index + 1) / (plan.lane.count + 1)),
         y: below ? general.y + general.height : general.y
     };
@@ -1307,15 +1353,26 @@ function busDepth(
     return best.depth;
 }
 
-/** A tree reads as one only where every subtype is on the same side. */
+/**
+ * A tree reads as one only where every subtype is on the same side.
+ *
+ * Not to the pixel, though: a class dragged a little short of clearing the
+ * general's edge is still being read as "below" by whoever dropped it there,
+ * and the shared triangle disappearing along with the `{disjoint, complete}`
+ * it carries over a few missed pixels is a worse surprise than the bus
+ * tolerating them. The slack is not there for a subtype actually moved beside
+ * its general -- a real rearrangement -- which still falls back to each
+ * specialization drawing its own line, exactly as an ungathered one always has.
+ */
 function canDrawTree(generalId: string, childIds: string[], positions: Positions): boolean {
     const general = positions[generalId];
     const children = childIds.map(id => positions[id]).filter((rect): rect is Rect => rect !== undefined);
     if (!general || children.length < 2) {
         return false;
     }
-    return children.every(rect => rect.y >= general.y + general.height)
-        || children.every(rect => rect.y + rect.height <= general.y);
+    const slack = 24;
+    return children.every(rect => rect.y + slack >= general.y + general.height)
+        || children.every(rect => rect.y + rect.height <= general.y + slack);
 }
 
 /**
