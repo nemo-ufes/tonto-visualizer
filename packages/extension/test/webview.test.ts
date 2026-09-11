@@ -161,6 +161,7 @@ describe('the webview and its host protocol', () => {
     });
 
     test('prunes selection and reflects filters while showing a stale model', () => {
+        openOptions();
         window.dispatchEvent(new MessageEvent('message', {
             data: { type: 'select', ids: ['Sample::Person', 'works-for'] }
         }));
@@ -226,5 +227,60 @@ describe('the webview and its host protocol', () => {
 
         expect((document.getElementById('hide') as HTMLButtonElement).disabled).toBe(true);
         expect(posted('hide')).toHaveLength(before);
+    });
+
+    test('redraws a generalization set live while one of its classes is dragged', () => {
+        // A tree has no path of its own for `redrawIncidentEdges` to nudge --
+        // it is drawn once from every child's position together -- so dragging
+        // a class in one used to leave the shared triangle exactly where it
+        // was until the drag ended, while every ordinary association followed
+        // the pointer.
+        const genset = 'set:Sample::Sex';
+        const treeView: ViewModel = {
+            groups: [],
+            gensets: [{
+                id: genset, name: 'Sex', disjoint: true, complete: true,
+                general: 'Sample::Person', specifics: ['Sample::Man', 'Sample::Woman'], categorizers: []
+            }],
+            nodes: ['Person', 'Man', 'Woman'].map(name => ({
+                id: `Sample::${name}`, kind: 'class' as const, name, package: 'Sample',
+                color: '#eee', isExternal: false, attributes: []
+            })),
+            edges: [
+                { kind: 'generalization', id: 'gen:Man', source: 'Sample::Man', target: 'Sample::Person', genset },
+                { kind: 'generalization', id: 'gen:Woman', source: 'Sample::Woman', target: 'Sample::Person', genset }
+            ]
+        };
+        window.dispatchEvent(new MessageEvent('message', { data: {
+            type: 'model', view: treeView,
+            positions: {
+                'Sample::Person': { x: 100, y: 0, width: 120, height: 60 },
+                'Sample::Man': { x: 0, y: 200, width: 120, height: 42 },
+                'Sample::Woman': { x: 200, y: 200, width: 120, height: 42 }
+            },
+            routes: {}, display: defaultDisplayOptions, content: defaultContentOptions,
+            layout: defaultLayoutOptions, packages: ['Sample'], filters: [], title: 'sample.tonto'
+        } }));
+
+        const before = document.querySelector('.tv-tree')!.outerHTML;
+        document.querySelector('[data-node="Sample::Man"]')!.dispatchEvent(
+            new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, clientX: 0, clientY: 200 }));
+        document.getElementById('viewport')!.dispatchEvent(
+            new PointerEvent('pointermove', { bubbles: true, pointerId: 1, clientX: 300, clientY: 200 }));
+
+        expect(document.querySelector('.tv-tree')!.outerHTML).not.toBe(before);
+    });
+
+    test('closes the options panel on a pointerdown outside it, not on one inside', () => {
+        openOptions();
+        const options = document.getElementById('options') as HTMLElement;
+
+        document.getElementById('toolbar')!.dispatchEvent(
+            new PointerEvent('pointerdown', { bubbles: true, pointerId: 1 }));
+        expect(options.hidden).toBe(true);
+
+        openOptions();
+        options.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1 }));
+        expect(options.hidden).toBe(false);
     });
 });

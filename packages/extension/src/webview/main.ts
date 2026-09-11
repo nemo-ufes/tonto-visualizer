@@ -195,7 +195,7 @@ function drawHandles(): void {
     group.setAttribute('data-handles', id);
     // Sized against the zoom, so a handle is the same target on screen whether
     // the diagram is being read whole or a corner of it is filling the panel.
-    const radius = 4.5 / scale;
+    const radius = 3.5 / scale;
     const rect = positions[id];
     const points = paths[id];
     if (rect) {
@@ -519,8 +519,25 @@ viewport.addEventListener('pointermove', event => {
         const group = canvas.querySelector(`[data-node="${cssEscape(id)}"]`) as SVGGElement | null;
         group?.setAttribute('transform', `translate(${positions[id]!.x - origin.x}, ${positions[id]!.y - origin.y})`);
     }
-    redrawIncidentEdges(new Set(dragging.ids));
+    const moved = new Set(dragging.ids);
+    if (touchesGenset(moved)) {
+        // A tree is not a line of its own -- it is drawn once from every
+        // child's position at once, with a bus depth and leg bends chosen
+        // around all of them together -- so there is no single incident path
+        // to nudge the way an ordinary association's is. Cheapest correct
+        // answer during the drag itself is the same full redraw the drag
+        // already gets when it ends.
+        draw();
+    } else {
+        redrawIncidentEdges(moved);
+    }
 });
+
+/** Whether any of these classes is a generalization set's general or a specific in one. */
+function touchesGenset(ids: ReadonlySet<string>): boolean {
+    return view.gensets.some(genset =>
+        (genset.general !== undefined && ids.has(genset.general)) || genset.specifics.some(id => ids.has(id)));
+}
 
 viewport.addEventListener('pointerup', () => {
     const drag = dragging;
@@ -690,7 +707,20 @@ viewport.addEventListener('dblclick', event => {
 
 viewport.addEventListener('wheel', event => {
     event.preventDefault();
-    zoomAt(scale * (event.deltaY < 0 ? 1.12 : 1 / 1.12), event.clientX, event.clientY);
+    // A trackpad's pinch sends a wheel event with `ctrlKey` set -- the
+    // browsers' own way of folding the gesture into the wheel event, since
+    // nobody pinches a trackpad while holding Control. An ordinary two-finger
+    // scroll carries no such key, and pans, the way every other Mac app reads
+    // it; a plain mouse wheel has no gesture to tell apart from scrolling
+    // either, so it pans too, and zooms the way it always has -- with the
+    // buttons, or Ctrl/⌘ held down.
+    if (event.ctrlKey || event.metaKey) {
+        zoomAt(scale * (event.deltaY < 0 ? 1.12 : 1 / 1.12), event.clientX, event.clientY);
+        return;
+    }
+    panX -= event.deltaX;
+    panY -= event.deltaY;
+    applyViewport();
 }, { passive: false });
 
 window.addEventListener('keydown', event => {
@@ -765,12 +795,23 @@ element('arrange').addEventListener('click', () => {
 element('hide').addEventListener('click', hideSelection);
 // No format: the name the modeller gives the file in the dialog decides.
 element('exportButton').addEventListener('click', () => host.postMessage({ type: 'export' }));
-element('optionsButton').addEventListener('click', () => {
+const optionsButton = element('optionsButton');
+optionsButton.addEventListener('click', () => {
     optionsPanel.hidden = !optionsPanel.hidden;
     if (!optionsPanel.hidden) {
         fillOptions();
     }
 });
+// A panel that only the gear can close is a panel that has to be found again
+// to be dismissed. Caught on the way down so it shuts before whatever was
+// clicked -- the canvas, a button -- answers the same pointerdown.
+window.addEventListener('pointerdown', event => {
+    const target = event.target as Node | null;
+    if (!optionsPanel.hidden && target
+        && !optionsPanel.contains(target) && !optionsButton.contains(target)) {
+        optionsPanel.hidden = true;
+    }
+}, true);
 
 /** The options panel is rebuilt from the state the host holds, never from itself. */
 function fillOptions(): void {
