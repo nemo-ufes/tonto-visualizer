@@ -156,6 +156,30 @@ describe('telling one line from another', () => {
         expect(svg.match(/class="tv-marker"/g)).toHaveLength(1);
     });
 
+    test('keeps the tree through a drag that falls a little short of clearing the general', () => {
+        // A drag that meant to slide Child sideways and landed 15px shy of
+        // clearing Person's own edge should not cost the set its shared
+        // triangle -- that is still "below" to whoever dropped it there.
+        const genset = 'set:Sample::PersonAges';
+        const view: ViewModel = {
+            groups: [],
+            nodes: ['Person', 'Child', 'Adult'].map(classNode),
+            edges: [generalization('Child', 'Person', genset), generalization('Adult', 'Person', genset)],
+            gensets: [{
+                id: genset, name: 'PersonAges', disjoint: true, complete: true,
+                general: 'Sample::Person', specifics: ['Sample::Child', 'Sample::Adult'], categorizers: []
+            }]
+        };
+        const positions = {
+            'Sample::Person': { x: 100, y: 0, width: 120, height: 60 },
+            'Sample::Child': { x: 0, y: 45, width: 120, height: 42 },
+            'Sample::Adult': { x: 200, y: 200, width: 120, height: 42 }
+        };
+        const svg = render({ view, positions, display }).svg;
+
+        expect(svg.match(/class="tv-edge tv-tree"/g)).toHaveLength(1);
+    });
+
     test('anchors lines to one class in the order they leave in', () => {
         // Three classes on one rank, as a layered layout leaves them, reached
         // from the right side of one class. Every far centre has the same y, so

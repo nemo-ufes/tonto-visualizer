@@ -29,7 +29,7 @@
  */
 
 import type { Point, Rect, Side } from './geometry.js';
-import { borderPoint, centerOf, sideOf } from './geometry.js';
+import { centerOf, sideOf } from './geometry.js';
 
 export interface EdgeEnds {
     source: Point;
@@ -123,12 +123,32 @@ export function endKey(edge: string, node: string): string {
     return `${edge}@${node}`;
 }
 
+/**
+ * A generalization tree's stem, competing for its share of the general's
+ * border the same way an association does.
+ *
+ * A genset gathers several specializations into one shared triangle, drawn by
+ * its own code rather than as an ordinary edge -- so without this, the border
+ * space its stem needs is not reserved by anything, and the associations
+ * fanned out beside it are placed as though the tree were not there at all.
+ */
+export interface TreeStem {
+    /** A key of the caller's choosing, distinct from every edge id. */
+    id: string;
+    /** The general the stem attaches to. */
+    node: string;
+    /** Where the tree reaches towards, for the fan order and the aim through centre. */
+    towards: Point;
+}
+
 export function assignPorts(
     edges: Array<{ id: string; source: string; target: string; kind?: string }>,
     positions: Record<string, Rect>,
     /** The ends to aim through the centre of the box, by `endKey`. */
-    through: ReadonlySet<string> = new Set()
-): Map<string, EdgeEnds> {
+    through: ReadonlySet<string> = new Set(),
+    /** Generalization-set stems, sharing the fan on the general's side of the border. */
+    stems: readonly TreeStem[] = []
+): { ends: Map<string, EdgeEnds>; stems: Map<string, Point> } {
     // The direction everything that goes somewhere leaves in, by class, so that
     // a loop can turn at the corner with the most room around it.
     const leaving = new Map<string, number[]>();
@@ -165,13 +185,29 @@ export function assignPorts(
             });
             continue;
         }
+        // Taxonomy is read through the centre of each class, same as a
+        // mediation through its relator -- so it takes the same `through`
+        // treatment, aimed at first through the far box's centre and then
+        // refined onto the point that box was actually given. Associations
+        // sharing the same side may still fan out beside it, but `separate`
+        // now holds them off the triangle instead of the triangle landing on
+        // top of one of them regardless of what their fan already claimed.
         push(arrivals, edge.source, {
             edge: edge.id, isSource: true, from: centerOf(target), aim: centerOf(target),
-            through: through.has(endKey(edge.id, edge.source))
+            through: edge.kind === 'generalization' || through.has(endKey(edge.id, edge.source))
         });
         push(arrivals, edge.target, {
             edge: edge.id, isSource: false, from: centerOf(source), aim: centerOf(source),
-            through: through.has(endKey(edge.id, edge.target))
+            through: edge.kind === 'generalization' || through.has(endKey(edge.id, edge.target))
+        });
+    }
+    for (const stem of stems) {
+        const rect = positions[stem.node];
+        if (!rect) {
+            continue;
+        }
+        push(arrivals, stem.node, {
+            edge: stem.id, isSource: true, from: stem.towards, aim: stem.towards, through: true
         });
     }
 
@@ -182,7 +218,9 @@ export function assignPorts(
     // class was anchored for a line steeper than the one drawn, and missed the
     // relator's centre by half its height.
     let ends = place(arrivals, positions);
-    if (through.size > 0) {
+    const hasThrough = stems.length > 0 || through.size > 0
+        || edges.some(edge => edge.kind === 'generalization');
+    if (hasThrough) {
         for (const incoming of arrivals.values()) {
             for (const arrival of incoming) {
                 const pair = ends.get(arrival.edge);
@@ -201,23 +239,14 @@ export function assignPorts(
             complete.set(edge, { source: pair.source, target: pair.target });
         }
     }
-    // Taxonomy is read through the centre of each class. Associations sharing
-    // the same pair may fan out along the border, but they must not push the
-    // generalization triangle away from that centre line.
-    for (const edge of edges) {
-        if (edge.kind !== 'generalization') {
-            continue;
-        }
-        const source = positions[edge.source];
-        const target = positions[edge.target];
-        if (source && target) {
-            complete.set(edge.id, {
-                source: borderPoint(source, centerOf(target)),
-                target: borderPoint(target, centerOf(source))
-            });
+    const stemPoints = new Map<string, Point>();
+    for (const stem of stems) {
+        const point = ends.get(stem.id)?.source;
+        if (point) {
+            stemPoints.set(stem.id, point);
         }
     }
-    return complete;
+    return { ends: complete, stems: stemPoints };
 }
 
 /** One pass: every arrival given its point on the border of the box it meets. */
