@@ -292,6 +292,150 @@ function settleRelators(
 }
 
 /**
+ * Moves a parthood or constitution pair so the whole reads first.
+ *
+ * A whole-part diamond and a constitution arrow are both read the way a
+ * sentence would put them: the whole named before what it is made of. ELK has
+ * no notion of that -- an association carries almost no layering priority, so
+ * a part lands left of its whole as often as the other way round, generally by
+ * a margin too small to read as deliberate even when the count comes out
+ * right. So this asks for real clearance, not a nearer coin flip, and reaches
+ * for it: the part is pushed clear of the whole's right edge, or the whole is
+ * pulled clear of the part's left one, whichever moves less. Only when
+ * neither fits without overlapping a third box does it fall back to the same
+ * question turned sideways -- whole above part -- and only when that box is
+ * free to move at all: a class the taxonomy has already put on a row of its
+ * own does not get pulled off it for an association's sake, which is the same
+ * rule that keeps a mediation from dragging a role a rank away from the kind
+ * it specializes.
+ */
+function orientWholes(
+    view: ViewModel,
+    positions: Positions,
+    subject: ReadonlySet<string>,
+    ranked: ReadonlySet<string> | undefined,
+    direction: LayoutOptions['direction']
+): void {
+    const pairs: Array<{ whole: string; part: string }> = [];
+    for (const edge of view.edges) {
+        if (edge.kind !== 'relation' || edge.source === edge.target
+            || !subject.has(edge.source) || !subject.has(edge.target)) {
+            continue;
+        }
+        if (edge.whole) {
+            pairs.push(edge.whole === 'source'
+                ? { whole: edge.source, part: edge.target }
+                : { whole: edge.target, part: edge.source });
+        } else if (edge.stereotype === 'constitution') {
+            // Unlike a diamond, constitution names no whole -- but it is
+            // written the same way a parthood without one is: the constituted
+            // thing as the source, the matter it is constituted of as the
+            // target.
+            pairs.push({ whole: edge.source, part: edge.target });
+        }
+    }
+    if (pairs.length === 0) {
+        return;
+    }
+
+    const clearOf = (rect: Rect, exclude: ReadonlySet<string>): boolean => {
+        for (const id of subject) {
+            if (exclude.has(id)) {
+                continue;
+            }
+            const other = positions[id];
+            if (other && overlaps(rect, other, PARTIAL_GAP)) {
+                return false;
+            }
+        }
+        return true;
+    };
+
+    // The taxonomy's own rank axis is settled ground -- `enforceTaxonomyRanks`
+    // put a class there to keep a whole component's rows straight, and pulling
+    // one class off that row for this reopens exactly the crossings that pass
+    // exists to close. The other axis carries no such meaning and is free.
+    const rankAxis: 'x' | 'y' = direction === 'RIGHT' ? 'x' : 'y';
+    const freeToMove = (id: string, axis: 'x' | 'y'): boolean =>
+        axis !== rankAxis || !(ranked?.has(id) ?? false);
+
+    // The nearest clear spot in the direction asked for, not only the nearest
+    // possible one: a hub class like `Person` has a whole row of neighbours
+    // beside it, and the very first slot past its edge is normally one of
+    // theirs. Stepping past them is what a modeller would do by hand; stopping
+    // at the first no is what left every part of a crowded whole stranded on
+    // its near side, satisfied only by the coin flip of wherever ELK had put it.
+    //
+    // Bounded, though: a row can stay crowded for a couple of thousand pixels
+    // -- `Wood` and `LumpOfSteel` share theirs with most of the diagram -- and
+    // the first gap out that far is not a neighbour skipped, it is a class
+    // hauled across the drawing to satisfy a preference the reader will not
+    // recognise once it has been paid for with a line that long. Past a dozen
+    // neighbours' worth of searching, on top is the better trade.
+    const MAX_SEEK = 20;
+    const seek = (
+        id: string, axis: 'x' | 'y', base: Rect, from: number, step: number, exclude: ReadonlySet<string>
+    ): Rect | undefined => {
+        if (!freeToMove(id, axis)) {
+            return undefined;
+        }
+        for (let tries = 0; tries < MAX_SEEK; tries += 1) {
+            const candidate = { ...base, [axis]: from + step * tries };
+            if (clearOf(candidate, exclude)) {
+                return candidate;
+            }
+        }
+        return undefined;
+    };
+
+    // Which of the pair moves, when both a push and a pull would do: the one
+    // with fewer lines of its own. A `Person` with twenty relations is the
+    // reason half the diagram is arranged the way it is; a `Heart` with one is
+    // not. Moving the hub to satisfy a single part is a worse trade than
+    // moving the part, whichever happens to be nearer.
+    const degree = new Map<string, number>();
+    for (const edge of view.edges) {
+        degree.set(edge.source, (degree.get(edge.source) ?? 0) + 1);
+        degree.set(edge.target, (degree.get(edge.target) ?? 0) + 1);
+    }
+
+    for (const { whole, part } of pairs) {
+        const wholeRect = positions[whole];
+        const partRect = positions[part];
+        if (!wholeRect || !partRect) {
+            continue;
+        }
+        const exclude = new Set([whole, part]);
+
+        if (wholeRect.x + wholeRect.width + PARTIAL_GAP > partRect.x) {
+            const pushPart = seek(part, 'x', partRect, wholeRect.x + wholeRect.width + PARTIAL_GAP, PARTIAL_STEP, exclude);
+            const pullWhole = seek(whole, 'x', wholeRect, partRect.x - wholeRect.width - PARTIAL_GAP, -PARTIAL_STEP, exclude);
+            const moveWhole = pullWhole && (!pushPart || (degree.get(whole) ?? 0) < (degree.get(part) ?? 0));
+            const chosen = moveWhole ? pullWhole : pushPart;
+            if (chosen) {
+                positions[moveWhole ? whole : part] = chosen;
+                continue;
+            }
+        } else {
+            continue;
+        }
+
+        const w = positions[whole]!;
+        const p = positions[part]!;
+        if (w.y + w.height + PARTIAL_GAP <= p.y) {
+            continue;
+        }
+        const pushDown = seek(part, 'y', p, w.y + w.height + PARTIAL_GAP, PARTIAL_STEP, exclude);
+        const pullUp = seek(whole, 'y', w, p.y - w.height - PARTIAL_GAP, -PARTIAL_STEP, exclude);
+        const moveWholeY = pullUp && (!pushDown || (degree.get(whole) ?? 0) < (degree.get(part) ?? 0));
+        const chosenY = moveWholeY ? pullUp : pushDown;
+        if (chosenY) {
+            positions[moveWholeY ? whole : part] = chosenY;
+        }
+    }
+}
+
+/**
  * Restores the ontology's hierarchy after ELK has optimized the whole graph.
  *
  * The first layout remains useful: associations and packages decide where each
@@ -661,12 +805,14 @@ export async function autoLayout(
     const elkPositions = Object.fromEntries([...subject]
         .filter(id => positions[id] !== undefined)
         .map(id => [id, { ...positions[id]! }]));
+    let ranked: Set<string> | undefined;
     if (settings.algorithm === 'layered' && !request.only) {
-        const ranked = enforceTaxonomyRanks(view, positions, subject, settings);
+        ranked = enforceTaxonomyRanks(view, positions, subject, settings);
         settleRelators(view, positions, subject, ranked ? settings.direction : undefined, ranked);
     } else {
         settleRelators(view, positions, subject);
     }
+    orientWholes(view, positions, subject, ranked, settings.direction);
     if (request.only) {
         placePartialLayout(positions, current, subject);
     }
