@@ -21,6 +21,19 @@ import {
 
 const DEBOUNCE = 300;
 
+/**
+ * Busts the webview's cache of its own script and stylesheet.
+ *
+ * `webview.js` and `canvas.css` are asked for by the same URL every time --
+ * the version in `package.json` does not move between builds -- and Chromium
+ * is entitled to keep answering from cache across a `Reload Window`, which
+ * restarts the extension host but not necessarily the webview's cache
+ * partition. One value per activation of this extension, so every panel this
+ * process ever opens agrees on it, and a stale one cannot survive past the
+ * reload that would have fixed it anyway.
+ */
+const ASSET_VERSION = Date.now();
+
 export class DiagramPanel {
     static current: DiagramPanel | undefined;
 
@@ -407,9 +420,8 @@ export class DiagramPanel {
             return;
         }
         const errors = await session.parseErrors(document.uri.toString());
-        const content = this.effectiveContent(store.state.content);
         if (errors.length > 0 && this.catalog.nodes.length > 0) {
-            this.installView(filterView(this.catalog, content.hidden ?? []), store);
+            this.installView(filterView(this.catalog, store.state.content.hidden ?? []), store);
             this.send(errors[0]);
             return;
         }
@@ -426,6 +438,12 @@ export class DiagramPanel {
         this.focusPackages = [...new Set(focused
             .flatMap(model => model.packages.map(one => one.name))
             .filter((name): name is string => name !== undefined))];
+        // `focusPackages` and `availablePackages` are only good from here on --
+        // read before this point (as the scope this file or the whole workspace
+        // resolves to) they are last refresh's, which on the very first refresh
+        // of a newly opened document is nothing at all: the diagram drew empty
+        // until some unrelated change asked for a second one.
+        const content = this.effectiveContent(store.state.content);
         const deriveWith = (options: ContentOptions) => derive({
             models,
             ...(this.focusPackages[0] ? { focus: this.focusPackages[0] } : {}),
@@ -776,8 +794,10 @@ export class DiagramPanel {
 
     private html(): string {
         const webview = this.panel.webview;
-        const script = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'out', 'webview.js'));
-        const style = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', 'canvas.css'));
+        const script = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'out', 'webview.js'))
+            .with({ query: `v=${ASSET_VERSION}` });
+        const style = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', 'canvas.css'))
+            .with({ query: `v=${ASSET_VERSION}` });
         const nonce = nonceOf();
         return `<!DOCTYPE html>
 <html lang="en">
