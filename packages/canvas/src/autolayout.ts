@@ -625,10 +625,11 @@ function renderedSafety(
  *
  * ELK supplies a useful initial order, but `enforceTaxonomyRanks` and the later
  * semantic repairs move its neighbours after that order was chosen. This
- * bounded local search tries the full-graph barycentric order and every adjacent
- * exchange on each populated rank, retaining a candidate only when the shared
- * quality score improves. Four passes let a change in one rank inform the next
- * one without turning arrangement into an unbounded optimization job.
+ * bounded local search tries the full-graph barycentric order, every adjacent
+ * exchange, and cross-axis translations of complete visual bands, retaining a
+ * candidate only when the shared quality score improves. Four passes let a
+ * change in one rank inform the next one without turning arrangement into an
+ * unbounded optimization job.
  */
 function optimizeRankCrossAxis(
     view: ViewModel,
@@ -636,7 +637,9 @@ function optimizeRankCrossAxis(
     subject: ReadonlySet<string>,
     ranked: ReadonlySet<string>,
     excluded: ReadonlySet<string>,
-    settings: LayoutOptions
+    settings: LayoutOptions,
+    compactCoordinates: boolean,
+    protectedEdges: ReadonlySet<string>
 ): void {
     // This first slice deliberately excludes large models. Re-rendering every
     // promising candidate is the correctness gate for ports, trees and labels;
@@ -652,6 +655,20 @@ function optimizeRankCrossAxis(
     const covered = inversePairs(view.edges).covered;
     const visibleEdges = view.edges.filter(edge => !covered.has(edge.id)
         && subject.has(edge.source) && subject.has(edge.target));
+    const protectedCrossAxis = new Set(visibleEdges
+        .filter(edge => protectedEdges.has(edge.id))
+        .flatMap(edge => [edge.source, edge.target]));
+    const byPair = new Map<string, typeof visibleEdges>();
+    for (const edge of visibleEdges.filter(edge => edge.kind === 'relation')) {
+        const key = [edge.source, edge.target].sort().join('\0');
+        byPair.set(key, [...(byPair.get(key) ?? []), edge]);
+    }
+    for (const pair of byPair.values()) {
+        if (pair.length > 1) {
+            protectedCrossAxis.add(pair[0]!.source);
+            protectedCrossAxis.add(pair[0]!.target);
+        }
+    }
     const incident = new Map<string, typeof visibleEdges>();
     for (const edge of visibleEdges) {
         incident.set(edge.source, [...(incident.get(edge.source) ?? []), edge]);
@@ -672,7 +689,7 @@ function optimizeRankCrossAxis(
         const rankedRows = [...rows.entries()]
             .filter(([, row]) => row.length > 1)
             .sort(([one], [other]) => one - other);
-        if (rankedRows.length === 0 || edges.length === 0) {
+        if (!ids.some(id => ranked.has(id)) || edges.length === 0) {
             continue;
         }
 
@@ -756,15 +773,14 @@ function optimizeRankCrossAxis(
             return Object.entries(candidate).every(([otherId, other]) => row.has(otherId)
                 || !subject.has(otherId) || !overlaps(rect, other, Math.min(settings.nodeSpacing / 3, 20)));
         });
-        const acceptBest = (orders: string[][], row: ReadonlySet<string>): boolean => {
+        const acceptCandidates = (candidates: Positions[], movable: ReadonlySet<string>): boolean => {
             let bestScore = score(positions);
             const edgeIds = new Set(edges.map(edge => edge.id));
             let bestSafety = renderedSafety(view, positions, ids, edgeIds);
             const labelCeiling = bestSafety.labelOcclusions;
             let best: Positions | undefined;
-            for (const order of orders) {
-                const candidate = rowCandidate(order);
-                if (!clear(candidate, row)) {
+            for (const candidate of candidates) {
+                if (!clear(candidate, movable)) {
                     continue;
                 }
                 const candidateScore = score(candidate);
@@ -783,11 +799,13 @@ function optimizeRankCrossAxis(
             if (!best) {
                 return false;
             }
-            for (const id of row) {
+            for (const id of movable) {
                 positions[id] = best[id]!;
             }
             return true;
         };
+        const acceptBest = (orders: string[][], row: ReadonlySet<string>): boolean =>
+            acceptCandidates(orders.map(rowCandidate), row);
 
         for (let pass = 0; pass < 4; pass += 1) {
             let changed = false;
@@ -822,6 +840,69 @@ function optimizeRankCrossAxis(
                 }
                 const distinctOrders = [...new Map(orders.map(order => [order.join('\0'), order])).values()];
                 changed = acceptBest(distinctOrders, new Set(rowIds)) || changed;
+            }
+            if (!changed) {
+                break;
+            }
+        }
+
+        if (!compactCoordinates) {
+            continue;
+        }
+
+        // Once rank order is stable, translate complete horizontal/vertical
+        // bands towards the weighted middle of the neighbours outside them.
+        // A band moves rigidly: its order, spacing and primary coordinate are
+        // unchanged, including the fan and paired-relation shapes established
+        // by the semantic passes before this optimizer.
+        const bands = new Map<number, string[]>();
+        for (const id of ids) {
+            const rect = positions[id];
+            if (rect) {
+                bands.set(rect[primary], [...(bands.get(rect[primary]) ?? []), id]);
+            }
+        }
+        for (let pass = 0; pass < 4; pass += 1) {
+            let changed = false;
+            for (const [, bandIds] of [...bands].sort(([one], [other]) => one - other)) {
+                if (bandIds.some(id => protectedCrossAxis.has(id))) {
+                    continue;
+                }
+                const band = new Set(bandIds);
+                let target = 0;
+                let weight = 0;
+                for (const id of bandIds) {
+                    for (const edge of incident.get(id) ?? []) {
+                        const neighbour = edge.source === id ? edge.target : edge.source;
+                        if (band.has(neighbour) || !members.has(neighbour)) {
+                            continue;
+                        }
+                        const rect = positions[neighbour];
+                        if (!rect) {
+                            continue;
+                        }
+                        const edgeWeight = edge.kind === 'generalization' ? 3 : 1;
+                        target += (rect[cross] + rect[crossSize] / 2) * edgeWeight;
+                        weight += edgeWeight;
+                    }
+                }
+                if (weight === 0) {
+                    continue;
+                }
+                const bandBounds = boundsOf(bandIds.map(id => positions[id]!));
+                const middle = bandBounds[cross] + bandBounds[crossSize] / 2;
+                const fullShift = target / weight - middle;
+                const shifts = [...new Set([1, 0.75, 0.5, 0.25]
+                    .map(share => Math.round(fullShift * share))
+                    .filter(shift => shift !== 0))];
+                const candidates = shifts.map(shift => {
+                    const candidate = { ...positions };
+                    for (const id of bandIds) {
+                        candidate[id] = { ...positions[id]!, [cross]: positions[id]![cross] + shift };
+                    }
+                    return candidate;
+                });
+                changed = acceptCandidates(candidates, band) || changed;
             }
             if (!changed) {
                 break;
@@ -1774,7 +1855,7 @@ export async function autoLayout(
     const wholeFans = orientWholeFans(view, positions, subject, ranked, settings);
     orientWholes(view, positions, subject, ranked, settings.direction, wholeFans);
     if (!request.only && ranked) {
-        optimizeRankCrossAxis(view, positions, subject, ranked, appendixIds, settings);
+        optimizeRankCrossAxis(view, positions, subject, ranked, appendixIds, settings, !grouped, wholeFans);
     }
     const packed = !request.only && !grouped
         ? packComponents(view, positions, subject, appendixIds, settings)
