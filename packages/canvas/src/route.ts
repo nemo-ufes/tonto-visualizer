@@ -119,7 +119,85 @@ export function curvedRoute(
             return { points, data: cubicPathData(cubics) };
         }
     }
+    return roundedRoute(guide, source, target, obstacles);
+}
+
+/**
+ * Rounds each necessary guide corner locally when a whole-route spline would
+ * stray outside its safe corridor. The progressively smaller radii matter for
+ * a bend close to another card: keeping a small curve is still more truthful
+ * to curved mode than silently restoring the sharp polyline.
+ */
+export function roundedRoute(
+    guide: Point[], source: Rect, target: Rect, obstacles: readonly Rect[] = []
+): DrawnRoute {
+    if (guide.length <= 2 || !hasVisibleBend(guide)) {
+        return { points: guide, data: pathData(guide) };
+    }
+    const others = obstacles.filter(rect => rect !== source && rect !== target);
+    for (const radius of [18, 12, 8, 4, 2]) {
+        const rounded = roundGuideCorners(guide, radius);
+        if (rounded && pathIsClear(rounded.points, others)) {
+            return rounded;
+        }
+    }
     return { points: guide, data: pathData(guide) };
+}
+
+function roundGuideCorners(guide: Point[], radius: number): DrawnRoute | undefined {
+    const points: Point[] = [{ ...guide[0]! }];
+    let data = `M ${coordinate(guide[0]!.x)} ${coordinate(guide[0]!.y)}`;
+    let rounded = false;
+    for (let index = 1; index < guide.length - 1; index += 1) {
+        const before = guide[index - 1]!;
+        const corner = guide[index]!;
+        const after = guide[index + 1]!;
+        const incoming = { x: before.x - corner.x, y: before.y - corner.y };
+        const outgoing = { x: after.x - corner.x, y: after.y - corner.y };
+        const incomingLength = Math.hypot(incoming.x, incoming.y);
+        const outgoingLength = Math.hypot(outgoing.x, outgoing.y);
+        const cross = incoming.x * outgoing.y - incoming.y * outgoing.x;
+        if (incomingLength < 1 || outgoingLength < 1
+            || Math.abs(cross) <= incomingLength * outgoingLength * 0.005) {
+            data += ` L ${coordinate(corner.x)} ${coordinate(corner.y)}`;
+            points.push({ ...corner });
+            continue;
+        }
+        // At most a third of either segment leaves room when two neighboring
+        // corners share a short segment.
+        const trim = Math.min(radius, incomingLength / 3, outgoingLength / 3);
+        const entry = {
+            x: corner.x + incoming.x * trim / incomingLength,
+            y: corner.y + incoming.y * trim / incomingLength
+        };
+        const exit = {
+            x: corner.x + outgoing.x * trim / outgoingLength,
+            y: corner.y + outgoing.y * trim / outgoingLength
+        };
+        const cubic: Cubic = {
+            from: entry,
+            one: {
+                x: entry.x + (corner.x - entry.x) * 2 / 3,
+                y: entry.y + (corner.y - entry.y) * 2 / 3
+            },
+            two: {
+                x: exit.x + (corner.x - exit.x) * 2 / 3,
+                y: exit.y + (corner.y - exit.y) * 2 / 3
+            },
+            to: exit
+        };
+        data += ` L ${coordinate(entry.x)} ${coordinate(entry.y)} C `
+            + `${coordinate(cubic.one.x)} ${coordinate(cubic.one.y)} `
+            + `${coordinate(cubic.two.x)} ${coordinate(cubic.two.y)} `
+            + `${coordinate(exit.x)} ${coordinate(exit.y)}`;
+        points.push(entry);
+        flattenCubic(cubic, points, 0);
+        rounded = true;
+    }
+    const last = guide[guide.length - 1]!;
+    data += ` L ${coordinate(last.x)} ${coordinate(last.y)}`;
+    points.push({ ...last });
+    return rounded ? { points, data } : undefined;
 }
 
 /**

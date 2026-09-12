@@ -5,7 +5,7 @@ import { placeNewNodes } from '../src/place.js';
 import { distanceToPath, segmentHitsRect } from '../src/geometry.js';
 import { handlesFor } from '../src/handles.js';
 import { labelWidth, render } from '../src/render.js';
-import { curvedRoute, pathData, routeEdge } from '../src/route.js';
+import { curvedRoute, pathData, roundedRoute, routeEdge } from '../src/route.js';
 import { FONT, multiplicityLabel, sizeOf, textWidth, wrappedAttributeLines } from '../src/measure.js';
 
 const display = { ...defaultDisplayOptions };
@@ -200,6 +200,26 @@ describe('drawing', () => {
         expect(data?.match(/ C /g)).toHaveLength(1);
     });
 
+    test('curves a one-corner ordinary generalization', () => {
+        const view = model();
+        const edge = view.edges[0]!;
+        const guide = [{ x: 60, y: 180 }, { x: 180, y: 100 }, { x: 300, y: 30 }];
+        const output = render({
+            view,
+            positions: {
+                'Sample::Person': { x: 300, y: 0, width: 120, height: 60 },
+                'Sample::Employee': { x: 0, y: 180, width: 120, height: 42 }
+            },
+            routes: { [edge.id]: { points: guide } },
+            display: { ...display, routing: 'curved' },
+            direction: 'DOWN'
+        });
+
+        const data = output.svg.match(/data-edge="[^"]+"><path d="([^"]+)"/)?.[1];
+        expect(data).toContain(' C ');
+        expect(output.paths[edge.id]!.length).toBeGreaterThan(guide.length);
+    });
+
     test('keeps a card the modeller made roomier, and still grows it for content', () => {
         const view = model();
         const sizes = Object.fromEntries(view.nodes.map(node => [node.id, sizeOf(node, display)]));
@@ -361,6 +381,18 @@ describe('drawing', () => {
         expect(guide).toHaveLength(2);
         expect(curve.data).toBe(pathData(guide));
         expect(curve.points).toEqual(guide);
+    });
+
+    test('can round a necessary corner locally', () => {
+        const source = { x: -100, y: -100, width: 10, height: 10 };
+        const target = { x: 100, y: 100, width: 10, height: 10 };
+        const guide = [{ x: 0, y: 0 }, { x: 60, y: 0 }, { x: 60, y: 60 }];
+        const curve = roundedRoute(guide, source, target);
+
+        expect(curve.data).toContain(' C ');
+        expect(curve.points.length).toBeGreaterThan(guide.length);
+        expect(curve.points[0]).toEqual(guide[0]);
+        expect(curve.points.at(-1)).toEqual(guide.at(-1));
     });
 
     test('retreats a curve towards its guide rather than cutting through a card', () => {

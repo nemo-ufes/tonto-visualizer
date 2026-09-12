@@ -412,6 +412,14 @@ changing it runs Arrange again, so routing, labels, package boxes and semantic
 placement all see the same denser or roomier geometry. The bounded 60–180% range
 keeps the compact end legible and the spacious end finite.
 
+Curved mode changes a route only when its editable guide contains a real bend.
+That applies equally to associations and ordinary generalizations. A safe
+Graphviz-style fitted spline is preferred; if its wider arc would introduce an
+intersection or crossing, progressively smaller local corner curves preserve
+the guide's corridor instead of exposing a sharp corner. Shared taxonomy buses
+remain deliberately orthogonal because their branching structure is the
+notation, not an avoidable routing bend.
+
 No label is drawn where a class hides it. That was the worst of what the placer
 did on a dense model, and the two reasons for it were both about having nowhere
 to go: every place it looked was within fifty pixels of the end of the line, so

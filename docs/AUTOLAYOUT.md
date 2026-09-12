@@ -231,6 +231,10 @@ authority for what those constraints mean.
   Minus and plus scale both between-rank and same-rank spacing from 60% to 180%
   and immediately run Arrange, giving the modeller one predictable overall
   density control without exposing ELK's separate spacing constants.
+- Curved routing keeps direct two-point edges straight, but every necessary
+  bend on an association or ordinary generalization is smoothed. The Graphviz-
+  style whole-route spline remains preferred; a local, obstacle-checked corner
+  curve is the fallback when that spline would make the route less safe.
 - Consolidated the semantic candidate passes under one rank-constrained
   acceptance gate. Hard taxonomy ranks are established once; relator, orphan,
   characterized-aspect, whole/fan, rank-order, band-compaction and label-
