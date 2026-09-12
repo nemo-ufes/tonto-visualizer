@@ -363,7 +363,12 @@ function placeAppendixAfter(
  * an unselected box does not exist in its graph, so the most natural answer is
  * often the exact coordinates that box already occupies.
  */
-function placePartialLayout(positions: Positions, current: Positions, subject: ReadonlySet<string>): void {
+function placePartialLayout(
+    view: ViewModel,
+    positions: Positions,
+    current: Positions,
+    subject: ReadonlySet<string>
+): void {
     const ids = [...subject].filter(id => positions[id] !== undefined);
     const laid = ids.map(id => positions[id]!);
     const fixed = Object.entries(current).filter(([id]) => !subject.has(id)).map(([, rect]) => rect);
@@ -380,19 +385,83 @@ function placePartialLayout(positions: Positions, current: Positions, subject: R
         return !fixed.some(obstacle => overlaps(moved, obstacle, PARTIAL_GAP));
     });
 
-    let translation: Point | undefined;
-    for (let ring = 0; ring < 80 && !translation; ring += 1) {
-        const offsets = ring === 0 ? [{ x: 0, y: 0 }] : partialRing(ring);
-        for (const offset of offsets) {
-            const candidate = {
-                x: anchor.x + offset.x * PARTIAL_STEP,
-                y: anchor.y + offset.y * PARTIAL_STEP
-            };
-            if (fits(candidate.x, candidate.y)) {
-                translation = candidate;
-                break;
+    const firstFitAround = (origin: Point, rings: number): Point | undefined => {
+        for (let ring = 0; ring < rings; ring += 1) {
+            const offsets = ring === 0 ? [{ x: 0, y: 0 }] : partialRing(ring);
+            for (const offset of offsets) {
+                const candidate = {
+                    x: Math.round(origin.x + offset.x * PARTIAL_STEP),
+                    y: Math.round(origin.y + offset.y * PARTIAL_STEP)
+                };
+                if (fits(candidate.x, candidate.y)) {
+                    return candidate;
+                }
             }
         }
+        return undefined;
+    };
+
+    const covered = inversePairs(view.edges).covered;
+    const boundary = view.edges.flatMap(edge => {
+        if (covered.has(edge.id) || subject.has(edge.source) === subject.has(edge.target)) {
+            return [];
+        }
+        const selected = subject.has(edge.source) ? edge.source : edge.target;
+        const neighbour = selected === edge.source ? edge.target : edge.source;
+        const selectedRect = positions[selected];
+        const fixedRect = current[neighbour];
+        return selectedRect && fixedRect ? [{ selectedRect, fixedRect }] : [];
+    });
+
+    let translation: Point | undefined;
+    if (boundary.length > 0) {
+        // The least-squares translation puts each boundary endpoint over its
+        // fixed neighbour. Nearby grid candidates then find the closest legal
+        // side of those obstacles. Keeping the selection rigid means this
+        // preference cannot damage ranks or its internal arrangement.
+        const halo = boundary.reduce((sum, pair) => ({
+            x: sum.x + centerOf(pair.fixedRect).x - centerOf(pair.selectedRect).x,
+            y: sum.y + centerOf(pair.fixedRect).y - centerOf(pair.selectedRect).y
+        }), { x: 0, y: 0 });
+        const haloAnchor = { x: halo.x / boundary.length, y: halo.y / boundary.length };
+        const candidates: Point[] = [];
+        const seen = new Set<string>();
+        for (const origin of [haloAnchor, anchor]) {
+            for (let ring = 0; ring < 24; ring += 1) {
+                const offsets = ring === 0 ? [{ x: 0, y: 0 }] : partialRing(ring);
+                for (const offset of offsets) {
+                    const candidate = {
+                        x: Math.round(origin.x + offset.x * PARTIAL_STEP),
+                        y: Math.round(origin.y + offset.y * PARTIAL_STEP)
+                    };
+                    const key = `${candidate.x},${candidate.y}`;
+                    if (!seen.has(key) && fits(candidate.x, candidate.y)) {
+                        seen.add(key);
+                        candidates.push(candidate);
+                    }
+                }
+            }
+        }
+        const score = (candidate: Point): number => {
+            const edgeLength = boundary.reduce((sum, pair) => {
+                const selected = centerOf(pair.selectedRect);
+                const fixedNeighbour = centerOf(pair.fixedRect);
+                return sum + Math.hypot(
+                    selected.x + candidate.x - fixedNeighbour.x,
+                    selected.y + candidate.y - fixedNeighbour.y
+                );
+            }, 0);
+            const displacement = Math.hypot(candidate.x - anchor.x, candidate.y - anchor.y);
+            return edgeLength + displacement * boundary.length * 0.2;
+        };
+        translation = candidates.reduce<Point | undefined>((best, candidate) => {
+            if (!best || score(candidate) < score(best)) {
+                return candidate;
+            }
+            return best;
+        }, undefined);
+    } else {
+        translation = firstFitAround(anchor, 80);
     }
     if (!translation) {
         const fixedBounds = boundsOf(fixed);
@@ -1993,7 +2062,7 @@ export async function autoLayout(
         placeAppendixAfter(positions, appendixIds, subject, settings);
     }
     if (request.only) {
-        placePartialLayout(positions, current, subject);
+        placePartialLayout(view, positions, current, subject);
     }
 
     const routes: Record<string, Point[]> = {};
