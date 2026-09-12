@@ -70,6 +70,29 @@ kind Tree
         expect(grouped.map(edge => edge.source)).toEqual(['Parties::Child', 'Parties::Adult']);
     });
 
+    test('derives specializations declared by a generalization set', async () => {
+        const view = await viewOfText(`
+package Sample
+kind Animal
+subkind Cat
+subkind Dog
+disjoint complete genset Species where Cat, Dog specializes Animal
+`, { showGensets: false });
+
+        // Hiding the shared-set notation does not erase the taxonomy it
+        // declares. The individual generalizations remain available to the
+        // renderer and layout just as class-level `specializes` clauses do.
+        expect(view.gensets).toEqual([]);
+        expect(view.edges).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                kind: 'generalization', source: 'Sample::Cat', target: 'Sample::Animal'
+            }),
+            expect.objectContaining({
+                kind: 'generalization', source: 'Sample::Dog', target: 'Sample::Animal'
+            })
+        ]));
+    });
+
     test('puts the diamond on the end that holds the whole', async () => {
         const view = await viewOfFixture();
         const parthood = relation(view, 'has');

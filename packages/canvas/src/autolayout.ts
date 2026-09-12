@@ -192,36 +192,62 @@ function weakComponents(
     return components;
 }
 
-/** Places rectangles on shelves and reports the occupied bounds. */
-function shelfPack(components: ComponentBox[], targetWidth: number, gap: number): {
+/** Places rectangles into the lowest available rectangular gap. */
+function gapPack(components: ComponentBox[], targetWidth: number, gap: number): {
     boxes: PackedBox[];
     width: number;
     height: number;
 } {
     const boxes: PackedBox[] = [];
-    let x = 0;
-    let y = 0;
-    let rowHeight = 0;
-    let width = 0;
     for (const component of components) {
-        if (x > 0 && x + component.bounds.width > targetWidth) {
-            x = 0;
-            y += rowHeight + gap;
-            rowHeight = 0;
+        const xs = new Set([0]);
+        const ys = new Set([0]);
+        for (const box of boxes) {
+            xs.add(box.x);
+            xs.add(box.x + box.component.bounds.width + gap);
+            ys.add(box.y);
+            ys.add(box.y + box.component.bounds.height + gap);
         }
-        boxes.push({ component, x, y });
-        x += component.bounds.width + gap;
-        rowHeight = Math.max(rowHeight, component.bounds.height);
-        width = Math.max(width, x - gap);
+
+        let chosen: { x: number; y: number } | undefined;
+        for (const y of [...ys].sort((one, other) => one - other)) {
+            for (const x of [...xs].sort((one, other) => one - other)) {
+                if (x + component.bounds.width > targetWidth) {
+                    continue;
+                }
+                const clear = boxes.every(box => x + component.bounds.width + gap <= box.x
+                    || box.x + box.component.bounds.width + gap <= x
+                    || y + component.bounds.height + gap <= box.y
+                    || box.y + box.component.bounds.height + gap <= y);
+                if (clear) {
+                    chosen = { x, y };
+                    break;
+                }
+            }
+            if (chosen) {
+                break;
+            }
+        }
+        // targetWidth is never narrower than the widest component, and the
+        // bottom of every placed box is always a clear fallback.
+        chosen ??= {
+            x: 0,
+            y: Math.max(0, ...boxes.map(box => box.y + box.component.bounds.height + gap))
+        };
+        boxes.push({ component, ...chosen });
     }
-    return { boxes, width, height: y + rowHeight };
+    return {
+        boxes,
+        width: Math.max(...boxes.map(box => box.x + box.component.bounds.width)),
+        height: Math.max(...boxes.map(box => box.y + box.component.bounds.height))
+    };
 }
 
 /**
  * Every stable order while there are few enough to search, else the established
- * tall-first order. Shelf width alone cannot recover from an unlucky order:
+ * tall-first order. Packing width alone cannot recover from an unlucky order:
  * with three differently shaped components, the one that fits beside the tall
- * component may sit third and be forced onto the next shelf by the wide one in
+ * component may sit third and be forced below the wide one in
  * between. Seven components keep the complete search below 5,040 orders.
  */
 function componentOrders(components: ComponentBox[]): ComponentBox[][] {
@@ -253,9 +279,10 @@ function packingScore(width: number, height: number): number {
  * Recovers space between unrelated pieces after semantic adjustment.
  *
  * Every weak component moves rigidly, so taxonomy ranks, mediation placement
- * and whole-part order survive. The shelf width is searched rather than fixed:
- * that makes the result follow the actual component shapes while still aiming
- * at a canvas-shaped drawing. Equal candidates retain stable id order.
+ * and whole-part order survive. Both component order and packing width are
+ * searched. Small components can occupy a rectangular gap beside a tall one
+ * instead of a shelf inheriting the tall component's height. Equal candidates
+ * retain stable id order.
  */
 function packComponents(
     view: ViewModel,
@@ -287,10 +314,10 @@ function packComponents(
         candidates.add(maxWidth + (allInOneRow - maxWidth) * step / 24);
     }
 
-    let best: ReturnType<typeof shelfPack> | undefined;
+    let best: ReturnType<typeof gapPack> | undefined;
     for (const order of componentOrders(components)) {
         for (const candidate of [...candidates].sort((one, other) => one - other)) {
-            const packed = shelfPack(order, candidate, gap);
+            const packed = gapPack(order, candidate, gap);
             if (!best || packingScore(packed.width, packed.height) < packingScore(best.width, best.height)
                 || (packingScore(packed.width, packed.height) === packingScore(best.width, best.height)
                     && packed.width * packed.height < best.width * best.height)) {

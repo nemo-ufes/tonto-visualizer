@@ -351,8 +351,11 @@ class Derivation {
             ...this.locatedAt(declaration)
         });
 
-        // The generalizations the set groups are already edges; marking them is
-        // what lets the canvas draw one shared triangle instead of several.
+        // A set may be the declaration of the specializations, not merely a
+        // label over `specializes` clauses written on the classes. Both forms
+        // mean the same thing in the language, so the view must expose the
+        // same generalization edges for either one. Besides drawing the shared
+        // triangle, those edges are what make layout keep the family together.
         if (general) {
             for (const specific of specifics) {
                 const edge = this.edges.find(
@@ -362,6 +365,14 @@ class Derivation {
                 );
                 if (edge && edge.kind === 'generalization') {
                     edge.genset = id;
+                } else {
+                    this.addEdge({
+                        kind: 'generalization',
+                        id: generalizationId(specific, general),
+                        source: specific,
+                        target: general,
+                        genset: id
+                    });
                 }
             }
         }
