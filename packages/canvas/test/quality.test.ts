@@ -123,6 +123,22 @@ describe('layout quality benchmarks', () => {
     });
 
     test.each([
+        ['ab', resolve(repository, 'packages/canvas/test/fixtures/ab.tonto')],
+        ['mixed relations', fixture]
+    ])('keeps curved %s associations safe and close to their direct guides', async (_name, target) => {
+        const straight = await benchmark(target);
+        const curved = await benchmark(target, { ...defaultDisplayOptions, routing: 'curved' });
+        const allowance = straight.view.edges.length * 4;
+
+        expect(curved.quality.edgeNodeIntersections).toBeLessThanOrEqual(straight.quality.edgeNodeIntersections);
+        expect(curved.quality.edgeCrossings).toBeLessThanOrEqual(straight.quality.edgeCrossings);
+        expect(curved.quality.edgeLength.total)
+            .toBeLessThanOrEqual(straight.quality.edgeLength.total * 1.15 + allowance);
+        expect(curved.quality.edgeLength.maximum)
+            .toBeLessThanOrEqual(straight.quality.edgeLength.maximum * 1.15 + 4);
+    });
+
+    test.each([
         ['boats', resolve(repository, 'vendor/tontoredesign/examples/boats.tonto'),
             // Genset-declared specializations are now present as real edges;
             // the former ceiling counted a diagram that omitted those lines.

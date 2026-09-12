@@ -31,13 +31,14 @@ export interface Point {
 
 export interface EdgeRoute {
     /**
-     * The whole polyline, ends included, rather than the bends between them.
+     * The whole editable guide, ends included, rather than only its bends.
      *
      * A route and the boxes it runs between are one arrangement: a stored bend
      * with a recomputed endpoint gives a diagonal leg from a border to a corner,
      * which is what happened when only the bends were kept. So a route is stored
-     * complete and used as it stands -- and dropped, by whoever moves a box, the
-     * moment one of its ends is somewhere else.
+     * complete and dropped, by whoever moves a box, the moment one of its ends
+     * is somewhere else. Curved routing interpolates this guide; its adaptive
+     * samples are drawing geometry and are deliberately not persisted.
      */
     points?: Point[];
     /** How far the label was moved from where it would sit on its own. */
@@ -148,7 +149,7 @@ function readDisplayOptions(value: unknown): DisplayOptions {
     const source = recordOf(value);
     return {
         taxonomyOnly: booleanOr(source.taxonomyOnly, defaultDisplayOptions.taxonomyOnly),
-        routing: oneOf(source.routing, ['straight', 'orthogonal'])
+        routing: oneOf(source.routing, ['straight', 'curved', 'orthogonal'])
             ? source.routing : defaultDisplayOptions.routing,
         fontFamily: oneOf(source.fontFamily, [
             'sans', 'condensed', 'humanist', 'geometric', 'serif', 'book', 'monospace'

@@ -14,8 +14,8 @@ import type {
 import { natureLegend } from 'tonto-view/palette';
 import type { Corner, Handle, Point, Rect, Size } from 'tonto-canvas/draw';
 import {
-    CORNERS, cornerOf, darkTheme, distanceToPath, drawNode, dropHandle, handlesFor, lightTheme,
-    moveHandle, overlaps, rectBetween, render, resizeTo, routeEdge, segmentHitsRect, sizeOf
+    CORNERS, cornerOf, curvedRoute, darkTheme, distanceToPath, drawNode, dropHandle, handlesFor, lightTheme,
+    moveHandle, overlaps, pathData, rectBetween, render, resizeTo, routeEdge, segmentHitsRect, sizeOf
 } from 'tonto-canvas/draw';
 import type { FilterItem } from '../protocol.js';
 
@@ -56,8 +56,10 @@ let fitMode = stored.fit ?? false;
 let bounds: Rect = { x: 0, y: 0, width: 1, height: 1 };
 /** Set while a drag is in flight, so a redraw does not yank the boxes back. */
 let dragging: DragState | undefined;
-/** The polyline each edge was last drawn along, which is what a handle holds. */
+/** Sampled geometry of what is visible, used for selection and obstruction. */
 let paths: Record<string, Point[]> = {};
+/** Editable guide polylines; curved paths are rendered and sampled from these. */
+let guides: Record<string, Point[]> = {};
 /** Where the pointer last was, in diagram coordinates, for a drag that ends. */
 let lastPoint: Point | undefined;
 
@@ -177,6 +179,7 @@ function draw(): void {
     });
     bounds = drawn.bounds;
     paths = drawn.paths;
+    guides = drawn.guides;
     canvas.innerHTML = drawn.svg;
     drawHandles();
     if (fitMode) {
@@ -212,7 +215,7 @@ function drawHandles(): void {
     // the diagram is being read whole or a corner of it is filling the panel.
     const radius = 3.5 / scale;
     const rect = positions[id];
-    const points = paths[id];
+    const points = guides[id];
     if (rect) {
         for (const corner of CORNERS) {
             const at = cornerOf(rect, corner);
@@ -317,7 +320,7 @@ function labelOwner(target: Element): string | undefined {
 function handleAt(target: Element): { edge: string; handle: Handle } | undefined {
     const dot = target.closest('[data-handle]');
     const edge = dot?.parentElement?.getAttribute('data-handles') ?? undefined;
-    const points = edge ? paths[edge] : undefined;
+    const points = edge ? guides[edge] : undefined;
     const handle = points ? handlesFor(points)[Number(dot!.getAttribute('data-handle'))] : undefined;
     return edge && handle ? { edge, handle } : undefined;
 }
@@ -356,11 +359,18 @@ function repaintNode(id: string): void {
     group.outerHTML = drawNode(node, rect, display, dark ? darkTheme : lightTheme, selection.has(id));
 }
 
-/** Draws one line along a polyline, without redrawing anything else. */
+/** Draws one line from its editable guide, without redrawing anything else. */
 function repaint(edge: string, points: Point[]): void {
     const path = canvas.querySelector(`[data-edge="${cssEscape(edge)}"] path`) as SVGPathElement | null;
-    path?.setAttribute('d', points.map((point, index) =>
-        `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' '));
+    const definition = view.edges.find(candidate => candidate.id === edge);
+    const source = definition ? positions[definition.source] : undefined;
+    const target = definition ? positions[definition.target] : undefined;
+    const drawn = definition?.kind !== 'generalization' && display?.routing === 'curved' && source && target
+        ? curvedRoute(points, source, target, Object.values(positions))
+        : { points, data: pathData(points) };
+    guides[edge] = points;
+    paths[edge] = drawn.points;
+    path?.setAttribute('d', drawn.data);
 }
 
 function applyViewport(): void {
@@ -438,7 +448,7 @@ viewport.addEventListener('pointerdown', event => {
     if (held) {
         dragging = {
             ids: [], startX: event.clientX, startY: event.clientY, moved: false, origin: {},
-            route: { edge: held.edge, handle: held.handle, from: paths[held.edge]! }
+            route: { edge: held.edge, handle: held.handle, from: guides[held.edge]! }
         };
         return;
     }
@@ -533,7 +543,6 @@ viewport.addEventListener('pointermove', event => {
         // Snapped like a box is, so a bend put level with a border stays level.
         const at = { x: snap(route.handle.at.x + dx), y: snap(route.handle.at.y + dy) };
         const points = moveHandle(route.from, route.handle, at);
-        paths[route.edge] = points;
         repaint(route.edge, points);
         drawHandles();
         return;
@@ -607,7 +616,7 @@ viewport.addEventListener('pointerup', () => {
     if (drag?.route && drag.moved) {
         // The whole polyline, ends included: a route and the boxes it runs
         // between are one arrangement, and half of one is a line to a corner.
-        keepRoute(drag.route.edge, paths[drag.route.edge]);
+        keepRoute(drag.route.edge, guides[drag.route.edge]);
         return;
     }
     if (!drag || !drag.moved || drag.ids.length === 0) {
@@ -698,7 +707,7 @@ function redrawIncidentEdges(moved: Set<string>): void {
             continue;
         }
         const points = routeEdge(source, target, { style: display?.routing ?? 'straight' });
-        path.setAttribute('d', points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' '));
+        repaint(edge.id, points);
     }
 }
 
@@ -730,7 +739,7 @@ viewport.addEventListener('dblclick', event => {
         // stop working wherever a handle happens to sit: selecting a line draws
         // one on the middle of every stretch, which is exactly where its labels
         // are, so double-clicking the label of a chosen line did nothing at all.
-        keepRoute(held.edge, dropHandle(paths[held.edge]!, held.handle.index));
+        keepRoute(held.edge, dropHandle(guides[held.edge]!, held.handle.index));
         return;
     }
     const target = under.closest('[data-node]') ?? under.closest('[data-edge]');
@@ -904,7 +913,9 @@ function fillOptions(): void {
 
     optionsPanel.replaceChildren();
     const arrangement = [
-        choice('Lines', [['straight', 'Straight'], ['orthogonal', 'Right-angled']], display.routing,
+        choice('Lines', [
+            ['straight', 'Straight'], ['curved', 'Curved associations'], ['orthogonal', 'Right-angled']
+        ], display.routing,
             value => host.postMessage({ type: 'display', display: { routing: value as DisplayOptions['routing'] } })),
         choice('Direction', [['DOWN', 'Top to bottom'], ['RIGHT', 'Left to right']], layout?.direction ?? 'DOWN',
             value => host.postMessage({ type: 'layout', layout: { direction: value as LayoutOptions['direction'] } })),
