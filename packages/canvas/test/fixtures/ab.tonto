@@ -1,0 +1,38 @@
+package Ab
+
+kind CoffeeBean
+
+kind CoffeLot
+{
+    @componenthood <>-- [2..*] CoffeeBean
+}
+
+subkind FermentedCofeeLot specializes CoffeLot
+subkind NaturalCofeeLot specializes CoffeLot
+subkind WashedCofeeLot specializes CoffeLot
+
+disjoint complete genset Name where FermentedCofeeLot, NaturalCofeeLot, WashedCofeeLot specializes CoffeLot
+
+event Brewing
+collective Dose
+event Grinding
+kind Cup
+event Drinking
+
+type ProcessType
+
+event Processing
+{
+    @instantiation -- (const) ProcessType
+}
+
+subkind Fermenting specializes Processing
+
+type PlantSpecies
+
+kind Plant
+{
+    @instantiation [*] -- PlantSpecies
+}
+
+subkind ArabicaPlant (instanceOf PlantSpecies) specializes Plant

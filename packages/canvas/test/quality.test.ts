@@ -107,6 +107,21 @@ describe('layout quality benchmarks', () => {
         expect(rendered.paths['gen:Error::ActiveHeadache->Error::Headache']).toHaveLength(2);
     });
 
+    test('keeps the higher-order types left in ab without crossing unrelated cards', async () => {
+        const target = resolve(repository, 'packages/canvas/test/fixtures/ab.tonto');
+        const { view, laid, quality } = await benchmark(target);
+        const id = (name: string) => view.nodes.find(node => node.name === name)!.id;
+        const leftOf = (type: string, ...bases: string[]) => {
+            const typeRect = laid.positions[id(type)]!;
+            return bases.every(base => typeRect.x + typeRect.width + defaultLayoutOptions.nodeSpacing
+                <= laid.positions[id(base)]!.x);
+        };
+        expect(leftOf('ProcessType', 'Processing')).toBe(true);
+        expect(leftOf('PlantSpecies', 'Plant', 'ArabicaPlant')).toBe(true);
+        expect(quality.nodeOverlaps).toBe(0);
+        expect(quality.edgeNodeIntersections).toBe(0);
+    });
+
     test.each([
         ['boats', resolve(repository, 'vendor/tontoredesign/examples/boats.tonto'),
             // Genset-declared specializations are now present as real edges;
