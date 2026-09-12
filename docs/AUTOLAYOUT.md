@@ -92,7 +92,7 @@ authority for what those constraints mean.
 
 ### 2026-09-11
 
-- Added quality ceilings for `boats`, `pets`, `gufo`, `university`, `parties`
+- Added quality ceilings for `boats`, `pets`, `gufo`, `genealogy`, `university`, `parties`
   and a dense mixed-relationship regression supplied from an actual diagram.
 - Protected the direct corridor between a general and its specific from the
   association-only classes settled after taxonomy ranks. This keeps later
@@ -100,3 +100,6 @@ authority for what those constraints mean.
 - Added a soft right-side preference for qualities and extrinsic modes beside
   the bearer identified by their characterization. Taxonomy membership and
   collision-free placement remain stronger constraints.
+- Made component packing search every stable order for up to seven components,
+  removing the empty shelf space that a fixed tall-first order cannot recover
+  merely by trying more shelf widths.

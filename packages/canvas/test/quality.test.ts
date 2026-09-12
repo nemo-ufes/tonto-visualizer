@@ -60,6 +60,8 @@ describe('layout quality benchmarks', () => {
             { width: 1600, height: 1050, crossings: 2, labels: 3, total: 3000, longest: 450 }],
         ['gufo', resolve(repository, 'vendor/tontoredesign/examples/gufo.tonto'),
             { width: 1850, height: 1000, crossings: 17, labels: 46, total: 10500, longest: 600 }],
+        ['genealogy', resolve(repository, 'packages/canvas/test/fixtures/genealogy.tonto'),
+            { width: 2350, height: 1125, crossings: 9, labels: 28, total: 7500, longest: 600 }],
         ['university', resolve(repository, 'vendor/tontoredesign/examples/university'),
             { width: 1400, height: 1250, crossings: 4, labels: 6, total: 6000, longest: 900 }],
         ['parties', resolve(repository, 'packages/view/test/fixtures/parties'),
