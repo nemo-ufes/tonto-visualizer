@@ -73,7 +73,7 @@ exact ELK coordinates.
 - [x] Add a persisted taxonomy-only view. It keeps the same classifiers and
   user preferences, but hides attributes and non-taxonomy edges and arranges
   from inheritance alone; classifiers outside a hierarchy form an appendix.
-- [ ] Add persistent pin, alignment and distribution constraints, followed by a
+- [x] Add persistent pin, alignment and distribution constraints, followed by a
   bounded-rank policy whose wrapping remains stable by element id.
 
 ## Intended architecture
@@ -187,3 +187,8 @@ authority for what those constraints mean.
   they are applied after semantic optimization, rejected if they would overlap
   boxes, never move a pin, and never move a ranked classifier along the hard
   taxonomy axis.
+- Added a persisted maximum rank span (compact, balanced, wide or unlimited).
+  Oversized taxonomy levels wrap into subrows whose membership is ordered by
+  stable element id; a whole wrapped level is completed before the next
+  semantic rank begins, retaining the hard inheritance direction. Explicit
+  package containers keep their package bands and are therefore exempt.

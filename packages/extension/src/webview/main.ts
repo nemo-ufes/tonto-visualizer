@@ -860,6 +860,10 @@ function fillOptions(): void {
             value => host.postMessage({ type: 'display', display: { routing: value as DisplayOptions['routing'] } })),
         choice('Direction', [['DOWN', 'Top to bottom'], ['RIGHT', 'Left to right']], layout?.direction ?? 'DOWN',
             value => host.postMessage({ type: 'layout', layout: { direction: value as LayoutOptions['direction'] } })),
+        choice('Maximum rank span', [
+            ['1200', 'Compact'], ['2000', 'Balanced'], ['3000', 'Wide'], ['0', 'Unlimited']
+        ], String(layout?.maxRankSpan ?? 2000),
+            value => host.postMessage({ type: 'layout', layout: { maxRankSpan: Number(value) } })),
         // Package cohesion is a preference; visible package boxes turn it into
         // a hard container without changing taxonomy ranks.
         toggle('Cluster packages', layout?.groupByPackage ?? true,

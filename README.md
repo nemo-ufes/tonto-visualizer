@@ -42,8 +42,9 @@ Working end to end, and rough in places.
   filters, display options, nature legend, SVG export, and default or named
   `.tontoview` files under the model's `views` folder holding separate
   arrangements. A persisted **Taxonomy only** setting hides attributes and
-  associations and arranges from inheritance alone. An untouched automatic
-  layout creates no file.
+  associations and arranges from inheritance alone. Pins, centre alignment,
+  equal distribution and a maximum taxonomy-rank span are also persisted and
+  reapplied by Arrange. An untouched automatic layout creates no file.
 
 The notation covers classes with stereotypes and attributes, datatypes and
 enumerations, generalizations, generalization sets as one shared triangle with

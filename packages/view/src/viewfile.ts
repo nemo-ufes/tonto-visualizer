@@ -172,6 +172,7 @@ function readLayoutOptions(value: unknown): LayoutOptions {
             ? source.direction : defaultLayoutOptions.direction,
         nodeSpacing: nonNegativeNumberOr(source.nodeSpacing, defaultLayoutOptions.nodeSpacing),
         rankSpacing: nonNegativeNumberOr(source.rankSpacing, defaultLayoutOptions.rankSpacing),
+        maxRankSpan: nonNegativeNumberOr(source.maxRankSpan, defaultLayoutOptions.maxRankSpan),
         groupByPackage: booleanOr(source.groupByPackage, defaultLayoutOptions.groupByPackage)
     };
 }
