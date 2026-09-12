@@ -63,6 +63,98 @@ describe('edge anchors', () => {
         expect(right?.target.x).toBe(positions.general!.x + positions.general!.width);
     });
 
+    test('reserves the full triangle width where generalization heads share a border', () => {
+        const positions: Record<string, Rect> = {
+            general: { x: 0, y: 0, width: 120, height: 42 },
+            farLeft: { x: -420, y: 142, width: 120, height: 42 },
+            left: { x: -180, y: 142, width: 120, height: 42 },
+            right: { x: 180, y: 142, width: 120, height: 42 },
+            farRight: { x: 420, y: 142, width: 120, height: 42 }
+        };
+        const assigned = assignPorts([
+            { id: 'far-left', source: 'farLeft', target: 'general', kind: 'generalization' },
+            { id: 'left', source: 'left', target: 'general', kind: 'generalization' },
+            { id: 'right', source: 'right', target: 'general', kind: 'generalization' },
+            { id: 'far-right', source: 'farRight', target: 'general', kind: 'generalization' }
+        ], positions, new Set(), [{
+            id: 'tree', node: 'general', towards: { x: 120, y: 142 }
+        }], 'ray', 'DOWN');
+        const heads = [
+            assigned.ends.get('far-left')!.target.x,
+            assigned.ends.get('left')!.target.x,
+            assigned.stems.get('tree')!.x,
+            assigned.ends.get('right')!.target.x,
+            assigned.ends.get('far-right')!.target.x
+        ].sort((one, other) => one - other);
+
+        // A triangle is 16-18px wide; the ordinary 12px line gap let a
+        // neighbouring inheritance line enter it even though the centre lines
+        // themselves did not cross. The extra stroke clearance makes the
+        // rendered heads, not only their zero-width tips, the reserved objects.
+        for (let index = 1; index < heads.length; index += 1) {
+            expect(heads[index]! - heads[index - 1]!).toBeGreaterThanOrEqual(20);
+        }
+    });
+
+    test('approaches a generalization head square to its taxonomy rank', () => {
+        const positions: Record<string, Rect> = {
+            general: { x: 300, y: 0, width: 120, height: 42 },
+            one: { x: 0, y: 142, width: 120, height: 42 },
+            two: { x: 20, y: 142, width: 120, height: 42 },
+            three: { x: 40, y: 142, width: 120, height: 42 },
+            four: { x: 60, y: 142, width: 120, height: 42 },
+            five: { x: 80, y: 142, width: 120, height: 42 }
+        };
+        const node = (id: string) => ({
+            id, kind: 'class' as const, name: id, package: '', stereotype: 'kind',
+            color: '#FFFFFF', isExternal: false, attributes: []
+        });
+        const view: ViewModel = {
+            groups: [],
+            nodes: ['general', 'one', 'two', 'three', 'four', 'five'].map(node),
+            edges: ['one', 'two', 'three', 'four', 'five'].map(source => ({
+                id: `${source}-gen`, kind: 'generalization' as const, source, target: 'general'
+            })),
+            gensets: []
+        };
+        const path = render({ view, positions, display: defaultDisplayOptions, direction: 'DOWN' }).paths['one-gen']!;
+
+        expect(path.at(-2)).toEqual({ x: path.at(-1)!.x, y: positions.general!.y + positions.general!.height + 18 });
+        expect(path.at(-1)!.y).toBe(positions.general!.y + positions.general!.height);
+    });
+
+    test('counts a line entering a neighboring generalization triangle', () => {
+        const positions: Record<string, Rect> = {
+            general: { x: 672, y: 12, width: 120, height: 42 },
+            pet: { x: 222, y: 154, width: 120, height: 42 },
+            dog: { x: 402, y: 154, width: 120, height: 42 }
+        };
+        const node = (id: string) => ({
+            id, kind: 'class' as const, name: id, package: '', stereotype: 'kind',
+            color: '#FFFFFF', isExternal: false, attributes: []
+        });
+        const view: ViewModel = {
+            groups: [],
+            nodes: ['general', 'pet', 'dog'].map(node),
+            edges: [
+                { id: 'pet-gen', kind: 'generalization', source: 'pet', target: 'general' },
+                { id: 'dog-gen', kind: 'generalization', source: 'dog', target: 'general' }
+            ],
+            gensets: []
+        };
+        const rendered = render({
+            view, positions, display: defaultDisplayOptions, direction: 'DOWN',
+            routes: {
+                'pet-gen': { points: [{ x: 328, y: 154 }, { x: 686, y: 54 }] },
+                'dog-gen': { points: [{ x: 503, y: 154 }, { x: 698, y: 54 }] }
+            }
+        });
+
+        // The two centre lines do not cross. Dog's line does cross the body of
+        // Pet's triangle, which is the visible defect the former metric missed.
+        expect(rendered.headCollisions).toBe(1);
+    });
+
     test('falls back from ray anchors when the final routes are less safe', () => {
         const positions: Record<string, Rect> = {
             a: { x: 193, y: 462, width: 120, height: 60 },

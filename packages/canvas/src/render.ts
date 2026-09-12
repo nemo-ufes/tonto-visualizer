@@ -40,6 +40,18 @@ export interface Rendered {
     bounds: Rect;
     /** The path each edge was drawn along, so the canvas can hit-test it. */
     paths: Record<string, Point[]>;
+    /** Lines or neighboring decorators that enter a generalization head. */
+    headCollisions: number;
+}
+
+interface HeadMarker {
+    owner: string;
+    points: [Point, Point, Point];
+}
+
+interface HeadStroke {
+    owner: string;
+    points: Point[];
 }
 
 const GROUP_HEADER = 20;
@@ -197,9 +209,14 @@ export function render(input: RenderInput): Rendered {
     // port candidates and keep the ray version unless its final paths introduce
     // an extra node intersection or crossing. This makes the anchor decision
     // part of final routing quality instead of blindly preferring either rule.
-    const routeCandidate = (associationAnchors: 'ray' | 'even') => {
-        const assigned = assignPorts(portInput, positions, through, stems, associationAnchors, input.direction);
+    const routeCandidate = (associationAnchors: 'ray' | 'even', reserveHeads: boolean) => {
+        const assigned = assignPorts(
+            portInput, positions, through, stems, associationAnchors, input.direction, reserveHeads
+        );
+        const crowdedHeads = crowdedGeneralizationHeads(portInput, stems, assigned, input.direction);
         const paths: Record<string, Point[]> = {};
+        const squareApproaches = new Map<string, Point[]>();
+        const approachGroups = new Map<string, string[]>();
         const bends: Point[] = [];
         for (const edge of drawn) {
             if (trees.covered.has(edge.id)) {
@@ -210,22 +227,54 @@ export function render(input: RenderInput): Rendered {
             if (!source || !target) {
                 continue;
             }
-            paths[edge.id] = routeEdge(source, target, {
+            const stored = input.routes?.[edge.id]?.points;
+            const route = routeEdge(source, target, {
                 avoid: bends,
-                ...(input.routes?.[edge.id]?.points ? { stored: input.routes[edge.id]!.points! } : {}),
+                ...(stored ? { stored } : {}),
                 ...(assigned.ends.get(edge.id) ? { ends: assigned.ends.get(edge.id)! } : {}),
                 ...(loops.get(edge.id) ? { loop: loops.get(edge.id)! } : {}),
                 style: display.routing,
                 obstacles: rects
             });
+            paths[edge.id] = route;
+            if (crowdedHeads.has(edge.id) && !stored && display.routing === 'straight') {
+                squareApproaches.set(edge.id, withRankFacingHead(route, target, input.direction));
+                approachGroups.set(edge.target, [...(approachGroups.get(edge.target) ?? []), edge.id]);
+            }
             // Whatever this line bent around, the next one goes round elsewhere.
             bends.push(...paths[edge.id]!.slice(1, -1));
         }
-        return { assigned, paths, faults: routeFaults(paths, drawn, positions) };
+        // A square approach solves a decorator collision only if it does not
+        // purchase that local fix with a new centre-line crossing elsewhere.
+        // Try a whole fan together: adding its stubs one at a time can make the
+        // first stub cross a neighbor that has not received its own stub yet.
+        let faults = routeFaults(paths, drawn, positions);
+        for (const ids of approachGroups.values()) {
+            const previous = new Map(ids.map(id => [id, paths[id]!]));
+            for (const id of ids) {
+                paths[id] = squareApproaches.get(id)!;
+            }
+            const candidateFaults = routeFaults(paths, drawn, positions);
+            if (candidateFaults.intersections <= faults.intersections
+                && candidateFaults.crossings <= faults.crossings) {
+                faults = candidateFaults;
+            } else {
+                for (const [id, points] of previous) {
+                    paths[id] = points;
+                }
+            }
+        }
+        return { assigned, paths, faults };
     };
-    const ray = routeCandidate('ray');
+    const preferredRay = routeCandidate('ray', true);
+    const legacyRay = routeCandidate('ray', false);
+    const ray = saferRoutes(legacyRay.faults, preferredRay.faults) ? legacyRay : preferredRay;
     const even = portInput.some(edge => edge.kind !== 'generalization')
-        ? routeCandidate('even')
+        ? (() => {
+            const preferred = routeCandidate('even', true);
+            const legacy = routeCandidate('even', false);
+            return saferRoutes(legacy.faults, preferred.faults) ? legacy : preferred;
+        })()
         : ray;
     const routed = saferRoutes(even.faults, ray.faults) ? even : ray;
     const assigned = routed.assigned;
@@ -234,8 +283,12 @@ export function render(input: RenderInput): Rendered {
     // and `paths` is what the canvas hit-tests edges against.
     const placer = new LabelPlacer(rects, groups.map(group => group.rect), { ...paths });
     const buses: BusLine[] = [];
+    const treeHeads: HeadMarker[] = [];
+    const treeHeadStrokes: HeadStroke[] = [];
     const treeMarkup = trees.plans
-        .map(plan => drawTree(plan, positions, theme, placer, rects, buses, assigned.stems))
+        .map(plan => drawTree(
+            plan, positions, theme, placer, rects, buses, assigned.stems, treeHeads, treeHeadStrokes
+        ))
         .join('');
 
     // Labels are drawn last, over the boxes. A line may pass behind a class --
@@ -260,6 +313,15 @@ export function render(input: RenderInput): Rendered {
     const edgeMarkup = lines
         .map(one => drawEdge(one.edge, one.points, theme, one.isSelected))
         .join('');
+    const ordinaryHeads: HeadMarker[] = lines.flatMap(one => one.edge.kind === 'generalization'
+        ? [{ owner: one.edge.id, points: trianglePoints(
+            one.points[one.points.length - 1]!, one.points[one.points.length - 2] ?? one.points[0]!
+        ) }]
+        : []);
+    const headCollisions = countHeadCollisions(
+        [...treeHeadStrokes, ...lines.map(one => ({ owner: one.edge.id, points: one.points }))],
+        [...treeHeads, ...ordinaryHeads]
+    );
 
     /**
      * Labels are placed widest first, not in the order the lines are drawn.
@@ -307,6 +369,7 @@ text {
     fill: ${theme.text};
     font-variant-numeric: tabular-nums;
 }
+
 .tv-node rect { stroke: ${theme.line}; stroke-width: 1; }
 .tv-node text { fill: ${theme.onFill}; }
 .tv-name { font-weight: 600; font-size: ${FONT.name}px; letter-spacing: 0.005em; }
@@ -330,7 +393,89 @@ text {
 <rect x="${origin.x}" y="${origin.y}" width="${width}" height="${height}" fill="${theme.background}"/>
 ${groups.map(group => drawGroup(group)).join('')}${edgeMarkup}${treeMarkup}${nodeMarkup}<g class="tv-labels">${labelMarkup}</g></svg>`;
 
-    return { svg, bounds: { x: origin.x, y: origin.y, width, height }, paths };
+    return { svg, bounds: { x: origin.x, y: origin.y, width, height }, paths, headCollisions };
+}
+
+/** Generalizations whose marker footprint, not only tip, reaches a neighbour. */
+function crowdedGeneralizationHeads(
+    edges: Array<{ id: string; source: string; target: string; kind?: string }>,
+    stems: readonly TreeStem[],
+    assigned: ReturnType<typeof assignPorts>,
+    direction: LayoutOptions['direction'] | undefined
+): Set<string> {
+    if (!direction) {
+        return new Set();
+    }
+    const byGeneral = new Map<string, Array<{ id: string; at: number; ordinary: boolean }>>();
+    for (const edge of edges) {
+        if (edge.kind !== 'generalization') {
+            continue;
+        }
+        const point = assigned.ends.get(edge.id)?.target;
+        if (point) {
+            byGeneral.set(edge.target, [...(byGeneral.get(edge.target) ?? []), {
+                id: edge.id, at: direction === 'DOWN' ? point.x : point.y, ordinary: true
+            }]);
+        }
+    }
+    for (const stem of stems) {
+        const point = assigned.stems.get(stem.id);
+        if (point) {
+            byGeneral.set(stem.node, [...(byGeneral.get(stem.node) ?? []), {
+                id: stem.id, at: direction === 'DOWN' ? point.x : point.y, ordinary: false
+            }]);
+        }
+    }
+    const crowded = new Set<string>();
+    for (const heads of byGeneral.values()) {
+        // With up to four heads the decorator-aware fan normally gives each
+        // triangle enough independent border. Five is where a 120px class can
+        // no longer absorb diagonal marker bodies without a common approach
+        // corridor (Animal has four ordinary heads plus one set tree).
+        if (heads.length < 5) {
+            continue;
+        }
+        const ordered = heads.sort((one, other) => one.at - other.at || one.id.localeCompare(other.id));
+        for (let index = 1; index < ordered.length; index += 1) {
+            if (ordered[index]!.at - ordered[index - 1]!.at >= 30) {
+                continue;
+            }
+            if (ordered[index - 1]!.ordinary) {
+                crowded.add(ordered[index - 1]!.id);
+            }
+            if (ordered[index]!.ordinary) {
+                crowded.add(ordered[index]!.id);
+            }
+        }
+    }
+    return crowded;
+}
+
+/**
+ * Gives a generalization triangle a short rank-normal approach.
+ *
+ * The port fan orders zero-width centre lines correctly, but the triangle is a
+ * real 16-18px-wide object behind its tip. A diagonal line into the next tip
+ * can therefore cut across that triangle without its centre line ever crossing
+ * another centre line. The short square approach keeps all ink inside the
+ * corridor the target port reserved. User-drawn routes remain exactly theirs.
+ */
+function withRankFacingHead(
+    points: Point[], target: Rect, direction: LayoutOptions['direction'] | undefined
+): Point[] {
+    if (!direction || points.length < 2) {
+        return points;
+    }
+    const tip = points[points.length - 1]!;
+    const before = points[points.length - 2]!;
+    const approach = direction === 'DOWN'
+        ? { x: tip.x, y: target.y + target.height + 18 }
+        : { x: target.x + target.width + 18, y: tip.y };
+    if ((direction === 'DOWN' && before.x === tip.x)
+        || (direction === 'RIGHT' && before.y === tip.y)) {
+        return points;
+    }
+    return [...points.slice(0, -1), approach, tip];
 }
 
 interface RouteFaults {
@@ -1270,7 +1415,8 @@ function treeStems(plans: TreePlan[], positions: Positions): TreeStem[] {
 
 function drawTree(
     plan: TreePlan, positions: Positions, theme: Theme, placer: LabelPlacer, obstacles: Rect[] = [],
-    buses: BusLine[] = [], stems: ReadonlyMap<string, Point> = new Map()
+    buses: BusLine[] = [], stems: ReadonlyMap<string, Point> = new Map(),
+    heads: HeadMarker[] = [], headStrokes: HeadStroke[] = []
 ): string {
     const general = positions[plan.general];
     const children = plan.children
@@ -1325,9 +1471,11 @@ function drawTree(
     // measured across whichever axis the bus actually runs on.
     const cornerLeft = axis.point(axis.primary(base), crossAt - 9);
     const cornerRight = axis.point(axis.primary(base), crossAt + 9);
+    heads.push({ owner: plan.marker ?? plan.general, points: [apex, cornerLeft, cornerRight] });
     markup += `<polygon class="tv-marker" points="${round(apex.x)},${round(apex.y)} `
         + `${round(cornerLeft.x)},${round(cornerLeft.y)} ${round(cornerRight.x)},${round(cornerRight.y)}"/>`;
     const busStart = axis.point(bus, crossAt);
+    headStrokes.push({ owner: plan.marker ?? plan.general, points: [base, busStart] });
     markup += `<path d="M ${round(base.x)} ${round(base.y)} L ${round(busStart.x)} ${round(busStart.y)}"/>`;
     const left = crossLow;
     const right = crossHigh;
@@ -1628,11 +1776,76 @@ function drawGroup(group: { id: string; name: string; rect: Rect }): string {
 
 /** A hollow triangle at `tip`, pointing away from `from`: UML's generalization. */
 function triangleAt(tip: Point, from: Point): string {
+    const [apex, left, right] = trianglePoints(tip, from);
+    return `<polygon class="tv-marker" points="${round(apex.x)},${round(apex.y)} `
+        + `${round(left.x)},${round(left.y)} ${round(right.x)},${round(right.y)}"/>`;
+}
+
+function trianglePoints(tip: Point, from: Point): [Point, Point, Point] {
     const { unit, normal } = direction(tip, from);
     const base = { x: tip.x + unit.x * 14, y: tip.y + unit.y * 14 };
-    return `<polygon class="tv-marker" points="${round(tip.x)},${round(tip.y)} `
-        + `${round(base.x + normal.x * 8)},${round(base.y + normal.y * 8)} `
-        + `${round(base.x - normal.x * 8)},${round(base.y - normal.y * 8)}"/>`;
+    return [
+        tip,
+        { x: base.x + normal.x * 8, y: base.y + normal.y * 8 },
+        { x: base.x - normal.x * 8, y: base.y - normal.y * 8 }
+    ];
+}
+
+/** Visual collisions at a triangle, which zero-width line crossing misses. */
+function countHeadCollisions(strokes: HeadStroke[], markers: HeadMarker[]): number {
+    const collisions = new Set<string>();
+    const pair = (one: string, other: string) => one < other ? `${one}\u0000${other}` : `${other}\u0000${one}`;
+    for (const stroke of strokes) {
+        for (const marker of markers) {
+            if (stroke.owner !== marker.owner && pathCrossesPolygon(stroke.points, marker.points)) {
+                collisions.add(pair(stroke.owner, marker.owner));
+            }
+        }
+    }
+    for (let one = 0; one < markers.length; one += 1) {
+        for (let two = one + 1; two < markers.length; two += 1) {
+            const first = markers[one]!;
+            const second = markers[two]!;
+            if (first.owner !== second.owner && polygonsOverlap(first.points, second.points)) {
+                collisions.add(pair(first.owner, second.owner));
+            }
+        }
+    }
+    return collisions.size;
+}
+
+function pathCrossesPolygon(path: Point[], polygon: readonly Point[]): boolean {
+    for (let index = 0; index + 1 < path.length; index += 1) {
+        const from = path[index]!;
+        const to = path[index + 1]!;
+        if (insideTriangle(from, polygon) || insideTriangle(to, polygon)) {
+            return true;
+        }
+        for (let side = 0; side < polygon.length; side += 1) {
+            if (segmentsProperlyCross(from, to, polygon[side]!, polygon[(side + 1) % polygon.length]!)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+function polygonsOverlap(one: readonly Point[], other: readonly Point[]): boolean {
+    return one.some(point => insideTriangle(point, other))
+        || other.some(point => insideTriangle(point, one))
+        || one.some((from, index) => other.some((otherFrom, otherIndex) =>
+            segmentsProperlyCross(
+                from, one[(index + 1) % one.length]!,
+                otherFrom, other[(otherIndex + 1) % other.length]!
+            )));
+}
+
+/** Strict interior: neighboring decorators may touch at a point without colliding. */
+function insideTriangle(point: Point, triangle: readonly Point[]): boolean {
+    const side = (from: Point, to: Point) =>
+        (to.x - from.x) * (point.y - from.y) - (to.y - from.y) * (point.x - from.x);
+    const signs = triangle.map((from, index) => side(from, triangle[(index + 1) % triangle.length]!));
+    return signs.every(value => value > 0) || signs.every(value => value < 0);
 }
 
 /** A hollow diamond at `tip`: the whole end of a parthood. */
