@@ -1,7 +1,7 @@
 {
     "name": "tonto-visualizer",
     "displayName": "Tonto Visualizer",
-    "version": "0.1.0",
+    "version": "0.1.3+20260912001712",
     "private": true,
     "description": "An OntoUML diagram beside the text: a Tonto model drawn as it is typed, and arranged by hand.",
     "license": "MIT",
@@ -144,7 +144,7 @@
         "prebuild": "npm run clean",
         "build": "node esbuild.mjs",
         "watch": "node esbuild.mjs --watch",
-        "package": "npm run build && vsce package --no-dependencies -o tonto-visualizer.vsix",
+        "package": "node bump-version.mjs && npm run build && vsce package --no-dependencies -o tonto-visualizer.vsix",
         "test": "vitest run"
     },
     "dependencies": {
