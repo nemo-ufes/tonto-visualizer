@@ -51,13 +51,6 @@ than exact ELK coordinates.
 - [x] Remove the arrangement-engine option. Layered taxonomy is the only
   supported layout; legacy `.tontoview` engine fields are ignored. Direction,
   spacing and package cohesion remain the meaningful controls.
-- [x] Measure relation names, stereotypes, reading markers, multiplicities,
-  roles, end properties, open-lock marks and whole-part diamonds before layout.
-  Pass centre, head and tail footprints to ELK so its layered initializer
-  reserves the same label space the SVG renderer needs. Inverse declarations
-  are measured as their one combined line. Cross-package relations retain the
-  package corridor instead of triggering ELK's pathological compound-node
-  expansion.
 - [ ] Add a benchmark harness that records bounds, crossings, edge-node
   intersections, edge lengths, taxonomy violations and label occlusion for the
   representative models.
@@ -70,9 +63,12 @@ than exact ELK coordinates.
   shared ranks.
 - [ ] Give partial layout a fixed-neighbour halo, so relations to unselected
   nodes influence placement while those nodes remain immovable.
-- [ ] Validate all routes and reserved label corridors against the final node
-  positions after semantic movement; the current repair passes can still move
-  nodes away from the geometry ELK evaluated.
+- [ ] Make association labels part of the final-layout quality score, then
+  validate their corridors and routes after semantic movement. Passing centre,
+  head and tail label boxes directly to ELK was tried and rolled back: ELK made
+  room by inserting and widening ranks, producing a substantially worse overall
+  arrangement, while the later semantic repair passes moved the rendered labels
+  away from the geometry for which that space had been reserved.
 - [ ] Add persistent pin, alignment and distribution constraints, followed by a
   bounded-rank policy whose wrapping remains stable by element id.
 

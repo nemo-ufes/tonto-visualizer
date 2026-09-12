@@ -29,11 +29,10 @@
  */
 
 import * as elkModule from 'elkjs/lib/elk.bundled.js';
-import type { DisplayOptions, LayoutOptions, ViewModel } from 'tonto-view';
-import { defaultDisplayOptions, defaultLayoutOptions, inversePairs } from 'tonto-view';
+import type { LayoutOptions, ViewModel } from 'tonto-view';
+import { defaultLayoutOptions, inversePairs } from 'tonto-view';
 import type { Point, Rect, Size } from './geometry.js';
 import { borderPoint, boundsOf, centerOf, overlaps } from './geometry.js';
-import { relationLabelFootprints } from './measure.js';
 import type { Positions } from './place.js';
 import type { RoutingStyle } from './route.js';
 import { routeEdge } from './route.js';
@@ -65,17 +64,8 @@ interface ElkEdge {
     id: string;
     sources: string[];
     targets: string[];
-    labels?: ElkLabel[];
     layoutOptions?: Record<string, string>;
     sections?: Array<{ startPoint: ElkPoint; endPoint: ElkPoint; bendPoints?: ElkPoint[] }>;
-}
-
-interface ElkLabel {
-    id: string;
-    text: string;
-    width: number;
-    height: number;
-    layoutOptions: Record<string, string>;
 }
 
 interface ElkNode {
@@ -98,8 +88,6 @@ export interface AutoLayoutRequest extends Partial<LayoutOptions> {
      * which is what keeps it looking right after a drag.
      */
     routing?: RoutingStyle;
-    /** What will actually be written on the edges this layout is making room for. */
-    display?: DisplayOptions;
 }
 
 export interface AutoLayoutResult {
@@ -125,7 +113,6 @@ function optionsFor(settings: LayoutOptions, routing: RoutingStyle): Record<stri
         'elk.spacing.nodeNode': String(settings.nodeSpacing),
         'elk.spacing.edgeNode': String(Math.round(settings.nodeSpacing * 0.5)),
         'elk.spacing.edgeEdge': '12',
-        'elk.spacing.edgeLabel': '8',
         'elk.layered.spacing.nodeNodeBetweenLayers': String(settings.rankSpacing),
         'elk.layered.spacing.edgeNodeBetweenLayers': String(Math.round(settings.rankSpacing * 0.4)),
         // Straight taxonomy legs, at the cost of a wider drawing: a
@@ -977,8 +964,7 @@ export async function autoLayout(
     request: AutoLayoutRequest = {}
 ): Promise<AutoLayoutResult> {
     const settings: LayoutOptions = { ...defaultLayoutOptions, ...request };
-    const routing = request.routing ?? request.display?.routing ?? defaultDisplayOptions.routing;
-    const display: DisplayOptions = { ...defaultDisplayOptions, ...request.display, routing };
+    const routing = request.routing ?? 'straight';
     const subject = new Set(request.only ?? view.nodes.map(node => node.id));
     const inverses = inversePairs(view.edges);
     const hasTaxonomy = view.edges.some(edge => edge.kind === 'generalization'
@@ -997,7 +983,6 @@ export async function autoLayout(
     // twelve isolated cards become a row thirty-one times wider than it is
     // high. The renderer can still draw the one package around the flat layout.
     const grouped = settings.groupByPackage && populatedGroups.length > 1;
-    const groupOf = new Map(populatedGroups.flatMap(group => group.nodes.map(id => [id, group.id] as const)));
     const algorithmOptions = optionsFor(settings, routing);
     /**
      * A datatype nothing is joined to is put after the model, not into it.
@@ -1079,39 +1064,10 @@ export async function autoLayout(
                     };
                 }
                 const turned = turnedMediations.has(edge.id);
-                // ELK handles labels on edges inside a compound graph, but a
-                // label on an edge crossing compound boundaries makes it push
-                // the package nodes apart by the label's full rank width. The
-                // space between package frames already gives the renderer a
-                // clear corridor; reserve explicit boxes where labels compete
-                // with the cards inside the same layout graph.
-                const labels = edge.kind === 'relation'
-                    && (!grouped || groupOf.get(edge.source) === groupOf.get(edge.target))
-                    ? relationLabelFootprints(edge, display, inverses.partnerOf.get(edge.id))
-                        .map((label, index) => {
-                            const placement = turned
-                                ? label.placement === 'HEAD' ? 'TAIL'
-                                    : label.placement === 'TAIL' ? 'HEAD'
-                                        : label.placement
-                                : label.placement;
-                            return {
-                                id: `${edge.id}:label:${index}`,
-                                // ELK drops a label with no text before layout
-                                // even when explicit dimensions were supplied.
-                                // The real text remains the renderer's concern;
-                                // this keeps its measured placeholder alive.
-                                text: ' ',
-                                width: label.width,
-                                height: label.height,
-                                layoutOptions: { 'elk.edgeLabels.placement': placement }
-                            };
-                        })
-                    : undefined;
                 return {
                     id: edge.id,
                     sources: [turned ? edge.target : edge.source],
                     targets: [turned ? edge.source : edge.target],
-                    ...(labels && labels.length > 0 ? { labels } : {}),
                     layoutOptions: edge.kind === 'relation' && edge.stereotype === 'mediation'
                         // A mediation should come out straight where it can: it
                         // is the line that says what the relator is between.

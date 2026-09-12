@@ -12,9 +12,7 @@ import type { DisplayOptions } from 'tonto-view';
 import { inversePairs } from 'tonto-view/inverses';
 import type { Point, Rect, Side } from './geometry.js';
 import { alongPath, boundsOf, centerOf, distanceToPath, segmentHitsRect, sideOf } from './geometry.js';
-import {
-    attributeLines, FONT, multiplicityLabel, NODE, nodeLabel, relationLabelFootprints, stereotypeLabel, textWidth
-} from './measure.js';
+import { attributeLines, FONT, multiplicityLabel, NODE, nodeLabel, stereotypeLabel, textWidth } from './measure.js';
 import type { Positions } from './place.js';
 import type { TreeStem } from './ports.js';
 import { assignPorts, endKey } from './ports.js';
@@ -401,7 +399,20 @@ export function labelWidth(edge: ViewEdge, display: DisplayOptions): number {
     if (edge.kind !== 'relation') {
         return 0;
     }
-    return Math.max(0, ...relationLabelFootprints(edge, display).map(label => label.width));
+    const ends = [edge.sourceEnd, edge.targetEnd].map(end => {
+        const parts = [
+            display.showRoleNames ? end.role : undefined,
+            display.showEndDecorations && end.isAddOnly ? '{addOnly}' : undefined,
+            display.showEndDecorations && end.subsets ? `{subsets ${end.subsets}}` : undefined,
+            display.showEndDecorations && end.redefines ? `{redefines ${end.redefines}}` : undefined
+        ].filter(Boolean).join(' ');
+        return textWidth(parts, FONT.edge);
+    });
+    const middle = Math.max(
+        display.showRelationNames && edge.name ? textWidth(edge.name, FONT.edge) : 0,
+        display.showRelationStereotypes && edge.stereotype ? textWidth(`«${edge.stereotype}»`, FONT.edgeStereotype) : 0
+    );
+    return Math.max(middle, ...ends);
 }
 
 function drawEdgeLabels(
