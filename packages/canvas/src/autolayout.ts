@@ -98,6 +98,8 @@ export interface AutoLayoutRequest extends Partial<LayoutOptions> {
     routing?: RoutingStyle;
     /** Arrange inheritance without letting hidden associations influence it. */
     taxonomyOnly?: boolean;
+    /** Keep package members inside compound package nodes, not merely nearby. */
+    packageContainers?: boolean;
 }
 
 export interface AutoLayoutResult {
@@ -562,6 +564,7 @@ interface Corridor {
 interface CrossAxisScore {
     intersections: number;
     crossings: number;
+    packageFragments: number;
     maximumLength: number;
     totalLength: number;
     span: number;
@@ -592,9 +595,10 @@ function taxonomyCorridors(
 function betterCrossAxisScore(one: CrossAxisScore, other: CrossAxisScore): boolean {
     return one.intersections < other.intersections
         || (one.intersections === other.intersections && (one.crossings < other.crossings
-            || (one.crossings === other.crossings && (one.maximumLength < other.maximumLength
-                || (one.maximumLength === other.maximumLength && (one.totalLength < other.totalLength
-                    || (one.totalLength === other.totalLength && one.span < other.span)))))));
+            || (one.crossings === other.crossings && (one.packageFragments < other.packageFragments
+                || (one.packageFragments === other.packageFragments && (one.maximumLength < other.maximumLength
+                    || (one.maximumLength === other.maximumLength && (one.totalLength < other.totalLength
+                        || (one.totalLength === other.totalLength && one.span < other.span)))))))));
 }
 
 function overlapArea(one: Rect, other: Rect): number {
@@ -758,6 +762,7 @@ function optimizeRankCrossAxis(
         }
     }
     const incident = new Map<string, typeof visibleEdges>();
+    const packageOf = new Map(view.nodes.map(node => [node.id, node.package]));
     for (const edge of visibleEdges) {
         incident.set(edge.source, [...(incident.get(edge.source) ?? []), edge]);
         incident.set(edge.target, [...(incident.get(edge.target) ?? []), edge]);
@@ -835,9 +840,20 @@ function optimizeRankCrossAxis(
             }
             const lengths = paths.map(([, points]) => pathLength(points));
             const bounds = boundsOf(ids.map(id => candidate[id]).filter((rect): rect is Rect => rect !== undefined));
+            const packageFragments = settings.groupByPackage
+                ? [...new Set(ids.map(id => candidate[id]?.[primary]).filter(at => at !== undefined))]
+                    .reduce((total, at) => {
+                        const packages = ids.filter(id => candidate[id]?.[primary] === at)
+                            .sort((one, other) => candidate[one]![cross] - candidate[other]![cross])
+                            .map(id => packageOf.get(id));
+                        const runs = packages.filter((pkg, index) => index === 0 || pkg !== packages[index - 1]).length;
+                        return total + runs - new Set(packages).size;
+                    }, 0)
+                : 0;
             return {
                 intersections,
                 crossings,
+                packageFragments,
                 maximumLength: Math.round(Math.max(0, ...lengths)),
                 totalLength: Math.round(lengths.reduce((sum, length) => sum + length, 0)),
                 span: Math.round(bounds[crossSize])
@@ -918,7 +934,17 @@ function optimizeRankCrossAxis(
                 };
                 const barycentric = [...current].sort((one, other) =>
                     barycentre(one) - barycentre(other) || current.indexOf(one) - current.indexOf(other));
-                const orders = [current, barycentric];
+                const packageOrder = new Map<string | undefined, number>();
+                for (const id of current) {
+                    const pkg = packageOf.get(id);
+                    if (!packageOrder.has(pkg)) {
+                        packageOrder.set(pkg, packageOrder.size);
+                    }
+                }
+                const packageGrouped = [...current].sort((one, other) =>
+                    (packageOrder.get(packageOf.get(one)) ?? 0) - (packageOrder.get(packageOf.get(other)) ?? 0)
+                    || current.indexOf(one) - current.indexOf(other));
+                const orders = settings.groupByPackage ? [current, barycentric, packageGrouped] : [current, barycentric];
                 for (const base of [current, barycentric]) {
                     for (let index = 0; index + 1 < base.length; index += 1) {
                         const swapped = [...base];
@@ -1666,7 +1692,8 @@ function enforceTaxonomyRanks(
     view: ViewModel,
     positions: Positions,
     subject: ReadonlySet<string>,
-    settings: LayoutOptions
+    settings: LayoutOptions,
+    packageContainers: boolean
 ): Set<string> | undefined {
     const generalizations = view.edges.filter(edge => edge.kind === 'generalization'
         && subject.has(edge.source) && subject.has(edge.target));
@@ -1719,7 +1746,6 @@ function enforceTaxonomyRanks(
 
     const unseen = new Set(ranks.keys());
     const components: string[][] = [];
-    const packageOf = new Map(view.nodes.map(node => [node.id, node.package]));
     while (unseen.size > 0) {
         const first = unseen.values().next().value as string;
         const component: string[] = [];
@@ -1729,9 +1755,6 @@ function enforceTaxonomyRanks(
             const id = visit.pop()!;
             component.push(id);
             for (const neighbour of [...(parents.get(id) ?? []), ...(children.get(id) ?? [])]) {
-                if (settings.groupByPackage && packageOf.get(neighbour) !== packageOf.get(id)) {
-                    continue;
-                }
                 if (unseen.delete(neighbour)) {
                     visit.push(neighbour);
                 }
@@ -1762,18 +1785,27 @@ function enforceTaxonomyRanks(
                     || one.localeCompare(other);
             });
             const rowRects = rowIds.map(id => positions[id]!);
-            const length = rowRects.reduce((sum, rect) => sum + rect[crossSize], 0)
-                + settings.nodeSpacing * Math.max(rowIds.length - 1, 0);
-            let along = crossMiddle - length / 2;
             const thickness = Math.max(...rowRects.map(rect => rect[primarySize]));
-            for (const id of rowIds) {
-                const rect = positions[id]!;
-                rects.set(id, {
-                    ...rect,
-                    [primary]: Math.round(at),
-                    [cross]: Math.round(along)
-                });
-                along += rect[crossSize] + settings.nodeSpacing;
+            if (packageContainers) {
+                // Compound packages already own disjoint cross-axis bands.
+                // Retain those bands while sharing the taxonomy's rank axis;
+                // repacking a row as one strip would interleave the boxes.
+                for (const id of rowIds) {
+                    rects.set(id, { ...positions[id]!, [primary]: Math.round(at) });
+                }
+            } else {
+                const length = rowRects.reduce((sum, rect) => sum + rect[crossSize], 0)
+                    + settings.nodeSpacing * Math.max(rowIds.length - 1, 0);
+                let along = crossMiddle - length / 2;
+                for (const id of rowIds) {
+                    const rect = positions[id]!;
+                    rects.set(id, {
+                        ...rect,
+                        [primary]: Math.round(at),
+                        [cross]: Math.round(along)
+                    });
+                    along += rect[crossSize] + settings.nodeSpacing;
+                }
             }
             at += thickness + settings.rankSpacing;
         }
@@ -1918,7 +1950,8 @@ export async function autoLayout(
     // package's disconnected components in one strip instead of packing them:
     // twelve isolated cards become a row thirty-one times wider than it is
     // high. The renderer can still draw the one package around the flat layout.
-    const grouped = settings.groupByPackage && populatedGroups.length > 1;
+    const grouped = request.packageContainers === true
+        && settings.groupByPackage && populatedGroups.length > 1;
     const algorithmOptions = optionsFor(settings, routing);
     /**
      * A datatype nothing is joined to is put after the model, not into it.
@@ -2040,7 +2073,7 @@ export async function autoLayout(
         .map(id => [id, { ...positions[id]! }]));
     let ranked: Set<string> | undefined;
     if (!request.only) {
-        ranked = enforceTaxonomyRanks(view, positions, subject, settings);
+        ranked = enforceTaxonomyRanks(view, positions, subject, settings, grouped);
         settleRelators(view, positions, subject, ranked ? settings.direction : undefined, ranked);
         if (ranked) {
             settleOrphans(view, positions, subject, ranked);

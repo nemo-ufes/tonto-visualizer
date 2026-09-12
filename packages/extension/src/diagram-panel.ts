@@ -251,6 +251,7 @@ export class DiagramPanel {
                 ...store.state.layout,
                 routing: store.state.display.routing,
                 taxonomyOnly: store.state.display.taxonomyOnly,
+                packageContainers: store.state.display.showPackageGroups,
                 ...(only ? { only } : {})
             });
         } catch (error) {

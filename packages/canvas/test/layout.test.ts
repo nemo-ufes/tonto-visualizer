@@ -366,24 +366,57 @@ describe('packages and the layout', () => {
         };
     }
 
-    test('lays a model out as one graph when the packages are ignored', async () => {
+    test('uses hard package bands only when package containers are requested', async () => {
         const view = twoPackages();
         const sizes = Object.fromEntries(view.nodes.map(node => [node.id, sizeOf(node, display)]));
+        const contained = await autoLayout(view, sizes, {}, {
+            ...defaultLayoutOptions, groupByPackage: true, packageContainers: true
+        });
         const together = await autoLayout(view, sizes, {}, { ...defaultLayoutOptions, groupByPackage: true });
         const loose = await autoLayout(view, sizes, {}, { ...defaultLayoutOptions, groupByPackage: false });
 
-        for (const laid of [together, loose]) {
+        for (const laid of [contained, together, loose]) {
             expect(Object.keys(laid.positions)).toHaveLength(4);
         }
-        // Kept together, a package's classes occupy one band; ignored, they
-        // interleave -- which is the whole point of the option, and why the
-        // package boxes stop being drawn when they would enclose a stranger.
+        // A box requires one exclusive band. Soft clustering can interleave
+        // packages where the taxonomy needs it, just as disabling the
+        // preference can; its penalty is considered only after crossings.
         const bandOf = (positions: Record<string, { x: number }>, pkg: string) =>
             view.nodes.filter(node => node.package === pkg).map(node => positions[node.id]!.x);
         const overlapping = (one: number[], other: number[]) =>
             Math.min(...one) < Math.max(...other) && Math.min(...other) < Math.max(...one);
-        expect(overlapping(bandOf(together.positions, 'A'), bandOf(together.positions, 'B'))).toBe(false);
+        expect(overlapping(bandOf(contained.positions, 'A'), bandOf(contained.positions, 'B'))).toBe(false);
+        expect(overlapping(bandOf(together.positions, 'A'), bandOf(together.positions, 'B'))).toBe(true);
         expect(overlapping(bandOf(loose.positions, 'A'), bandOf(loose.positions, 'B'))).toBe(true);
+    });
+
+    test('keeps taxonomy ranks across hard package containers', async () => {
+        const clazz = (id: string) => ({
+            id, kind: 'class' as const, name: id.split('::')[1]!, package: id.split('::')[0]!,
+            stereotype: 'kind', color: '#FF99A3', isExternal: false, attributes: []
+        });
+        const view: ViewModel = {
+            groups: [
+                { id: 'pkg:A', name: 'A', isExternal: false, nodes: ['A::Root', 'A::Child'] },
+                { id: 'pkg:B', name: 'B', isExternal: false, nodes: ['B::Middle'] }
+            ],
+            nodes: [clazz('A::Root'), clazz('B::Middle'), clazz('A::Child')],
+            edges: [
+                { kind: 'generalization', id: 'upper', source: 'B::Middle', target: 'A::Root' },
+                { kind: 'generalization', id: 'lower', source: 'A::Child', target: 'B::Middle' }
+            ],
+            gensets: []
+        };
+        const sizes = Object.fromEntries(view.nodes.map(node => [node.id, sizeOf(node, display)]));
+        const laid = await autoLayout(view, sizes, {}, {
+            ...defaultLayoutOptions, groupByPackage: true, packageContainers: true
+        });
+
+        const root = laid.positions['A::Root']!;
+        const middle = laid.positions['B::Middle']!;
+        const child = laid.positions['A::Child']!;
+        expect(middle.y - (root.y + root.height)).toBeGreaterThanOrEqual(defaultLayoutOptions.rankSpacing - 1);
+        expect(child.y - (middle.y + middle.height)).toBeGreaterThanOrEqual(defaultLayoutOptions.rankSpacing - 1);
     });
 
     /**
