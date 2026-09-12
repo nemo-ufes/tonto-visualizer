@@ -823,7 +823,11 @@ export class DiagramPanel {
         <span id="scale" class="scale">100%</span>
         <button id="zoomIn" title="Zoom in">+</button>
         <button id="fit" title="Fit to view">Fit</button>
-        <button id="newWindow" title="Move into a New Window">Move into a New Window</button>
+        <button id="newWindow" class="icon-button" title="Move into a New Window" aria-label="Move into a New Window">
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M 9.5 2.5 H 13.5 V 6.5 M 13.5 2.5 L 7 9 M 11.5 8.5 V 13.5 H 2.5 V 4.5 H 7.5"></path>
+            </svg>
+        </button>
         <button id="arrange" title="Arrange the whole diagram automatically">Arrange</button>
         <button id="hide" title="Hide the selected classes or associations" disabled>Hide</button>
         <button id="optionsButton" title="What is drawn">⚙</button>
