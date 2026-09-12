@@ -87,6 +87,24 @@ button:disabled {
     opacity: 0.45;
 }
 
+.icon-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    padding: 0;
+}
+
+.icon-button svg {
+    width: 14px;
+    height: 14px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
 #viewport {
     position: relative;
     overflow: hidden;

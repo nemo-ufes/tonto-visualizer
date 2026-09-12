@@ -1448,10 +1448,20 @@ function busDepth(
     const direction = axis.direction;
     const basePrimary = axis.primary(base);
     const gap = Math.abs(nearest - basePrimary);
+    const innerStart = Math.min(basePrimary, nearest) + 7;
+    const innerEnd = Math.max(basePrimary, nearest) - 7;
+    if (innerStart > innerEnd) {
+        return Math.round((basePrimary + nearest) / 2);
+    }
     const lane = plan.lane.count > 1 ? (plan.lane.index - (plan.lane.count - 1) / 2) * 20 : 0;
-    const candidates = [0.5, 0.35, 0.65, 0.25, 0.75, 0.85]
+    // A lane is a preference inside the available gap, never permission to
+    // leave it. With four sets on one general and a shallow rank gap, the outer
+    // offsets used to put one bus behind the triangle and another beyond the
+    // subtype row. Clamping before scoring retains as much lane separation as
+    // the gap can hold without growing stems out of the tree at either end.
+    const candidates = [...new Set([0.5, 0.35, 0.65, 0.25, 0.75, 0.85]
         .map(fraction => Math.round(basePrimary + direction * (gap * fraction + lane)))
-        .filter(depth => Math.abs(depth - basePrimary) > 6 && Math.abs(depth - nearest) > 6);
+        .map(depth => Math.max(innerStart, Math.min(innerEnd, depth))))];
     if (candidates.length === 0) {
         return Math.round((basePrimary + nearest) / 2);
     }

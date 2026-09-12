@@ -239,6 +239,49 @@ describe('telling one line from another', () => {
         expect(Number(apex![2])).toBeLessThan(160);
     });
 
+    test('keeps every set bus between its triangle and its subtype row', () => {
+        // Lane offsets separate several sets owned by the same general. With a
+        // shallow rank gap, the outer offsets used to push the first bus back
+        // through the triangle and the last beyond the subtype boxes: long
+        // stems protruded from both ends of the usual tree shape.
+        const sets = Array.from({ length: 4 }, (_, index) => `set:Sample::Set${index}`);
+        const view: ViewModel = {
+            groups: [],
+            nodes: ['Person', 'Child', 'Adult'].map(classNode),
+            edges: sets.flatMap((set, index) => [
+                {
+                    kind: 'generalization' as const, id: `gen:Child:${index}`,
+                    source: 'Sample::Child', target: 'Sample::Person', genset: set
+                },
+                {
+                    kind: 'generalization' as const, id: `gen:Adult:${index}`,
+                    source: 'Sample::Adult', target: 'Sample::Person', genset: set
+                }
+            ]),
+            gensets: sets.map((id, index) => ({
+                id, name: `Set${index}`, disjoint: true, complete: true,
+                general: 'Sample::Person', specifics: ['Sample::Child', 'Sample::Adult'], categorizers: []
+            }))
+        };
+        const svg = render({
+            view,
+            positions: {
+                'Sample::Person': { x: 100, y: 0, width: 120, height: 60 },
+                'Sample::Child': { x: 40, y: 100, width: 120, height: 42 },
+                'Sample::Adult': { x: 160, y: 100, width: 120, height: 42 }
+            },
+            display
+        }).svg;
+        const trees = [...svg.matchAll(/<g class="tv-edge tv-tree"[^>]*>([\s\S]*?)<\/g>/g)];
+        const buses = trees.map(tree => [...tree[1]!.matchAll(
+            /<path d="M ([-\d.]+) ([-\d.]+) L ([-\d.]+) ([-\d.]+)"\/>/g
+        )].map(match => match.slice(1).map(Number))
+            .find(([, from, , to]) => from === to));
+
+        expect(buses).toHaveLength(4);
+        expect(buses.every(bus => bus !== undefined && bus[1]! > 74 && bus[1]! < 100)).toBe(true);
+    });
+
     test('anchors lines to one class in the order they leave in', () => {
         // Three classes on one rank, as a layered layout leaves them, reached
         // from the right side of one class. Every far centre has the same y, so

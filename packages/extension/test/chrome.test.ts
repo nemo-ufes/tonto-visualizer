@@ -72,6 +72,14 @@ describe('the panel chrome', () => {
         expect(asked.filter(id => !offered.has(id))).toEqual([]);
     });
 
+    test('shows the move-to-window action as a labelled icon', () => {
+        const button = /<button id="newWindow"([^>]*)>([\s\S]*?)<\/button>/.exec(panel);
+        expect(button).not.toBeNull();
+        expect(button![1]).toContain('aria-label="Move into a New Window"');
+        expect(button![2]).toContain('<svg');
+        expect(button![2]!.replace(/<[^>]+>/g, '').trim()).toBe('');
+    });
+
     test('falls back to the font the diagram is drawn in', () => {
         // Chrome and drawing should agree when neither is being told what to
         // use; the stack is the one in packages/canvas/src/measure.ts.
