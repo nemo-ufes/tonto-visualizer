@@ -32,7 +32,7 @@ import * as elkModule from 'elkjs/lib/elk.bundled.js';
 import type { LayoutOptions, ViewModel } from 'tonto-view';
 import { defaultLayoutOptions, inversePairs } from 'tonto-view';
 import type { Point, Rect, Size } from './geometry.js';
-import { borderPoint, boundsOf, centerOf, overlaps } from './geometry.js';
+import { borderPoint, boundsOf, centerOf, overlaps, segmentHitsRect } from './geometry.js';
 import type { Positions } from './place.js';
 import type { RoutingStyle } from './route.js';
 import { routeEdge } from './route.js';
@@ -42,6 +42,7 @@ const GROUP_HEADER = 20;
 const PARTIAL_GAP = 24;
 const PARTIAL_STEP = 40;
 const TARGET_ASPECT_RATIO = 1.6;
+const TAXONOMY_CORRIDOR = 12;
 
 /**
  * ELK ships one bundle for CommonJS and for the browser, so the constructor
@@ -481,6 +482,23 @@ function settleOrphans(
         return;
     }
 
+    // Taxonomy was just put back onto semantic ranks. Its open corridors are
+    // part of that result: seating an association-only class between a general
+    // and its specific forces the router to draw inheritance around a class it
+    // has nothing to do with. Keep a modest lane around the direct border-to-
+    // border path while the orphan components search for their nearest place.
+    const taxonomyCorridors = view.edges.flatMap(edge => {
+        if (edge.kind !== 'generalization' || !ranked.has(edge.source) || !ranked.has(edge.target)) {
+            return [];
+        }
+        const source = positions[edge.source];
+        const target = positions[edge.target];
+        return source && target ? [{
+            from: borderPoint(source, centerOf(target)),
+            to: borderPoint(target, centerOf(source))
+        }] : [];
+    });
+
     const neighboursOf = new Map<string, Set<string>>();
     for (const edge of view.edges) {
         if (edge.kind !== 'relation' || edge.source === edge.target
@@ -547,7 +565,9 @@ function settleOrphans(
         const fits = (dx: number, dy: number) => component.every(id => {
             const rect = positions[id]!;
             const moved = { ...rect, x: Math.round(rect.x + dx), y: Math.round(rect.y + dy) };
-            return !others.some(one => overlaps(moved, one, 24));
+            return !others.some(one => overlaps(moved, one, 24))
+                && !taxonomyCorridors.some(corridor =>
+                    segmentHitsRect(corridor.from, corridor.to, moved, TAXONOMY_CORRIDOR));
         });
 
         // The straight line to the anchors is blocked as often as it is

@@ -51,7 +51,7 @@ than exact ELK coordinates.
 - [x] Remove the arrangement-engine option. Layered taxonomy is the only
   supported layout; legacy `.tontoview` engine fields are ignored. Direction,
   spacing and package cohesion remain the meaningful controls.
-- [ ] Add a benchmark harness that records bounds, crossings, edge-node
+- [x] Add a benchmark harness that records bounds, crossings, edge-node
   intersections, edge lengths, taxonomy violations and label occlusion for the
   representative models.
 - [ ] Replace taxonomy re-ranking plus greedy semantic repairs with one
@@ -87,3 +87,13 @@ The mature pipeline is component-oriented:
 ELK remains valuable as an initializer and router. The canvas layer owns the
 additional diagram-reading constraints, while the language remains the sole
 authority for what those constraints mean.
+
+## Progress log
+
+### 2026-09-11
+
+- Added quality ceilings for `boats`, `pets`, `gufo`, `university`, `parties`
+  and a dense mixed-relationship regression supplied from an actual diagram.
+- Protected the direct corridor between a general and its specific from the
+  association-only classes settled after taxonomy ranks. This keeps later
+  semantic repair from turning a straight inheritance line into a detour.

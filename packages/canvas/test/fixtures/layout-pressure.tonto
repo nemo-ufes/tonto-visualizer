@@ -1,0 +1,41 @@
+package Error
+
+relator Marriage
+{
+    @mediation [1] -- [2] (const spouses) Person
+}
+kind Person
+
+extrinsicMode Duty
+{
+    @characterization [*] -- (const) Person
+    @externalDependence -- isHeldInFavorOf -- (const) Person
+}
+
+event Wedding
+{
+    @structural (const) <>-- [2..*] (const) VowReading
+    @structural (const) <>-- (const) Celebration
+}
+
+event Celebration
+event VowReading
+
+intrinsicMode Headache
+{
+    @characterization -- (const) Person
+}
+
+quality Intensity
+{
+    @characterization -- (const) Headache
+}
+
+phase ActiveHeadache specializes Headache
+
+kind Element
+subkind Part specializes Element
+subkind System specializes Element
+{
+    @componenthood <>-- hasPart -- [2..*] Part
+}
