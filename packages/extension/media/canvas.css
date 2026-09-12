@@ -3,9 +3,9 @@
  * Every `--vscode-*` here carries a fallback. The variables exist inside a
  * VS Code webview and nowhere else, and a `var()` with nothing behind it falls
  * back to the property's initial value -- which for `font-family` is a serif,
- * so the toolbar, the legend and the hint came out in Times wherever this page
- * was opened outside the editor: the harness that drives the panel in a
- * browser, a screenshot taken from it, any preview.
+ * so the toolbar and the legend came out in Times wherever this page was
+ * opened outside the editor: the harness that drives the panel in a browser,
+ * a screenshot taken from it, any preview.
  *
  * The fallback font is the diagram's own stack (see FONT.family in
  * packages/canvas/src/measure.ts), so chrome and drawing agree when neither is
@@ -291,16 +291,6 @@ summary.section-title {
     height: 12px;
     border: 1px solid rgba(0, 0, 0, 0.35);
     border-radius: 2px;
-}
-
-.hint {
-    position: absolute;
-    left: 10px;
-    bottom: 8px;
-    font-size: 10px;
-    color: var(--vscode-descriptionForeground, var(--chrome-muted));
-    opacity: 0.5;
-    pointer-events: none;
 }
 
 .row.choice {
