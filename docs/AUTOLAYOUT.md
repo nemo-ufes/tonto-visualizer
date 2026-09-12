@@ -55,7 +55,7 @@ exact ELK coordinates.
 - [x] Add a benchmark harness that records bounds, crossings, edge-node
   intersections, edge lengths, taxonomy violations and label occlusion for the
   representative models.
-- [ ] Replace taxonomy re-ranking plus greedy semantic repairs with one
+- [x] Replace taxonomy re-ranking plus greedy semantic repairs with one
   rank-constrained cross-axis optimizer. Taxonomy rank is hard; generalizations,
   mediations, whole-before-part order and package cohesion receive explicit
   weights during ordering and compaction.
@@ -192,3 +192,11 @@ authority for what those constraints mean.
   stable element id; a whole wrapped level is completed before the next
   semantic rank begins, retaining the hard inheritance direction. Explicit
   package containers keep their package bands and are therefore exempt.
+- Consolidated the semantic candidate passes under one rank-constrained
+  acceptance gate. Hard taxonomy ranks are established once; relator, orphan,
+  characterized-aspect, whole/fan, rank-order, band-compaction and label-
+  corridor proposals then form one candidate scored with the shared semantic
+  weights and the completed renderer. Node overlap and added intersections or
+  crossings reject it; at most one additional label collision can trade for a
+  materially better semantic or footprint score. Rigid component packing and
+  appendix placement remain structural steps outside that choice.
