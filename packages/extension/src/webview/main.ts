@@ -15,7 +15,7 @@ import { natureLegend } from 'tonto-view/palette';
 import type { Corner, Handle, Point, Rect, Size } from 'tonto-canvas/draw';
 import {
     CORNERS, cornerOf, curvedRoute, darkTheme, distanceToPath, drawNode, dropHandle, handlesFor, lightTheme,
-    moveHandle, overlaps, pathData, rectBetween, render, resizeTo, routeEdge, segmentHitsRect, sizeOf
+    moveHandle, overlaps, pathData, rectBetween, relationSpreads, render, resizeTo, routeEdge, segmentHitsRect, sizeOf
 } from 'tonto-canvas/draw';
 import type { FilterItem } from '../protocol.js';
 
@@ -696,6 +696,7 @@ function keepSize(id: string, rect: Rect, sized = true): void {
 
 /** While a node is being dragged its edges follow it, without a full redraw. */
 function redrawIncidentEdges(moved: Set<string>): void {
+    const spreads = relationSpreads(view.edges.filter(edge => guides[edge.id] !== undefined));
     for (const edge of view.edges) {
         if (!moved.has(edge.source) && !moved.has(edge.target)) {
             continue;
@@ -706,7 +707,10 @@ function redrawIncidentEdges(moved: Set<string>): void {
         if (!source || !target || !path) {
             continue;
         }
-        const points = routeEdge(source, target, { style: display?.routing ?? 'straight' });
+        const points = routeEdge(source, target, {
+            style: display?.routing ?? 'straight',
+            ...(spreads.get(edge.id) ? { spread: spreads.get(edge.id)! } : {})
+        });
         repaint(edge.id, points);
     }
 }

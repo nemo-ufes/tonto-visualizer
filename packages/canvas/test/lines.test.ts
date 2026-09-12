@@ -61,6 +61,12 @@ describe('telling one line from another', () => {
         expect(drawn.first).toBeDefined();
         expect(drawn.second).toBeDefined();
         expect(drawn.first).not.toEqual(drawn.second);
+        const first = points(drawn.first!);
+        const second = points(drawn.second!);
+        expect(first).toHaveLength(3);
+        expect(second).toHaveLength(3);
+        expect(Math.abs(first[1]!.x - second[1]!.x))
+            .toBeGreaterThan(Math.abs(first[0]!.x - second[0]!.x));
     });
 
     test('keeps those places when a line has to bend round something', () => {

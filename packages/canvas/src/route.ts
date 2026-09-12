@@ -9,9 +9,9 @@
  * one supertype line up better with square corners -- but it is a choice now
  * rather than the only thing on offer.
  *
- * Parallel edges are spread apart, which matters far more with straight lines:
- * two mediations between the same relator and class are one line drawn twice
- * unless something moves them apart.
+ * Associations between the same pair fan apart with a real bend. Merely moving
+ * two straight lines sideways leaves them parallel and easy to confuse in the
+ * middle, where their labels live.
  *
  * A route the modeller drew is obeyed exactly. That is the whole reason routes
  * are computed here rather than asked of a layout engine: an engine re-routes
@@ -43,8 +43,8 @@ export interface RouteRequest {
      */
     avoid?: Point[];
     style?: RoutingStyle;
-    /** Which of the edges between this pair this is, and how many there are. */
-    spread?: { index: number; count: number };
+    /** Which repeated edge this is; reach is used while testing safer fans. */
+    spread?: { index: number; count: number; reach?: number };
     /**
      * Boxes the line should not cross -- every other element in the drawing.
      * A straight line between two distant classes will otherwise pass through
@@ -54,7 +54,7 @@ export interface RouteRequest {
     obstacles?: Rect[];
 }
 
-/** How far apart parallel edges run. */
+/** How much farther a repeated association opens away from its shared axis. */
 const SPREAD = 16;
 
 /** How wide a berth a detour gives the box it is going round. */
@@ -223,32 +223,102 @@ export function routeEdge(source: Rect, target: Rect, request: RouteRequest = {}
         return selfLoop(source, request.loop?.index ?? 0, request.ends, request.obstacles);
     }
     const offset = spreadOf(request.spread);
+    let route: Point[];
     if (request.ends) {
-        return request.style === 'orthogonal'
+        route = request.style === 'orthogonal'
             ? orthogonalBetween(source, target, request.ends, request.obstacles)
             : straightBetween(request.ends, source, target, request.obstacles, request.avoid);
+    } else {
+        route = request.style === 'orthogonal'
+            ? orthogonalAround(orthogonal(source, target, offset), source, target, request.obstacles)
+            : straight(source, target, offset, request.obstacles, request.avoid);
     }
-    return request.style === 'orthogonal'
-        ? orthogonalAround(orthogonal(source, target, offset), source, target, request.obstacles)
-        : straight(source, target, offset, request.obstacles, request.avoid);
+    return request.spread?.count && request.spread.count > 1 && !hasVisibleBend(route)
+        ? fanRepeated(route, source, target, request.spread, request.style, request.obstacles)
+        : route;
 }
 
 /** The perpendicular distance this edge runs from the line its group shares. */
-function spreadOf(spread: { index: number; count: number } | undefined): number {
+function spreadOf(spread: { index: number; count: number; reach?: number } | undefined): number {
     if (!spread || spread.count < 2) {
         return 0;
     }
     return (spread.index - (spread.count - 1) / 2) * SPREAD;
 }
 
+/** Whether a guide changes direction, ignoring redundant collinear points. */
+function hasVisibleBend(points: Point[]): boolean {
+    return points.slice(2).some((point, index) => {
+        const one = points[index]!;
+        const two = points[index + 1]!;
+        return Math.abs((two.x - one.x) * (point.y - two.y) - (two.y - one.y) * (point.x - two.x)) > 0.5;
+    });
+}
+
+/**
+ * Opens repeated associations into a fan instead of drawing parallel rails.
+ *
+ * Port assignment has already put each line on its side of the shared axis.
+ * Extending that displacement at the middle preserves their order at both
+ * cards and creates the separation where labels have to distinguish the lines.
+ */
+function fanRepeated(
+    points: Point[], source: Rect, target: Rect, spread: { index: number; count: number; reach?: number },
+    style: RoutingStyle | undefined, obstacles?: Rect[]
+): Point[] {
+    const start = points[0]!;
+    const end = points[points.length - 1]!;
+    const middle = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+    const order = Math.sign(spread.index - (spread.count - 1) / 2);
+    if (order === 0) {
+        return points;
+    }
+    // Ports with the same desired point are not necessarily symmetric around
+    // the card centre: the separator may leave the first at centre and push
+    // the second along the side. Their stable order, rather than their distance
+    // from centre, is what guarantees that the pair opens in opposite ways.
+    const sourceSide = sideOf(source, start);
+    const alongSide = sourceSide === 'top' || sourceSide === 'bottom'
+        ? { x: 1, y: 0 }
+        : { x: 0, y: 1 };
+    const away = { x: alongSide.x * order, y: alongSide.y * order };
+    const others = obstacles?.filter(rect => rect !== source && rect !== target) ?? [];
+    const reaches = spread.reach === undefined ? [SPREAD, 12, 8, 4] : [spread.reach];
+    for (const reach of reaches) {
+        const candidate = style === 'orthogonal'
+            ? orthogonalFan(start, end, away, reach)
+            : [start, round({ x: middle.x + away.x * reach, y: middle.y + away.y * reach }), end];
+        if (pathIsClear(candidate, others)) {
+            return candidate;
+        }
+    }
+    return points;
+}
+
+/** A short square-sided corridor for a repeated, otherwise collinear route. */
+function orthogonalFan(start: Point, end: Point, away: Point, reach: number): Point[] {
+    const vertical = Math.abs(end.y - start.y) >= Math.abs(end.x - start.x);
+    const length = Math.hypot(end.x - start.x, end.y - start.y);
+    const inset = Math.min(STUB, length / 4);
+    const along = unit({ x: end.x - start.x, y: end.y - start.y });
+    const from = { x: start.x + along.x * inset, y: start.y + along.y * inset };
+    const to = { x: end.x - along.x * inset, y: end.y - along.y * inset };
+    const sign = vertical ? Math.sign(away.x) || 1 : Math.sign(away.y) || 1;
+    const shift = vertical ? { x: sign * reach, y: 0 } : { x: 0, y: sign * reach };
+    return compact([
+        start, from, { x: from.x + shift.x, y: from.y + shift.y },
+        { x: to.x + shift.x, y: to.y + shift.y }, to, end
+    ]);
+}
+
 /**
  * Border to border, on the line between the two centres.
  *
- * A spread edge is the same line moved sideways. The endpoints are the
+ * A spread edge starts as the same line moved sideways. The endpoints are the
  * unspread border points pushed along the perpendicular, rather than the
  * intersections of the moved line with the boxes -- a difference of a pixel or
- * two at these offsets, and it keeps a bundle of parallel edges exactly
- * parallel, which is what the eye is reading them by.
+ * two at these offsets; `fanRepeated` then opens repeated associations farther
+ * at the middle so the lines do not remain parallel.
  */
 /** Port to port, with the same detour round anything in the way. */
 function straightBetween(

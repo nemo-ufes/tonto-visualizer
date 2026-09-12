@@ -140,6 +140,9 @@ authority for what those constraints mean.
   are flattened adaptively for obstacle, crossing, label and hit-test geometry;
   unsafe curves fall back towards their guide, while taxonomy edges and shared
   generalization trees remain straight.
+- Changed repeated associations from parallel offset lines into a symmetric
+  fan. Their distinct border ports now open farther apart at a real midpoint
+  bend, which Curved mode can smooth without curving lone direct associations.
 - Used the modeller's saved `error.tontoview` arrangement as a qualitative
   target. A whole with several leaf parts is now placed as a compact fan instead
   of applying the pairwise whole-before-part rule repeatedly and producing a

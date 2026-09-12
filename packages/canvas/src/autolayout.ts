@@ -1064,6 +1064,10 @@ function renderForLayoutScore(view: ViewModel, positions: Positions, direction: 
         view: drawable,
         positions,
         direction,
+        // The fan is a final drawing distinction with its own crossing guard;
+        // it must not make the optimizer move whole clusters to accommodate a
+        // line-style choice that leaves the association's endpoints unchanged.
+        repeatedAssociationFans: false,
         display: { ...defaultDisplayOptions, routing: 'straight', showPackageGroups: false }
     });
 }

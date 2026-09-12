@@ -413,15 +413,20 @@ describe('drawing', () => {
         expect(points.every(point => point.x >= source.x && point.x <= source.x + source.width)).toBe(true);
     });
 
-    test('runs parallel edges beside one another', () => {
+    test('fans repeated associations apart with a real bend', () => {
         const source = { x: 0, y: 0, width: 100, height: 60 };
         const target = { x: 300, y: 0, width: 100, height: 60 };
         const first = routeEdge(source, target, { spread: { index: 0, count: 2 } });
         const second = routeEdge(source, target, { spread: { index: 1, count: 2 } });
-        // Two relations between the same pair are one line drawn twice unless
-        // something moves them apart.
+        // Distinct border points alone leave parallel rails through the middle,
+        // where the reader has to associate each line with its labels.
+        expect(first).toHaveLength(3);
+        expect(second).toHaveLength(3);
         expect(first[0]!.y).not.toEqual(second[0]!.y);
         expect(Math.abs(first[0]!.y - second[0]!.y)).toBeGreaterThan(8);
+        expect(Math.abs(first[1]!.y - second[1]!.y))
+            .toBeGreaterThan(Math.abs(first[0]!.y - second[0]!.y));
+        expect(curvedRoute(first, source, target).data).toContain(' C ');
     });
 
     test('goes round a box that stands between the two it joins', () => {
