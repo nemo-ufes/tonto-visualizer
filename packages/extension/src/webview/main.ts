@@ -367,7 +367,7 @@ function repaint(edge: string, points: Point[]): void {
     const definition = view.edges.find(candidate => candidate.id === edge);
     const source = definition ? positions[definition.source] : undefined;
     const target = definition ? positions[definition.target] : undefined;
-    const drawn = definition?.kind !== 'generalization' && display?.routing === 'curved' && source && target
+    const drawn = display?.routing === 'curved' && source && target
         ? curvedRoute(points, source, target, Object.values(positions))
         : { points, data: pathData(points) };
     guides[edge] = points;
@@ -944,7 +944,7 @@ function fillOptions(): void {
     optionsPanel.replaceChildren();
     const arrangement = [
         choice('Lines', [
-            ['straight', 'Straight'], ['curved', 'Curved associations'], ['orthogonal', 'Right-angled']
+            ['straight', 'Straight'], ['curved', 'Curved bends'], ['orthogonal', 'Right-angled']
         ], display.routing,
             value => host.postMessage({ type: 'display', display: { routing: value as DisplayOptions['routing'] } })),
         choice('Direction', [['DOWN', 'Top to bottom'], ['RIGHT', 'Left to right']], layout?.direction ?? 'DOWN',

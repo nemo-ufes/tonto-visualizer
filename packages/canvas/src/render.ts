@@ -21,7 +21,7 @@ import type { FontMetrics } from './measure.js';
 import type { Positions } from './place.js';
 import type { TreeStem } from './ports.js';
 import { assignPorts, endKey } from './ports.js';
-import { curvedRoute, pathData, routeEdge } from './route.js';
+import { curvedRoute, pathData, roundedRoute, routeEdge } from './route.js';
 import type { Theme } from './theme.js';
 import { lightTheme } from './theme.js';
 
@@ -539,7 +539,7 @@ interface DrawableRoutes {
 }
 
 /**
- * Curves associations one at a time without spending the direct guide's safety.
+ * Curves routed edges one at a time without spending the direct guide's safety.
  *
  * A Bézier can bow across a line even when both of their guides were clear.
  * Comparing each proposed curve with that edge's current contribution makes
@@ -560,15 +560,21 @@ function drawableRoutes(
         const guide = guides[edge.id];
         const source = positions[edge.source];
         const target = positions[edge.target];
-        if (edge.kind === 'generalization' || !guide || !source || !target) {
+        if (!guide || !source || !target) {
             continue;
         }
-        const candidate = curvedRoute(guide, source, target, obstacles);
         const before = routeContribution(edge.id, paths[edge.id]!, paths, edgeById, positions);
-        const after = routeContribution(edge.id, candidate.points, paths, edgeById, positions);
-        if (after.intersections <= before.intersections && after.crossings <= before.crossings) {
-            paths[edge.id] = candidate.points;
-            data[edge.id] = candidate.data;
+        const candidates = [
+            curvedRoute(guide, source, target, obstacles),
+            roundedRoute(guide, source, target, obstacles)
+        ];
+        for (const candidate of candidates) {
+            const after = routeContribution(edge.id, candidate.points, paths, edgeById, positions);
+            if (after.intersections <= before.intersections && after.crossings <= before.crossings) {
+                paths[edge.id] = candidate.points;
+                data[edge.id] = candidate.data;
+                break;
+            }
         }
     }
     return { paths, data };
