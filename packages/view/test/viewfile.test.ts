@@ -24,6 +24,7 @@ describe('view file options', () => {
                 // Written by older versions; no longer part of the options.
                 algorithm: 'unknown',
                 direction: 'UP',
+                associationDistance: 'wide',
                 nodeSpacing: -1,
                 rankSpacing: '100',
                 groupByPackage: 'true'
@@ -53,7 +54,7 @@ describe('view file options', () => {
             layout: {
                 // Legacy engine choices are ignored in favour of taxonomy layout.
                 algorithm: 'stress', direction: 'RIGHT', nodeSpacing: 0,
-                rankSpacing: 120, groupByPackage: false
+                associationDistance: 140, rankSpacing: 120, groupByPackage: false
             },
             constraints: {
                 pinned: ['Sample::Person'],
@@ -81,7 +82,7 @@ describe('view file options', () => {
             fontSize: 'large'
         });
         expect(view.layout).toEqual({
-            direction: 'RIGHT', nodeSpacing: 0,
+            direction: 'RIGHT', associationDistance: 140, nodeSpacing: 0,
             rankSpacing: 120, maxRankSpan: defaultLayoutOptions.maxRankSpan, groupByPackage: false
         });
         expect(view.constraints).toEqual({
@@ -101,5 +102,10 @@ describe('view file options', () => {
 
     test('retains curved association routing', () => {
         expect(readViewFile({ display: { routing: 'curved' } }).display.routing).toBe('curved');
+    });
+
+    test('bounds persisted association distance to the toolbar range', () => {
+        expect(readViewFile({ layout: { associationDistance: 500 } }).layout.associationDistance).toBe(180);
+        expect(readViewFile({ layout: { associationDistance: 20 } }).layout.associationDistance).toBe(60);
     });
 });

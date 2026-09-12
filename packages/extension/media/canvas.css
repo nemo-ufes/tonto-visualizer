@@ -59,6 +59,20 @@ body {
     color: var(--vscode-descriptionForeground, var(--chrome-muted));
 }
 
+.distance-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: 2px;
+}
+
+.distance {
+    min-width: 82px;
+    text-align: center;
+    color: var(--vscode-descriptionForeground, var(--chrome-muted));
+    font-variant-numeric: tabular-nums;
+}
+
 button {
     min-height: 20px;
     padding: 0 6px;

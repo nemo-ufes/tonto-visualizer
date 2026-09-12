@@ -227,6 +227,10 @@ authority for what those constraints mean.
   stable element id; a whole wrapped level is completed before the next
   semantic rank begins, retaining the hard inheritance direction. Explicit
   package containers keep their package bands and are therefore exempt.
+- Added a persisted association-distance control directly to the toolbar.
+  Minus and plus scale both between-rank and same-rank spacing from 60% to 180%
+  and immediately run Arrange, giving the modeller one predictable overall
+  density control without exposing ELK's separate spacing constants.
 - Consolidated the semantic candidate passes under one rank-constrained
   acceptance gate. Hard taxonomy ranks are established once; relator, orphan,
   characterized-aspect, whole/fan, rank-order, band-compaction and label-

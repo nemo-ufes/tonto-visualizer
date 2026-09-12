@@ -150,6 +150,21 @@ describe('arranging a model', () => {
         }
     });
 
+    test('scales overall arrangement density with association distance', async () => {
+        const view = taxonomy(1);
+        const sizes = Object.fromEntries(view.nodes.map(node => [node.id, sizeOf(node, display)]));
+        const compact = await autoLayout(view, sizes, {}, {
+            ...defaultLayoutOptions, groupByPackage: false, associationDistance: 60
+        });
+        const spacious = await autoLayout(view, sizes, {}, {
+            ...defaultLayoutOptions, groupByPackage: false, associationDistance: 140
+        });
+        const gap = (positions: typeof compact.positions) => positions['Sample::Sub0']!.y
+            - (positions['Sample::Root']!.y + positions['Sample::Root']!.height);
+
+        expect(gap(spacious.positions)).toBeGreaterThan(gap(compact.positions));
+    });
+
     test('does not let an association change the taxonomy rank spacing', async () => {
         const baseline = await arrange(taxonomy(1), false);
         const view = taxonomy(1);

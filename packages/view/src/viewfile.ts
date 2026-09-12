@@ -12,7 +12,9 @@
  */
 
 import type { ContentOptions, DisplayOptions, LayoutOptions } from './options.js';
-import { defaultContentOptions, defaultDisplayOptions, defaultLayoutOptions } from './options.js';
+import {
+    clampAssociationDistance, defaultContentOptions, defaultDisplayOptions, defaultLayoutOptions
+} from './options.js';
 import type { ViewModel } from './model.js';
 
 export const VIEW_FILE_VERSION = 1;
@@ -177,6 +179,8 @@ function readLayoutOptions(value: unknown): LayoutOptions {
     return {
         direction: oneOf(source.direction, ['DOWN', 'RIGHT'])
             ? source.direction : defaultLayoutOptions.direction,
+        associationDistance: clampAssociationDistance(
+            nonNegativeNumberOr(source.associationDistance, defaultLayoutOptions.associationDistance)),
         nodeSpacing: nonNegativeNumberOr(source.nodeSpacing, defaultLayoutOptions.nodeSpacing),
         rankSpacing: nonNegativeNumberOr(source.rankSpacing, defaultLayoutOptions.rankSpacing),
         maxRankSpan: nonNegativeNumberOr(source.maxRankSpan, defaultLayoutOptions.maxRankSpan),

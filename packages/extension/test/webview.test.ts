@@ -39,6 +39,7 @@ function panelHtml(): string {
     return `<div id="shell">
         <div id="toolbar">
             <button id="fit"></button><button id="arrange"></button><button id="newWindow"></button>
+            <button id="distanceDown"></button><span id="distance"></span><button id="distanceUp"></button>
             <button id="zoomOut"></button><span id="scale"></span><button id="zoomIn"></button>
             <button id="hide" disabled></button><button id="optionsButton"></button><button id="exportButton"></button>
             <span id="stale" hidden></span>
@@ -158,6 +159,23 @@ describe('the webview and its host protocol', () => {
         size.value = 'large';
         size.dispatchEvent(new Event('change', { bubbles: true }));
         expect(posted('display').at(-1)).toEqual({ type: 'display', display: { fontSize: 'large' } });
+    });
+
+    test('adjusts association distance from the toolbar and arranges again', () => {
+        sendModel();
+        expect(document.getElementById('distance')!.textContent).toBe('Distance 100%');
+
+        document.getElementById('distanceUp')!.click();
+        expect(document.getElementById('distance')!.textContent).toBe('Distance 120%');
+        expect(posted('layout').at(-1)).toEqual({
+            type: 'layout', layout: { associationDistance: 120 }
+        });
+
+        document.getElementById('distanceDown')!.click();
+        expect(document.getElementById('distance')!.textContent).toBe('Distance 100%');
+        expect(posted('layout').at(-1)).toEqual({
+            type: 'layout', layout: { associationDistance: 100 }
+        });
     });
 
     test('offers to pin the selected classifiers', () => {

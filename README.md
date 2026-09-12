@@ -51,9 +51,11 @@ Working end to end, and rough in places.
   attributes and
   associations and arranges from inheritance alone. Pins, centre alignment,
   equal distribution and a maximum taxonomy-rank span are also persisted and
-  reapplied by Arrange. **Fit** is a viewport toggle that follows panel and
-  window resizing; moving a diagram into a new window enables it automatically.
-  An untouched automatic layout creates no file.
+  reapplied by Arrange. The toolbar's **Distance −/+** control scales association
+  and neighbor spacing from 60% to 180%, immediately rearranging the diagram so
+  its overall density can be tuned. **Fit** is a viewport toggle that follows
+  panel and window resizing; moving a diagram into a new window enables it
+  automatically. An untouched automatic layout creates no file.
 
 The notation covers classes with stereotypes and attributes, datatypes and
 enumerations, generalizations, generalization sets as one shared triangle with

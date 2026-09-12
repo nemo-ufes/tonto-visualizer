@@ -94,6 +94,8 @@ export interface DisplayOptions {
 export interface LayoutOptions {
     /** Which way generalizations point. Down is what a class diagram is read as. */
     direction: 'DOWN' | 'RIGHT';
+    /** Percentage applied to both layout gaps; larger values lengthen associations. */
+    associationDistance: number;
     /** Between neighbours in a rank. */
     nodeSpacing: number;
     /** Between one rank and the next -- a supertype and its subtypes. */
@@ -110,11 +112,19 @@ export interface LayoutOptions {
 
 export const defaultLayoutOptions: LayoutOptions = {
     direction: 'DOWN',
+    associationDistance: 100,
     nodeSpacing: 60,
     rankSpacing: 100,
     maxRankSpan: 2000,
     groupByPackage: true
 };
+
+/** Toolbar bounds keep dense layouts usable and spacious ones finite. */
+export const ASSOCIATION_DISTANCE = { minimum: 60, maximum: 180, step: 20 } as const;
+
+export function clampAssociationDistance(value: number): number {
+    return Math.max(ASSOCIATION_DISTANCE.minimum, Math.min(ASSOCIATION_DISTANCE.maximum, Math.round(value)));
+}
 
 export const defaultContentOptions: ContentOptions = {
     scope: 'file',
