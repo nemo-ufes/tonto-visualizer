@@ -170,9 +170,11 @@ model with many associations the corridors start to read as the diagram. Two
 things make straight lines work — parallel edges between the same pair are
 spread apart, and a line that would cross an unrelated class takes one bend
 round it, since a straight line through a class is worse than no line at all.
-Curved associations remain close to the direct route and are checked against
-the same obstacles and crossings as their sampled geometry. Generalizations
-stay straight so taxonomy ranks and shared heads keep their visual grammar.
+The curved style only smooths associations for which the straight router needed
+a bend; a direct association remains a direct line. Smoothed detours stay close
+to their guide and are checked against the same obstacles and crossings as their
+sampled geometry. Generalizations stay straight so taxonomy ranks and shared
+heads keep their visual grammar.
 Right angles remain, as a choice, for the taxonomies they do suit.
 
 **(d) The arrangement is a document.** After the modeller changes an automatic

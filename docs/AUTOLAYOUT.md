@@ -135,10 +135,11 @@ authority for what those constraints mean.
   package containers and final crossing checks. The preference runs after
   cross-axis compaction and each higher-order family has its own safety decision,
   so a bad route in one family cannot roll back a valid placement in another.
-- Added curved association routing as a third line style. Cubic paths are
-  flattened adaptively for obstacle, crossing, label and hit-test geometry;
-  unsafe curves fall back towards their direct guide route, while taxonomy
-  edges and shared generalization trees remain straight.
+- Added curved association routing as a third line style. Direct routes remain
+  straight; only obstacle or manually bent guides are smoothed. Cubic detours
+  are flattened adaptively for obstacle, crossing, label and hit-test geometry;
+  unsafe curves fall back towards their guide, while taxonomy edges and shared
+  generalization trees remain straight.
 - Used the modeller's saved `error.tontoview` arrangement as a qualitative
   target. A whole with several leaf parts is now placed as a compact fan instead
   of applying the pairwise whole-before-part rule repeatedly and producing a

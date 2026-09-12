@@ -149,7 +149,7 @@ function model(): ViewModel {
 
 describe('drawing', () => {
 
-    test('curves associations while keeping generalizations straight', () => {
+    test('keeps direct associations and generalizations straight in curved mode', () => {
         const relation = related();
         const relationId = relation.edges[0]!.id;
         const curved = render({
@@ -171,8 +171,8 @@ describe('drawing', () => {
         });
 
         expect(curved.svg.match(/<g class="tv-edge[^"]*" data-edge="[^"]+"><path d="([^"]+)"/)?.[1])
-            .toContain(' C ');
-        expect(curved.paths[relationId]!.length).toBeGreaterThan(curved.guides[relationId]!.length);
+            .not.toContain(' C ');
+        expect(curved.paths[relationId]).toEqual(curved.guides[relationId]);
         expect(generalization.svg.match(/data-edge="[^"]+"><path d="([^"]+)"/)?.[1]).not.toContain(' C ');
     });
 
@@ -193,6 +193,8 @@ describe('drawing', () => {
         expect(output.guides[edge.id]).toEqual(guide);
         expect(output.paths[edge.id]!.length).toBeGreaterThan(guide.length);
         expect(handlesFor(output.guides[edge.id]!)).toHaveLength(3);
+        expect(output.svg.match(/<g class="tv-edge[^"]*" data-edge="[^"]+"><path d="([^"]+)"/)?.[1])
+            .toContain(' C ');
     });
 
     test('keeps a card the modeller made roomier, and still grows it for content', () => {
@@ -347,19 +349,15 @@ describe('drawing', () => {
         expect(points).toEqual([{ x: 50, y: 60 }, { x: 50, y: 200 }]);
     });
 
-    test('draws a direct guide as an adaptively sampled cubic', () => {
+    test('does not curve a direct guide', () => {
         const source = { x: 0, y: 0, width: 100, height: 60 };
         const target = { x: 300, y: 200, width: 100, height: 60 };
         const guide = routeEdge(source, target);
         const curve = curvedRoute(guide, source, target, [source, target]);
-        const length = (points: typeof guide) => points.slice(1).reduce((sum, point, index) =>
-            sum + Math.hypot(point.x - points[index]!.x, point.y - points[index]!.y), 0);
 
-        expect(curve.data).toContain(' C ');
-        expect(curve.points.length).toBeGreaterThan(guide.length);
-        expect(curve.points[0]).toEqual(guide[0]);
-        expect(curve.points.at(-1)).toEqual(guide.at(-1));
-        expect(length(curve.points)).toBeLessThanOrEqual(length(guide) * 1.15 + 4);
+        expect(guide).toHaveLength(2);
+        expect(curve.data).toBe(pathData(guide));
+        expect(curve.points).toEqual(guide);
     });
 
     test('retreats a curve towards its guide rather than cutting through a card', () => {
@@ -369,6 +367,8 @@ describe('drawing', () => {
         const guide = routeEdge(source, target, { obstacles: [source, between, target] });
         const curve = curvedRoute(guide, source, target, [source, between, target]);
 
+        expect(guide.length).toBeGreaterThan(2);
+        expect(curve.data).toContain(' C ');
         expect(curve.points.slice(1).every((point, index) =>
             !segmentHitsRect(curve.points[index]!, point, between, 4))).toBe(true);
     });

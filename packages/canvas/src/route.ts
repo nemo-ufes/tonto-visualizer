@@ -88,19 +88,19 @@ export function pathData(points: Point[]): string {
 }
 
 /**
- * Smooths a routed guide without giving up its directness or obstacle safety.
+ * Smooths a necessary detour without giving up its directness or safety.
  *
- * The guide remains the editable and persisted route. Cubics are a drawing of
- * it: endpoint tangents leave the side of each card cleanly, interior tangents
- * round a detour, and progressively smaller handles retreat towards the guide
- * whenever a curve would cut through a card. The sampled result is the same
- * curve the rest of the canvas measures; the SVG is not allowed to know a
- * prettier geometry than selection, labels and the quality scorer do.
+ * A direct, two-point guide is already the clearest path and remains a line.
+ * When the straight router had to add bends, the guide remains editable and
+ * persisted while cubics round that detour. Progressively smaller handles
+ * retreat towards the guide whenever a curve would cut through a card. The
+ * sampled result is the same curve the rest of the canvas measures; the SVG is
+ * not allowed to know a prettier geometry than selection, labels and scoring.
  */
 export function curvedRoute(
     guide: Point[], source: Rect, target: Rect, obstacles: readonly Rect[] = []
 ): DrawnRoute {
-    if (guide.length < 2) {
+    if (guide.length <= 2) {
         return { points: guide, data: pathData(guide) };
     }
     const others = obstacles.filter(rect => rect !== source && rect !== target);
