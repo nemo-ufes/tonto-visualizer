@@ -387,6 +387,78 @@ describe('packages and the layout', () => {
         expect(within(relator.y, relata[0]!.y, relata[1]!.y)).toBe(true);
     });
 
+    /**
+     * `enforceTaxonomyRanks` only repositions classes with a supertype or a
+     * subtype. A class with neither -- `Journal` alongside `Article` in
+     * `Publications`, here `Loose` alongside `Sub0` -- keeps the coordinates
+     * ELK's whole-graph pass gave it even once the taxonomy around it has
+     * been translated onto its own rank, unless something settles it too.
+     */
+    test('settles a class with no taxonomy of its own towards what it associates with', async () => {
+        const view = taxonomy(3);
+        view.nodes.push({
+            id: 'Sample::Loose', kind: 'class', name: 'Loose', package: 'Sample',
+            stereotype: 'kind', color: '#FF99A3', isExternal: false, attributes: []
+        });
+        view.groups[0]!.nodes.push('Sample::Loose');
+        view.edges.push({
+            kind: 'relation', id: 'assoc', source: 'Sample::Loose', target: 'Sample::Sub0',
+            sourceEnd: { isConst: false, isAddOnly: false },
+            targetEnd: { isConst: false, isAddOnly: false }
+        });
+
+        const positions = await arrange(view, false);
+        const centre = (id: string) => {
+            const rect = positions[id]!;
+            return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+        };
+        const gap = Math.hypot(
+            centre('Sample::Loose').x - centre('Sample::Sub0').x,
+            centre('Sample::Loose').y - centre('Sample::Sub0').y
+        );
+        expect(gap).toBeLessThan(defaultLayoutOptions.rankSpacing + defaultLayoutOptions.nodeSpacing);
+    });
+
+    /**
+     * Two such classes that associate only with each other -- `Journal` and
+     * `JournalVolume`, neither with a taxonomy of its own -- read as one
+     * thing and must move as one: settling `JournalVolume` alone towards the
+     * taxonomy it also associates with, and leaving `Journal` at the
+     * coordinates the two of them used to share, splits a pair apart instead
+     * of bringing it along.
+     */
+    test('keeps two classes that only associate with each other together while settling them towards a taxonomy', async () => {
+        const view = taxonomy(3);
+        const clazz = (id: string) => ({
+            id, kind: 'class' as const, name: id.replace('Sample::', ''), package: 'Sample',
+            stereotype: 'kind', color: '#FF99A3', isExternal: false, attributes: []
+        });
+        view.nodes.push(clazz('Sample::PairA'), clazz('Sample::PairB'));
+        view.groups[0]!.nodes.push('Sample::PairA', 'Sample::PairB');
+        const plainEnd = { isConst: false, isAddOnly: false };
+        view.edges.push(
+            {
+                kind: 'relation', id: 'pair', source: 'Sample::PairA', target: 'Sample::PairB',
+                sourceEnd: { ...plainEnd }, targetEnd: { ...plainEnd }
+            },
+            {
+                kind: 'relation', id: 'anchor', source: 'Sample::PairB', target: 'Sample::Sub0',
+                sourceEnd: { ...plainEnd }, targetEnd: { ...plainEnd }
+            }
+        );
+
+        const positions = await arrange(view, false);
+        const centre = (id: string) => {
+            const rect = positions[id]!;
+            return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+        };
+        const gap = Math.hypot(
+            centre('Sample::PairA').x - centre('Sample::PairB').x,
+            centre('Sample::PairA').y - centre('Sample::PairB').y
+        );
+        expect(gap).toBeLessThan(defaultLayoutOptions.rankSpacing * 2);
+    });
+
     test('does not settle an unselected relator during a partial layout', async () => {
         const clazz = (name: string, stereotype: string) => ({
             id: `Sample::${name}`, kind: 'class' as const, name, package: 'Sample',
