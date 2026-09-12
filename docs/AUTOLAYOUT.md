@@ -182,3 +182,8 @@ authority for what those constraints mean.
   pinned or unpinned from the options panel. Pins are stored by stable element
   id in the `.tontoview`; full and partial Arrange leave their current boxes
   untouched and place the movable subgraph using the same fixed-neighbour halo.
+- Extended persistent constraints with vertical/horizontal centre alignment
+  and distribution. Constraint groups are stable-id records in the view file;
+  they are applied after semantic optimization, rejected if they would overlap
+  boxes, never move a pin, and never move a ranked classifier along the hard
+  taxonomy axis.

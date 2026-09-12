@@ -495,6 +495,91 @@ function partialRing(ring: number): Point[] {
     return offsets;
 }
 
+/** Applies saved exact constraints without moving pins or breaking taxonomy ranks. */
+export function applyLayoutConstraints(
+    positions: Positions,
+    constraints: ViewConstraints,
+    options: {
+        movable?: ReadonlySet<string>;
+        ranked?: ReadonlySet<string>;
+        direction?: LayoutOptions['direction'];
+    } = {}
+): void {
+    const movable = options.movable ?? new Set(Object.keys(positions));
+    const pinned = new Set(constraints.pinned);
+    const primary = options.direction === 'RIGHT' ? 'x' : 'y';
+    const canMove = (id: string, axis: 'x' | 'y') => movable.has(id) && !pinned.has(id)
+        && !(options.ranked?.has(id) && axis === primary);
+    const centreAt = (rect: Rect, axis: 'x' | 'y') =>
+        rect[axis] + (axis === 'x' ? rect.width : rect.height) / 2;
+    const placeCentre = (rect: Rect, axis: 'x' | 'y', centre: number): Rect => ({
+        ...rect,
+        [axis]: Math.round(centre - (axis === 'x' ? rect.width : rect.height) / 2)
+    });
+    const accept = (candidate: Positions, changed: ReadonlySet<string>): boolean => {
+        for (const id of changed) {
+            const rect = candidate[id];
+            if (!rect) {
+                continue;
+            }
+            for (const [otherId, other] of Object.entries(candidate)) {
+                if (id !== otherId && overlaps(rect, other)) {
+                    return false;
+                }
+            }
+        }
+        for (const id of changed) {
+            positions[id] = candidate[id]!;
+        }
+        return true;
+    };
+
+    for (const constraint of constraints.alignments) {
+        const ids = constraint.nodes.filter(id => positions[id] !== undefined);
+        if (ids.length < 2) {
+            continue;
+        }
+        const fixed = ids.filter(id => !canMove(id, constraint.axis));
+        const targetIds = fixed.length > 0 ? fixed : ids;
+        const target = targetIds.reduce(
+            (sum, id) => sum + centreAt(positions[id]!, constraint.axis), 0) / targetIds.length;
+        const candidate = { ...positions };
+        const changed = new Set<string>();
+        for (const id of ids.filter(id => canMove(id, constraint.axis))) {
+            candidate[id] = placeCentre(positions[id]!, constraint.axis, target);
+            changed.add(id);
+        }
+        accept(candidate, changed);
+    }
+
+    for (const constraint of constraints.distributions) {
+        const ids = constraint.nodes.filter(id => positions[id] !== undefined)
+            .sort((one, other) => centreAt(positions[one]!, constraint.axis)
+                - centreAt(positions[other]!, constraint.axis) || one.localeCompare(other));
+        if (ids.length < 3) {
+            continue;
+        }
+        const low = centreAt(positions[ids[0]!]!, constraint.axis);
+        const high = centreAt(positions[ids.at(-1)!]!, constraint.axis);
+        const step = (high - low) / (ids.length - 1);
+        const candidate = { ...positions };
+        const changed = new Set<string>();
+        let possible = true;
+        for (const [index, id] of ids.entries()) {
+            const target = low + step * index;
+            if (!canMove(id, constraint.axis)) {
+                possible &&= Math.abs(centreAt(positions[id]!, constraint.axis) - target) <= 1;
+                continue;
+            }
+            candidate[id] = placeCentre(positions[id]!, constraint.axis, target);
+            changed.add(id);
+        }
+        if (possible) {
+            accept(candidate, changed);
+        }
+    }
+}
+
 /**
  * Moves each relator towards the middle of what it mediates, where there is room.
  *
@@ -2170,6 +2255,13 @@ export async function autoLayout(
     }
     if (request.only || pinned.size > 0) {
         placePartialLayout(view, positions, current, subject);
+    }
+    if (request.constraints) {
+        applyLayoutConstraints(positions, request.constraints, {
+            movable: subject,
+            ...(ranked ? { ranked } : {}),
+            direction: settings.direction
+        });
     }
 
     const routes: Record<string, Point[]> = {};

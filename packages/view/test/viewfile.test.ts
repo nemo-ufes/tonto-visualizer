@@ -31,7 +31,7 @@ describe('view file options', () => {
         expect(view.content).toEqual(defaultContentOptions);
         expect(view.display).toEqual(defaultDisplayOptions);
         expect(view.layout).toEqual(defaultLayoutOptions);
-        expect(view.constraints).toEqual({ pinned: [] });
+        expect(view.constraints).toEqual({ pinned: [], alignments: [], distributions: [] });
     });
 
     test('retains valid optional arrays and explicit false values', () => {
@@ -50,7 +50,13 @@ describe('view file options', () => {
                 algorithm: 'stress', direction: 'RIGHT', nodeSpacing: 0,
                 rankSpacing: 120, groupByPackage: false
             },
-            constraints: { pinned: ['Sample::Person'] }
+            constraints: {
+                pinned: ['Sample::Person'],
+                alignments: [{ axis: 'x', nodes: ['Sample::Person', 'Sample::Employee'] }],
+                distributions: [{
+                    axis: 'y', nodes: ['Sample::Person', 'Sample::Employee', 'Sample::Manager']
+                }]
+            }
         });
 
         expect(view.content).toEqual({
@@ -71,6 +77,12 @@ describe('view file options', () => {
             direction: 'RIGHT', nodeSpacing: 0,
             rankSpacing: 120, groupByPackage: false
         });
-        expect(view.constraints).toEqual({ pinned: ['Sample::Person'] });
+        expect(view.constraints).toEqual({
+            pinned: ['Sample::Person'],
+            alignments: [{ axis: 'x', nodes: ['Sample::Person', 'Sample::Employee'] }],
+            distributions: [{
+                axis: 'y', nodes: ['Sample::Person', 'Sample::Employee', 'Sample::Manager']
+            }]
+        });
     });
 });

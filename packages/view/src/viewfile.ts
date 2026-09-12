@@ -47,6 +47,8 @@ export interface EdgeRoute {
 export interface ViewConstraints {
     /** Stable element ids whose current placements automatic layout must retain. */
     pinned: string[];
+    alignments: Array<{ axis: 'x' | 'y'; nodes: string[] }>;
+    distributions: Array<{ axis: 'x' | 'y'; nodes: string[] }>;
 }
 
 export interface ViewFile {
@@ -68,7 +70,7 @@ export function emptyViewFile(focus?: string): ViewFile {
         content: { ...defaultContentOptions },
         display: { ...defaultDisplayOptions },
         layout: { ...defaultLayoutOptions },
-        constraints: { pinned: [] },
+        constraints: { pinned: [], alignments: [], distributions: [] },
         nodes: {},
         edges: {}
     };
@@ -113,7 +115,19 @@ export function readViewFile(raw: unknown): ViewFile {
 
 function readConstraints(value: unknown): ViewConstraints {
     const source = recordOf(value);
-    return { pinned: stringArray(source.pinned) ?? [] };
+    const groups = (value: unknown, minimum: number) => Array.isArray(value)
+        ? value.flatMap(item => {
+            const group = recordOf(item);
+            const nodes = stringArray(group.nodes);
+            return oneOf(group.axis, ['x', 'y']) && nodes && nodes.length >= minimum
+                ? [{ axis: group.axis, nodes }] : [];
+        })
+        : [];
+    return {
+        pinned: stringArray(source.pinned) ?? [],
+        alignments: groups(source.alignments, 2),
+        distributions: groups(source.distributions, 3)
+    };
 }
 
 function readContentOptions(value: unknown): ContentOptions {

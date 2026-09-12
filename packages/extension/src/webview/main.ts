@@ -41,7 +41,7 @@ let routes: Record<string, EdgeRoute> = {};
 let display: DisplayOptions | undefined;
 let content: ContentOptions | undefined;
 let layout: LayoutOptions | undefined;
-let constraints: ViewConstraints = { pinned: [] };
+let constraints: ViewConstraints = { pinned: [], alignments: [], distributions: [] };
 let packages: string[] = [];
 let filters: FilterItem[] = [];
 let dark = false;
@@ -90,7 +90,7 @@ window.addEventListener('message', event => {
         display = message.display;
         content = message.content;
         layout = message.layout;
-        constraints = message.constraints ?? { pinned: [] };
+        constraints = message.constraints ?? { pinned: [], alignments: [], distributions: [] };
         packages = message.packages;
         filters = message.filters;
         staleLabel.hidden = !message.stale;
@@ -869,11 +869,23 @@ function fillOptions(): void {
     const selectedNodes = [...selection].filter(id => positions[id] !== undefined);
     const pinned = new Set(constraints.pinned);
     const unpins = selectedNodes.length > 0 && selectedNodes.every(id => pinned.has(id));
-    optionsPanel.append(section('Constraints', [actionButton(
-        unpins ? 'Unpin selected' : 'Pin selected',
-        selectedNodes.length === 0,
-        () => host.postMessage({ type: 'pin', ids: selectedNodes, pinned: !unpins })
-    )]));
+    optionsPanel.append(section('Constraints', [
+        actionButton(
+            unpins ? 'Unpin selected' : 'Pin selected',
+            selectedNodes.length === 0,
+            () => host.postMessage({ type: 'pin', ids: selectedNodes, pinned: !unpins })
+        ),
+        actionButton('Align vertical centres', selectedNodes.length < 2,
+            () => host.postMessage({ type: 'constraint', action: 'align-x', ids: selectedNodes })),
+        actionButton('Align horizontal centres', selectedNodes.length < 2,
+            () => host.postMessage({ type: 'constraint', action: 'align-y', ids: selectedNodes })),
+        actionButton('Distribute horizontally', selectedNodes.length < 3,
+            () => host.postMessage({ type: 'constraint', action: 'distribute-x', ids: selectedNodes })),
+        actionButton('Distribute vertically', selectedNodes.length < 3,
+            () => host.postMessage({ type: 'constraint', action: 'distribute-y', ids: selectedNodes })),
+        actionButton('Clear selected constraints', selectedNodes.length === 0,
+            () => host.postMessage({ type: 'constraint', action: 'clear', ids: selectedNodes }))
+    ]));
     optionsPanel.append(section('Drawn', displayRows.map(([key, label]) =>
         toggle(label, Boolean(display?.[key]), value => host.postMessage({ type: 'display', display: { [key]: value } })))));
     optionsPanel.append(section('Included', contentRows.map(([key, label]) =>
