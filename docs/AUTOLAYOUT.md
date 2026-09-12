@@ -70,6 +70,9 @@ exact ELK coordinates.
   room by inserting and widening ranks, producing a substantially worse overall
   arrangement, while the later semantic repair passes moved the rendered labels
   away from the geometry for which that space had been reserved.
+- [x] Add a persisted taxonomy-only view. It keeps the same classifiers and
+  user preferences, but hides attributes and non-taxonomy edges and arranges
+  from inheritance alone; classifiers outside a hierarchy form an appendix.
 - [ ] Add persistent pin, alignment and distribution constraints, followed by a
   bounded-rank policy whose wrapping remains stable by element id.
 
@@ -153,3 +156,9 @@ authority for what those constraints mean.
   only along their cross axis and only under the same rendered safety gate. On
   `genealogy` this retains 1 label collision and 6 crossings with the clearer
   rank-facing anchors; bounds are 1818 x 1059 and total edge length is 7150.
+- Added the `Taxonomy only` display setting and CLI flag. The mode suppresses
+  attributes, associations and instantiations without overwriting their
+  individual display settings, feeds only generalizations to automatic layout,
+  and puts classifiers with no inheritance into a compact appendix after the
+  taxonomy. Toggling the mode preserves manual placement; an explicit Arrange
+  applies its hierarchy-specific layout.

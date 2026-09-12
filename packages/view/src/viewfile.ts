@@ -120,6 +120,7 @@ function readContentOptions(value: unknown): ContentOptions {
 function readDisplayOptions(value: unknown): DisplayOptions {
     const source = recordOf(value);
     return {
+        taxonomyOnly: booleanOr(source.taxonomyOnly, defaultDisplayOptions.taxonomyOnly),
         routing: oneOf(source.routing, ['straight', 'orthogonal'])
             ? source.routing : defaultDisplayOptions.routing,
         showAttributes: booleanOr(source.showAttributes, defaultDisplayOptions.showAttributes),

@@ -185,7 +185,8 @@ export function render(input: RenderInput): Rendered {
     // borders: the half that is not drawn must not be given a share of a border
     // either, or the line that is drawn arrives beside the space kept for it.
     const inverses = inversePairs(view.edges);
-    const drawn = view.edges.filter(edge => !inverses.covered.has(edge.id));
+    const drawn = view.edges.filter(edge => !inverses.covered.has(edge.id)
+        && (!display.taxonomyOnly || edge.kind === 'generalization'));
     const portInput = drawn.filter(edge => !trees.covered.has(edge.id));
     const loops = loopIndex(view);
     const through = mediationsThrough(view, positions, inverses.covered);

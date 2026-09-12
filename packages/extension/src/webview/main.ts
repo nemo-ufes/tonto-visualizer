@@ -825,6 +825,7 @@ function fillOptions(): void {
         return;
     }
     const displayRows: Array<[keyof DisplayOptions, string]> = [
+        ['taxonomyOnly', 'Taxonomy only'],
         ['showAttributes', 'Attributes'],
         ['showCardinalities', 'Cardinalities'],
         ['showRelationNames', 'Relation names'],

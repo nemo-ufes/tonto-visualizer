@@ -43,6 +43,8 @@ export interface ContentOptions {
 export type RoutingStyle = 'straight' | 'orthogonal';
 
 export interface DisplayOptions {
+    /** Draw classifier names and inheritance only, preserving the other choices for later. */
+    taxonomyOnly: boolean;
     /**
      * Straight by default: a direct line says "these two" at a glance, and a
      * model with many associations drawn with right angles turns into a set of
@@ -106,6 +108,7 @@ export const defaultContentOptions: ContentOptions = {
 };
 
 export const defaultDisplayOptions: DisplayOptions = {
+    taxonomyOnly: false,
     routing: 'straight',
     showAttributes: true,
     showCardinalities: true,

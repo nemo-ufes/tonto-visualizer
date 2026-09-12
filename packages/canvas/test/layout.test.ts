@@ -139,6 +139,38 @@ describe('arranging a model', () => {
         expect(distance(positions)).toBeGreaterThan(0);
     });
 
+    test('does not let hidden associations influence taxonomy-only layout', async () => {
+        const view = taxonomy(2);
+        view.nodes.push({
+            id: 'Sample::Neighbour', kind: 'class', name: 'Neighbour', package: 'Sample',
+            stereotype: 'kind', color: '#FF99A3', isExternal: false, attributes: []
+        });
+        view.groups[0]!.nodes.push('Sample::Neighbour');
+        view.edges.push({
+            kind: 'relation', id: 'associated', source: 'Sample::Sub0', target: 'Sample::Neighbour',
+            sourceEnd: { isConst: true, isAddOnly: false },
+            targetEnd: { isConst: true, isAddOnly: false }
+        });
+        const display = { ...defaultDisplayOptions, taxonomyOnly: true };
+        const sizes = Object.fromEntries(view.nodes.map(node => [node.id, sizeOf(node, display)]));
+        const request = { ...defaultLayoutOptions, groupByPackage: false, taxonomyOnly: true };
+        const laid = await autoLayout(view, sizes, {}, request);
+        const taxonomyView = { ...view, edges: view.edges.filter(edge => edge.kind === 'generalization') };
+        const expected = await autoLayout(taxonomyView, sizes, {}, request);
+
+        expect(laid.positions).toEqual(expected.positions);
+        expect(laid.routes).toEqual(expected.routes);
+        const taxonomyBottom = Math.max(
+            laid.positions['Sample::Root']!.y + laid.positions['Sample::Root']!.height,
+            laid.positions['Sample::Sub0']!.y + laid.positions['Sample::Sub0']!.height,
+            laid.positions['Sample::Sub1']!.y + laid.positions['Sample::Sub1']!.height
+        );
+        // A classifier connected only by a hidden association belongs in the
+        // compact appendix, not above the hierarchy as if it were another root.
+        expect(laid.positions['Sample::Neighbour']!.y)
+            .toBeGreaterThanOrEqual(taxonomyBottom + defaultLayoutOptions.rankSpacing);
+    });
+
     test('centres a generalization when an association joins the same classes', async () => {
         const clazz = (id: string, stereotype: string) => ({
             id, kind: 'class' as const, name: id.replace('Sample::', ''), package: 'Sample',

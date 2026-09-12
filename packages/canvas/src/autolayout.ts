@@ -96,6 +96,8 @@ export interface AutoLayoutRequest extends Partial<LayoutOptions> {
      * which is what keeps it looking right after a drag.
      */
     routing?: RoutingStyle;
+    /** Arrange inheritance without letting hidden associations influence it. */
+    taxonomyOnly?: boolean;
 }
 
 export interface AutoLayoutResult {
@@ -1821,6 +1823,13 @@ export async function autoLayout(
     current: Positions,
     request: AutoLayoutRequest = {}
 ): Promise<AutoLayoutResult> {
+    // Taxonomy-only is a view of the same classifiers, not a second semantic
+    // model. Removing non-taxonomy edges at the layout boundary lets ELK and
+    // every semantic repair optimize the graph the user can actually see,
+    // while ids and saved positions remain those of the full view.
+    if (request.taxonomyOnly) {
+        view = { ...view, edges: view.edges.filter(edge => edge.kind === 'generalization') };
+    }
     const settings: LayoutOptions = { ...defaultLayoutOptions, ...request };
     const routing = request.routing ?? 'straight';
     const subject = new Set(request.only ?? view.nodes.map(node => node.id));
@@ -1860,7 +1869,8 @@ export async function autoLayout(
      */
     const joined = new Set(view.edges.flatMap(edge => [edge.source, edge.target]));
     const appendixIds = new Set(view.nodes
-        .filter(node => !joined.has(node.id) && (node.kind === 'datatype' || node.kind === 'enumeration'))
+        .filter(node => !joined.has(node.id) && (request.taxonomyOnly
+            || node.kind === 'datatype' || node.kind === 'enumeration'))
         .map(node => node.id));
     const appendix = (id: string): Pick<ElkNode, 'layoutOptions'> | Record<string, never> =>
         appendixIds.has(id)

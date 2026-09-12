@@ -43,7 +43,7 @@ describe('view file options', () => {
                 includedPackages: [],
                 hidden: ['Sample::Person', 'works-for']
             },
-            display: { showLegend: true, routing: 'orthogonal' },
+            display: { taxonomyOnly: true, showLegend: true, routing: 'orthogonal' },
             layout: {
                 // Legacy engine choices are ignored in favour of taxonomy layout.
                 algorithm: 'stress', direction: 'RIGHT', nodeSpacing: 0,
@@ -61,6 +61,7 @@ describe('view file options', () => {
         });
         expect(view.display).toEqual({
             ...defaultDisplayOptions,
+            taxonomyOnly: true,
             showLegend: true,
             routing: 'orthogonal'
         });
