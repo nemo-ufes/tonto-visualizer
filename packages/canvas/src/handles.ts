@@ -1,10 +1,10 @@
 /**
- * Taking hold of what is drawn: a route, and the corner of a card.
+ * Taking hold of a route guide, and the corner of a card.
  *
  * A line is routed for the modeller until they disagree with it, and then it is
- * theirs. What they take hold of is a handle: one on every bend the line already
- * has, and one on every stretch between bends, which becomes a bend the moment
- * it is dragged. Dropping the last of them gives the line back to the router.
+ * theirs. What they take hold of is a handle on every guide bend and stretch.
+ * A curved line may contain many adaptive drawing samples, but those are not
+ * handles; dropping the last guide bend gives the line back to the router.
  *
  * The arithmetic is here rather than in the panel because it is the part that
  * can be wrong -- an index off by one puts the bend on the wrong side of the

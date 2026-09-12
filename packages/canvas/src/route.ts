@@ -20,9 +20,9 @@
  */
 
 import type { Point, Rect } from './geometry.js';
-import { borderPoint, centerOf, segmentHitsRect, sideOf } from './geometry.js';
+import { borderPoint, centerOf, distanceToSegment, segmentHitsRect, sideOf } from './geometry.js';
 
-export type RoutingStyle = 'straight' | 'orthogonal';
+export type RoutingStyle = 'straight' | 'curved' | 'orthogonal';
 
 export interface RouteRequest {
     /** A route already decided -- by ELK, or by the modeller -- used as it stands. */
@@ -66,6 +66,154 @@ const STUB = 18;
 /** How much of two boxes has to line up before they are joined straight across. */
 const FACING = 24;
 const LOOP = 28;
+
+export interface DrawnRoute {
+    /** Sampled geometry used by labels, hit-testing and quality checks. */
+    points: Point[];
+    /** SVG commands for the same geometry. */
+    data: string;
+}
+
+interface Cubic {
+    from: Point;
+    one: Point;
+    two: Point;
+    to: Point;
+}
+
+/** A polyline in SVG path syntax. */
+export function pathData(points: Point[]): string {
+    return points.map((point, index) =>
+        `${index === 0 ? 'M' : 'L'} ${coordinate(point.x)} ${coordinate(point.y)}`).join(' ');
+}
+
+/**
+ * Smooths a routed guide without giving up its directness or obstacle safety.
+ *
+ * The guide remains the editable and persisted route. Cubics are a drawing of
+ * it: endpoint tangents leave the side of each card cleanly, interior tangents
+ * round a detour, and progressively smaller handles retreat towards the guide
+ * whenever a curve would cut through a card. The sampled result is the same
+ * curve the rest of the canvas measures; the SVG is not allowed to know a
+ * prettier geometry than selection, labels and the quality scorer do.
+ */
+export function curvedRoute(
+    guide: Point[], source: Rect, target: Rect, obstacles: readonly Rect[] = []
+): DrawnRoute {
+    if (guide.length < 2) {
+        return { points: guide, data: pathData(guide) };
+    }
+    const others = obstacles.filter(rect => rect !== source && rect !== target);
+    const guideLength = euclideanPathLength(guide);
+    for (const strength of [0.42, 0.34, 0.26, 0.18, 0.1]) {
+        const cubics = cubicSegments(guide, source, target, strength);
+        const points = flattenCubics(cubics);
+        const clear = points.slice(1).every((point, index) =>
+            others.every(rect => !segmentHitsRect(points[index]!, point, rect, 4)));
+        // A curve is for tracing a direct relationship, not ornament. Long
+        // handles may look fluid while quietly adding a large visual journey.
+        if (clear && euclideanPathLength(points) <= guideLength * 1.15 + 4) {
+            return { points, data: cubicPathData(cubics) };
+        }
+    }
+    return { points: guide, data: pathData(guide) };
+}
+
+function cubicSegments(
+    guide: Point[], source: Rect, target: Rect, strength: number
+): Cubic[] {
+    const tangents = guide.map((point, index) => {
+        if (index === 0) {
+            return outward(source, point);
+        }
+        if (index === guide.length - 1) {
+            const away = outward(target, point);
+            return { x: -away.x, y: -away.y };
+        }
+        return unit({
+            x: guide[index + 1]!.x - guide[index - 1]!.x,
+            y: guide[index + 1]!.y - guide[index - 1]!.y
+        });
+    });
+    return guide.slice(1).map((to, index) => {
+        const from = guide[index]!;
+        const length = Math.hypot(to.x - from.x, to.y - from.y);
+        const handle = Math.min(length * strength, 96);
+        return {
+            from,
+            one: { x: from.x + tangents[index]!.x * handle, y: from.y + tangents[index]!.y * handle },
+            two: {
+                x: to.x - tangents[index + 1]!.x * handle,
+                y: to.y - tangents[index + 1]!.y * handle
+            },
+            to
+        };
+    });
+}
+
+function outward(rect: Rect, at: Point): Point {
+    switch (sideOf(rect, at)) {
+        case 'top': return { x: 0, y: -1 };
+        case 'bottom': return { x: 0, y: 1 };
+        case 'left': return { x: -1, y: 0 };
+        case 'right': return { x: 1, y: 0 };
+    }
+}
+
+function unit(vector: Point): Point {
+    const length = Math.hypot(vector.x, vector.y) || 1;
+    return { x: vector.x / length, y: vector.y / length };
+}
+
+function flattenCubics(cubics: Cubic[]): Point[] {
+    const points = cubics.length > 0 ? [{ ...cubics[0]!.from }] : [];
+    for (const cubic of cubics) {
+        flattenCubic(cubic, points, 0);
+    }
+    return points;
+}
+
+function flattenCubic(cubic: Cubic, points: Point[], depth: number): void {
+    const flatness = Math.max(
+        distanceToSegment(cubic.one, cubic.from, cubic.to),
+        distanceToSegment(cubic.two, cubic.from, cubic.to)
+    );
+    if (flatness <= 0.75 || depth >= 10) {
+        points.push({ ...cubic.to });
+        return;
+    }
+    const fromOne = middle(cubic.from, cubic.one);
+    const oneTwo = middle(cubic.one, cubic.two);
+    const twoTo = middle(cubic.two, cubic.to);
+    const leftMiddle = middle(fromOne, oneTwo);
+    const rightMiddle = middle(oneTwo, twoTo);
+    const at = middle(leftMiddle, rightMiddle);
+    flattenCubic({ from: cubic.from, one: fromOne, two: leftMiddle, to: at }, points, depth + 1);
+    flattenCubic({ from: at, one: rightMiddle, two: twoTo, to: cubic.to }, points, depth + 1);
+}
+
+function middle(one: Point, other: Point): Point {
+    return { x: (one.x + other.x) / 2, y: (one.y + other.y) / 2 };
+}
+
+function cubicPathData(cubics: Cubic[]): string {
+    if (cubics.length === 0) {
+        return '';
+    }
+    return `M ${coordinate(cubics[0]!.from.x)} ${coordinate(cubics[0]!.from.y)} `
+        + cubics.map(cubic => `C ${coordinate(cubic.one.x)} ${coordinate(cubic.one.y)} `
+            + `${coordinate(cubic.two.x)} ${coordinate(cubic.two.y)} `
+            + `${coordinate(cubic.to.x)} ${coordinate(cubic.to.y)}`).join(' ');
+}
+
+function euclideanPathLength(points: Point[]): number {
+    return points.slice(1).reduce((sum, point, index) =>
+        sum + Math.hypot(point.x - points[index]!.x, point.y - points[index]!.y), 0);
+}
+
+function coordinate(value: number): number {
+    return Math.round(value * 10) / 10;
+}
 
 export function routeEdge(source: Rect, target: Rect, request: RouteRequest = {}): Point[] {
     if (request.stored && request.stored.length >= 2) {

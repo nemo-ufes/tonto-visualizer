@@ -14,7 +14,7 @@ describe('view file options', () => {
                 hidden: 'Sample::Person'
             },
             display: {
-                routing: 'curved',
+                routing: 'wavy',
                 fontFamily: 'comic-sans',
                 fontSize: 42,
                 showAttributes: 'false',
@@ -97,5 +97,9 @@ describe('view file options', () => {
         for (const fontFamily of ['condensed', 'humanist', 'geometric', 'book'] as const) {
             expect(readViewFile({ display: { fontFamily } }).display.fontFamily).toBe(fontFamily);
         }
+    });
+
+    test('retains curved association routing', () => {
+        expect(readViewFile({ display: { routing: 'curved' } }).display.routing).toBe('curved');
     });
 });

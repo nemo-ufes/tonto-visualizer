@@ -3,8 +3,9 @@ import type { ViewModel, ViewRelationEnd } from 'tonto-view';
 import { defaultDisplayOptions } from 'tonto-view';
 import { placeNewNodes } from '../src/place.js';
 import { distanceToPath, segmentHitsRect } from '../src/geometry.js';
+import { handlesFor } from '../src/handles.js';
 import { labelWidth, render } from '../src/render.js';
-import { routeEdge } from '../src/route.js';
+import { curvedRoute, pathData, routeEdge } from '../src/route.js';
 import { FONT, multiplicityLabel, sizeOf, textWidth, wrappedAttributeLines } from '../src/measure.js';
 
 const display = { ...defaultDisplayOptions };
@@ -147,6 +148,52 @@ function model(): ViewModel {
 }
 
 describe('drawing', () => {
+
+    test('curves associations while keeping generalizations straight', () => {
+        const relation = related();
+        const relationId = relation.edges[0]!.id;
+        const curved = render({
+            view: relation,
+            positions: {
+                'Sample::Contract': { x: 0, y: 0, width: 120, height: 42 },
+                'Sample::Employee': { x: 320, y: 180, width: 120, height: 42 }
+            },
+            display: { ...display, routing: 'curved' }
+        });
+        const generalization = render({
+            view: model(),
+            positions: {
+                'Sample::Person': { x: 0, y: 0, width: 120, height: 60 },
+                'Sample::Employee': { x: 260, y: 180, width: 120, height: 42 }
+            },
+            display: { ...display, routing: 'curved' },
+            direction: 'DOWN'
+        });
+
+        expect(curved.svg.match(/<g class="tv-edge[^"]*" data-edge="[^"]+"><path d="([^"]+)"/)?.[1])
+            .toContain(' C ');
+        expect(curved.paths[relationId]!.length).toBeGreaterThan(curved.guides[relationId]!.length);
+        expect(generalization.svg.match(/data-edge="[^"]+"><path d="([^"]+)"/)?.[1]).not.toContain(' C ');
+    });
+
+    test('curves a manually guided association without turning samples into handles', () => {
+        const view = related();
+        const edge = view.edges[0]!;
+        const guide = [{ x: 120, y: 21 }, { x: 220, y: 80 }, { x: 320, y: 201 }];
+        const output = render({
+            view,
+            positions: {
+                'Sample::Contract': { x: 0, y: 0, width: 120, height: 42 },
+                'Sample::Employee': { x: 320, y: 180, width: 120, height: 42 }
+            },
+            routes: { [edge.id]: { points: guide } },
+            display: { ...display, routing: 'curved' }
+        });
+
+        expect(output.guides[edge.id]).toEqual(guide);
+        expect(output.paths[edge.id]!.length).toBeGreaterThan(guide.length);
+        expect(handlesFor(output.guides[edge.id]!)).toHaveLength(3);
+    });
 
     test('keeps a card the modeller made roomier, and still grows it for content', () => {
         const view = model();
@@ -298,6 +345,36 @@ describe('drawing', () => {
             { style: 'orthogonal' }
         );
         expect(points).toEqual([{ x: 50, y: 60 }, { x: 50, y: 200 }]);
+    });
+
+    test('draws a direct guide as an adaptively sampled cubic', () => {
+        const source = { x: 0, y: 0, width: 100, height: 60 };
+        const target = { x: 300, y: 200, width: 100, height: 60 };
+        const guide = routeEdge(source, target);
+        const curve = curvedRoute(guide, source, target, [source, target]);
+        const length = (points: typeof guide) => points.slice(1).reduce((sum, point, index) =>
+            sum + Math.hypot(point.x - points[index]!.x, point.y - points[index]!.y), 0);
+
+        expect(curve.data).toContain(' C ');
+        expect(curve.points.length).toBeGreaterThan(guide.length);
+        expect(curve.points[0]).toEqual(guide[0]);
+        expect(curve.points.at(-1)).toEqual(guide.at(-1));
+        expect(length(curve.points)).toBeLessThanOrEqual(length(guide) * 1.15 + 4);
+    });
+
+    test('retreats a curve towards its guide rather than cutting through a card', () => {
+        const source = { x: 0, y: 0, width: 100, height: 60 };
+        const between = { x: 250, y: 0, width: 100, height: 60 };
+        const target = { x: 500, y: 0, width: 100, height: 60 };
+        const guide = routeEdge(source, target, { obstacles: [source, between, target] });
+        const curve = curvedRoute(guide, source, target, [source, between, target]);
+
+        expect(curve.points.slice(1).every((point, index) =>
+            !segmentHitsRect(curve.points[index]!, point, between, 4))).toBe(true);
+    });
+
+    test('serializes an editable guide as a polyline', () => {
+        expect(pathData([{ x: 1, y: 2 }, { x: 3, y: 4 }])).toBe('M 1 2 L 3 4');
     });
 
     test('takes an orthogonal route around an intervening card', () => {

@@ -21,7 +21,7 @@ import type { FontMetrics } from './measure.js';
 import type { Positions } from './place.js';
 import type { TreeStem } from './ports.js';
 import { assignPorts, endKey } from './ports.js';
-import { routeEdge } from './route.js';
+import { curvedRoute, pathData, routeEdge } from './route.js';
 import type { Theme } from './theme.js';
 import { lightTheme } from './theme.js';
 
@@ -43,6 +43,8 @@ export interface Rendered {
     bounds: Rect;
     /** The path each edge was drawn along, so the canvas can hit-test it. */
     paths: Record<string, Point[]>;
+    /** Editable guide polylines; curved paths are sampled separately above. */
+    guides: Record<string, Point[]>;
     /** Lines or neighboring decorators that enter a generalization head. */
     headCollisions: number;
 }
@@ -218,7 +220,7 @@ export function render(input: RenderInput): Rendered {
             portInput, positions, through, stems, associationAnchors, input.direction, reserveHeads
         );
         const crowdedHeads = crowdedGeneralizationHeads(portInput, stems, assigned, input.direction);
-        const paths: Record<string, Point[]> = {};
+        const guides: Record<string, Point[]> = {};
         const squareApproaches = new Map<string, Point[]>();
         const approachGroups = new Map<string, string[]>();
         const bends: Point[] = [];
@@ -240,35 +242,38 @@ export function render(input: RenderInput): Rendered {
                 style: display.routing,
                 obstacles: rects
             });
-            paths[edge.id] = route;
+            guides[edge.id] = route;
             if (crowdedHeads.has(edge.id) && !stored && display.routing === 'straight') {
                 squareApproaches.set(edge.id, withRankFacingHead(route, target, input.direction));
                 approachGroups.set(edge.target, [...(approachGroups.get(edge.target) ?? []), edge.id]);
             }
             // Whatever this line bent around, the next one goes round elsewhere.
-            bends.push(...paths[edge.id]!.slice(1, -1));
+            bends.push(...guides[edge.id]!.slice(1, -1));
         }
         // A square approach solves a decorator collision only if it does not
         // purchase that local fix with a new centre-line crossing elsewhere.
         // Try a whole fan together: adding its stubs one at a time can make the
         // first stub cross a neighbor that has not received its own stub yet.
-        let faults = routeFaults(paths, drawn, positions);
+        let drawable = drawableRoutes(guides, drawn, positions, rects, display.routing === 'curved');
+        let faults = routeFaults(drawable.paths, drawn, positions);
         for (const ids of approachGroups.values()) {
-            const previous = new Map(ids.map(id => [id, paths[id]!]));
+            const previous = new Map(ids.map(id => [id, guides[id]!]));
             for (const id of ids) {
-                paths[id] = squareApproaches.get(id)!;
+                guides[id] = squareApproaches.get(id)!;
             }
-            const candidateFaults = routeFaults(paths, drawn, positions);
+            const candidate = drawableRoutes(guides, drawn, positions, rects, display.routing === 'curved');
+            const candidateFaults = routeFaults(candidate.paths, drawn, positions);
             if (candidateFaults.intersections <= faults.intersections
                 && candidateFaults.crossings <= faults.crossings) {
                 faults = candidateFaults;
+                drawable = candidate;
             } else {
                 for (const [id, points] of previous) {
-                    paths[id] = points;
+                    guides[id] = points;
                 }
             }
         }
-        return { assigned, paths, faults };
+        return { assigned, guides, ...drawable, faults };
     };
     const preferredRay = routeCandidate('ray', true);
     const legacyRay = routeCandidate('ray', false);
@@ -283,6 +288,8 @@ export function render(input: RenderInput): Rendered {
     const routed = saferRoutes(even.faults, ray.faults) ? even : ray;
     const assigned = routed.assigned;
     const paths = routed.paths;
+    const guides = routed.guides;
+    const pathDataByEdge = routed.data;
     // A copy: the placer is told about the bar of each tree as it is drawn,
     // and `paths` is what the canvas hit-tests edges against.
     const placer = new LabelPlacer(rects, groups.map(group => group.rect), { ...paths }, font);
@@ -310,12 +317,13 @@ export function render(input: RenderInput): Rendered {
                 edge: edge.kind === 'relation' && partner ? mergedWith(edge, partner) : edge,
                 partner,
                 points: paths[edge.id]!,
+                data: pathDataByEdge[edge.id],
                 isSelected: selected.has(edge.id) || (partner !== undefined && selected.has(partner.id))
             };
         });
 
     const edgeMarkup = lines
-        .map(one => drawEdge(one.edge, one.points, theme, one.isSelected))
+        .map(one => drawEdge(one.edge, one.points, theme, one.isSelected, one.data))
         .join('');
     const ordinaryHeads: HeadMarker[] = lines.flatMap(one => one.edge.kind === 'generalization'
         ? [{ owner: one.edge.id, points: trianglePoints(
@@ -398,7 +406,7 @@ text {
 <rect x="${origin.x}" y="${origin.y}" width="${width}" height="${height}" fill="${theme.background}"/>
 ${groups.map(group => drawGroup(group)).join('')}${edgeMarkup}${treeMarkup}${nodeMarkup}<g class="tv-labels">${labelMarkup}</g></svg>`;
 
-    return { svg, bounds: { x: origin.x, y: origin.y, width, height }, paths, headCollisions };
+    return { svg, bounds: { x: origin.x, y: origin.y, width, height }, paths, guides, headCollisions };
 }
 
 /** Generalizations whose marker footprint, not only tip, reaches a neighbour. */
@@ -486,6 +494,73 @@ function withRankFacingHead(
 interface RouteFaults {
     intersections: number;
     crossings: number;
+}
+
+interface DrawableRoutes {
+    paths: Record<string, Point[]>;
+    data: Record<string, string>;
+}
+
+/**
+ * Curves associations one at a time without spending the direct guide's safety.
+ *
+ * A Bézier can bow across a line even when both of their guides were clear.
+ * Comparing each proposed curve with that edge's current contribution makes
+ * the choice deterministic and guarantees that smoothing never adds a card
+ * intersection or crossing to the completed route set.
+ */
+function drawableRoutes(
+    guides: Record<string, Point[]>, edges: readonly ViewEdge[], positions: Positions,
+    obstacles: readonly Rect[], curved: boolean
+): DrawableRoutes {
+    const paths = Object.fromEntries(Object.entries(guides).map(([id, points]) => [id, points]));
+    const data = Object.fromEntries(Object.entries(guides).map(([id, points]) => [id, pathData(points)]));
+    if (!curved) {
+        return { paths, data };
+    }
+    const edgeById = new Map(edges.map(edge => [edge.id, edge]));
+    for (const edge of edges) {
+        const guide = guides[edge.id];
+        const source = positions[edge.source];
+        const target = positions[edge.target];
+        if (edge.kind === 'generalization' || !guide || !source || !target) {
+            continue;
+        }
+        const candidate = curvedRoute(guide, source, target, obstacles);
+        const before = routeContribution(edge.id, paths[edge.id]!, paths, edgeById, positions);
+        const after = routeContribution(edge.id, candidate.points, paths, edgeById, positions);
+        if (after.intersections <= before.intersections && after.crossings <= before.crossings) {
+            paths[edge.id] = candidate.points;
+            data[edge.id] = candidate.data;
+        }
+    }
+    return { paths, data };
+}
+
+/** The faults attributable to one route against every unchanged route. */
+function routeContribution(
+    id: string, points: Point[], paths: Record<string, Point[]>,
+    edgeById: ReadonlyMap<string, ViewEdge>, positions: Positions
+): RouteFaults {
+    const edge = edgeById.get(id);
+    let intersections = 0;
+    for (const [node, rect] of Object.entries(positions)) {
+        if (node !== edge?.source && node !== edge?.target
+            && points.slice(1).some((to, index) => segmentHitsRect(points[index]!, to, rect, 2))) {
+            intersections += 1;
+        }
+    }
+    let crossings = 0;
+    for (const [otherId, other] of Object.entries(paths)) {
+        if (otherId === id) {
+            continue;
+        }
+        if (points.slice(1).some((to, index) => other.slice(1).some((otherTo, otherIndex) =>
+            segmentsProperlyCross(points[index]!, to, other[otherIndex]!, otherTo)))) {
+            crossings += 1;
+        }
+    }
+    return { intersections, crossings };
 }
 
 /** High-priority faults in paths after ports, spreading and detours are final. */
@@ -598,8 +673,10 @@ export function drawNode(
         + title + text + compartment + '</g>';
 }
 
-function drawEdge(edge: ViewEdge, points: Point[], theme: Theme, isSelected: boolean): string {
-    const path = `<path d="${pathData(points)}"${edge.kind === 'instantiation' ? ' stroke-dasharray="6 4"' : ''}/>`;
+function drawEdge(
+    edge: ViewEdge, points: Point[], theme: Theme, isSelected: boolean, data = pathData(points)
+): string {
+    const path = `<path d="${data}"${edge.kind === 'instantiation' ? ' stroke-dasharray="6 4"' : ''}/>`;
     const classes = `tv-edge${isSelected ? ' tv-selected' : ''}`;
     const decoration = edge.kind === 'generalization'
         ? triangleAt(points[points.length - 1]!, points[points.length - 2] ?? points[0]!)
@@ -1900,10 +1977,6 @@ function direction(tip: Point, from: Point): { unit: Point; normal: Point } {
     const length = Math.hypot(dx, dy) || 1;
     const unit = { x: dx / length, y: dy / length };
     return { unit, normal: { x: -unit.y, y: unit.x } };
-}
-
-function pathData(points: Point[]): string {
-    return points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${round(point.x)} ${round(point.y)}`).join(' ');
 }
 
 function round(value: number): number {

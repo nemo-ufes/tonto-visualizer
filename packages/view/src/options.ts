@@ -40,7 +40,7 @@ export interface ContentOptions {
 }
 
 /** How an edge gets from one box to the other. */
-export type RoutingStyle = 'straight' | 'orthogonal';
+export type RoutingStyle = 'straight' | 'curved' | 'orthogonal';
 export type DiagramFontFamily =
     | 'sans'
     | 'condensed'
@@ -57,8 +57,8 @@ export interface DisplayOptions {
     /**
      * Straight by default: a direct line says "these two" at a glance, and a
      * model with many associations drawn with right angles turns into a set of
-     * corridors that read as the diagram. Orthogonal suits a taxonomy and is a
-     * choice rather than the default.
+     * corridors that read as the diagram. Curved associations retain that
+     * direct reading while separating nearby paths; orthogonal suits a taxonomy.
      */
     routing: RoutingStyle;
     /** Font stack used by every piece of text in the diagram. */

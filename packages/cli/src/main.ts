@@ -21,7 +21,7 @@ diagram of the model would hold.
 
   --svg              draw it, rather than describing it
   --dark             the dark theme, with --svg
-  --routing <name>   straight (default) or orthogonal
+  --routing <name>   straight (default), curved or orthogonal
   --direction <dir>  DOWN (default) or RIGHT
   --taxonomy-only    draw names and inheritance, without attributes or associations
   --loose            lay the model out as one graph, ignoring its packages
