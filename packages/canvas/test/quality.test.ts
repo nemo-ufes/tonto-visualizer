@@ -35,18 +35,35 @@ describe('layout quality benchmarks', () => {
         expect(quality.nodeOverlaps).toBe(0);
         expect(quality.taxonomyViolations).toBe(0);
         expect(quality.edgeNodeIntersections).toBe(0);
-        expect(quality.edgeCrossings).toBeLessThanOrEqual(3);
-        expect(quality.labelOcclusions).toBeLessThanOrEqual(12);
-        expect(quality.bounds.width).toBeLessThan(1000);
-        expect(quality.bounds.height).toBeLessThan(650);
-        expect(quality.edgeLength.total).toBeLessThan(2400);
-        expect(quality.edgeLength.maximum).toBeLessThan(500);
+        expect(quality.edgeCrossings).toBe(0);
+        expect(quality.labelOcclusions).toBeLessThanOrEqual(7);
+        expect(quality.bounds.width).toBeLessThan(750);
+        expect(quality.bounds.height).toBeLessThan(600);
+        expect(quality.edgeLength.total).toBeLessThan(1300);
+        expect(quality.edgeLength.maximum).toBeLessThan(180);
 
         const rightOf = (aspect: string, bearer: string) =>
             laid.positions[aspect]!.x >= laid.positions[bearer]!.x
                 + laid.positions[bearer]!.width + defaultLayoutOptions.nodeSpacing;
-        expect(rightOf('Error::Duty', 'Error::Person')).toBe(true);
         expect(rightOf('Error::Intensity', 'Error::Headache')).toBe(true);
+
+        const centre = (id: string) => {
+            const rect = laid.positions[id]!;
+            return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+        };
+        const person = laid.positions['Error::Person']!;
+        const duty = laid.positions['Error::Duty']!;
+        expect(duty.y).toBeGreaterThan(person.y + person.height);
+        expect(Math.abs(centre('Error::Duty').x - centre('Error::Person').x))
+            .toBeLessThan(defaultLayoutOptions.nodeSpacing);
+
+        const wedding = laid.positions['Error::Wedding']!;
+        const vow = laid.positions['Error::VowReading']!;
+        const celebration = laid.positions['Error::Celebration']!;
+        expect(wedding.y).toBeLessThan(vow.y);
+        expect(vow.y).toBe(celebration.y);
+        expect(centre('Error::Wedding').x).toBeGreaterThan(centre('Error::VowReading').x);
+        expect(centre('Error::Wedding').x).toBeLessThan(centre('Error::Celebration').x);
 
         // Person is attracted to Headache by their characterization, but it
         // must not occupy the inheritance lane from Headache to ActiveHeadache.

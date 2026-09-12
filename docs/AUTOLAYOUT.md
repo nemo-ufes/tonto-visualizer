@@ -33,11 +33,12 @@ Quality measures, in priority order:
 4. usable aspect ratio and occupied area;
 5. displacement from an existing arrangement.
 
-The representative benchmark set is `boats`, `pets`, `gufo`, `university` and
-`parties`, supplemented by synthetic broad taxonomies, disconnected packages,
-multiple inheritance, relators and dense whole-part graphs. Tests should assert
-the hard requirements and thresholds or deltas for the quality measures rather
-than exact ELK coordinates.
+The representative benchmark set is `boats`, `pets`, `gufo`, `genealogy`,
+`university`, `parties` and the manually arranged `error` reference,
+supplemented by synthetic broad taxonomies, disconnected packages, multiple
+inheritance, relators and dense whole-part graphs. Tests should assert the hard
+requirements and thresholds or deltas for the quality measures rather than
+exact ELK coordinates.
 
 ## Delivery slices
 
@@ -103,3 +104,13 @@ authority for what those constraints mean.
 - Made component packing search every stable order for up to seven components,
   removing the empty shelf space that a fixed tall-first order cannot recover
   merely by trying more shelf widths.
+
+### 2026-09-12
+
+- Used the modeller's saved `error.tontoview` arrangement as a qualitative
+  target. A whole with several leaf parts is now placed as a compact fan instead
+  of applying the pairwise whole-before-part rule repeatedly and producing a
+  diagonal chain.
+- Refined the right-side aspect preference for two classifiers joined by
+  several relations. Such a pair is stacked with a generous vertical corridor,
+  leaving separate lanes for its relationship labels and end decorations.

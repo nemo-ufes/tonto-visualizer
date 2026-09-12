@@ -666,6 +666,7 @@ function orientCharacterizedAspects(
     settings: LayoutOptions
 ): void {
     const nodes = new Map(view.nodes.map(node => [node.id, node]));
+    const covered = inversePairs(view.edges).covered;
     const prefersRight = (id: string): boolean => {
         const node = nodes.get(id);
         return node?.stereotype === 'extrinsicMode' || node?.stereotype === 'quality';
@@ -693,7 +694,7 @@ function orientCharacterizedAspects(
         if (!rect || bearerRects.length === 0) {
             continue;
         }
-        const direct = view.edges.filter(edge => edge.kind === 'relation'
+        const direct = view.edges.filter(edge => edge.kind === 'relation' && !covered.has(edge.id)
             && ((edge.source === aspect && bearerIds.has(edge.target))
                 || (edge.target === aspect && bearerIds.has(edge.source))));
         // This is a targeted reservation along one association corridor, not
@@ -702,12 +703,15 @@ function orientCharacterizedAspects(
         // the preferred horizontal gap between the pair that carries it.
         const labelGap = Math.max(0, ...direct.map(edge => labelWidth(edge, defaultDisplayOptions) + 36));
         const gap = Math.max(settings.nodeSpacing, 40, Math.round(labelGap));
-        const desiredX = Math.max(...bearerRects.map(one => one.x + one.width)) + gap;
-        if (rect.x >= desiredX) {
-            continue;
-        }
-        const desiredY = Math.round(bearerRects.reduce(
-            (sum, one) => sum + one.y + one.height / 2, 0) / bearerRects.length - rect.height / 2);
+        const bearerMiddleY = bearerRects.reduce(
+            (sum, one) => sum + one.y + one.height / 2, 0) / bearerRects.length - rect.height / 2;
+        const bundled = direct.length > 1 && bearerRects.length === 1 && settings.direction === 'DOWN';
+        const desiredX = bundled
+            ? Math.round(bearerRects[0]!.x + (bearerRects[0]!.width - rect.width) / 2)
+            : Math.max(...bearerRects.map(one => one.x + one.width)) + gap;
+        const desiredY = bundled
+            ? Math.round(bearerRects[0]!.y + bearerRects[0]!.height + settings.rankSpacing + PARTIAL_STEP)
+            : Math.round(bearerMiddleY);
         const obstacles = Object.entries(positions)
             .filter(([id]) => id !== aspect)
             .map(([, one]) => one);
@@ -745,29 +749,164 @@ function orientCharacterizedAspects(
             && crossingsAt(candidate) <= previousCrossings;
 
         let chosen: Rect | undefined;
-        // Preserve the bearer's row before trying a nearer x with a large
-        // vertical displacement: "to the right" should read horizontally
-        // wherever the surrounding graph has a clear corridor for it.
-        for (let row = 0; row <= PREFERRED_SIDE_STEPS && !chosen; row += 1) {
-            const offsets = row === 0 ? [0] : [-row * PARTIAL_STEP, row * PARTIAL_STEP];
-            for (let column = 0; column <= PREFERRED_SIDE_STEPS; column += 1) {
-                const x = desiredX + column * PARTIAL_STEP;
-                for (const offset of offsets) {
-                    const candidate = { ...rect, x, y: desiredY + offset };
+        if (bundled) {
+            // Parallel relationships need separate label and decorator lanes.
+            // A vertical pair leaves a lane on either side, as opposed to
+            // forcing both relations into the one horizontal gap reserved for
+            // a single characterization.
+            for (let ring = 0; ring <= PREFERRED_SIDE_STEPS && !chosen; ring += 1) {
+                for (const offset of ring === 0 ? [{ x: 0, y: 0 }] : partialRing(ring)) {
+                    const candidate = {
+                        ...rect,
+                        x: desiredX + offset.x * PARTIAL_STEP,
+                        y: desiredY + offset.y * PARTIAL_STEP
+                    };
                     if (fits(candidate)) {
                         chosen = candidate;
                         break;
                     }
                 }
-                if (chosen) {
+            }
+        } else {
+            // Preserve the bearer's row before trying a nearer x with a large
+            // vertical displacement: "to the right" should read horizontally
+            // wherever the surrounding graph has a clear corridor for it.
+            for (let row = 0; row <= PREFERRED_SIDE_STEPS && !chosen; row += 1) {
+                const offsets = row === 0 ? [0] : [-row * PARTIAL_STEP, row * PARTIAL_STEP];
+                for (let column = 0; column <= PREFERRED_SIDE_STEPS; column += 1) {
+                    const x = desiredX + column * PARTIAL_STEP;
+                    for (const offset of offsets) {
+                        const candidate = { ...rect, x, y: desiredY + offset };
+                        if (fits(candidate)) {
+                            chosen = candidate;
+                            break;
+                        }
+                    }
+                    if (chosen) {
+                        break;
+                    }
+                }
+            }
+        }
+        const distanceFromPreference = (candidate: Rect) =>
+            Math.hypot(candidate.x - desiredX, candidate.y - desiredY);
+        if (chosen && distanceFromPreference(chosen) < distanceFromPreference(rect)) {
+            positions[aspect] = chosen;
+        }
+    }
+}
+
+/**
+ * Turns a whole with several otherwise unjoined parts into a compact fan.
+ *
+ * Pairwise whole-before-part placement puts every part to the right. That is a
+ * useful reading for one pair, but repeated independently it turns a whole
+ * with two leaves into a diagonal chain. With the whole above and centred over
+ * one row of leaves, both diamonds share a visual origin and neither relation
+ * has to cross the other. Only leaf parts are handled here; a part with another
+ * relationship belongs to a larger ordering problem and stays with ELK.
+ */
+function orientWholeFans(
+    view: ViewModel,
+    positions: Positions,
+    subject: ReadonlySet<string>,
+    ranked: ReadonlySet<string> | undefined,
+    settings: LayoutOptions
+): Set<string> {
+    const byWhole = new Map<string, Array<{ edge: string; part: string }>>();
+    const relationDegree = new Map<string, number>();
+    const covered = inversePairs(view.edges).covered;
+    for (const edge of view.edges) {
+        if (edge.kind !== 'relation' || edge.source === edge.target || covered.has(edge.id)) {
+            continue;
+        }
+        relationDegree.set(edge.source, (relationDegree.get(edge.source) ?? 0) + 1);
+        relationDegree.set(edge.target, (relationDegree.get(edge.target) ?? 0) + 1);
+        if (!edge.whole || !subject.has(edge.source) || !subject.has(edge.target)) {
+            continue;
+        }
+        const whole = edge.whole === 'source' ? edge.source : edge.target;
+        const part = edge.whole === 'source' ? edge.target : edge.source;
+        byWhole.set(whole, [...(byWhole.get(whole) ?? []), { edge: edge.id, part }]);
+    }
+
+    const handled = new Set<string>();
+    for (const [whole, entries] of [...byWhole].sort(([one], [other]) => one.localeCompare(other))) {
+        const distinct = [...new Map(entries.map(entry => [entry.part, entry])).values()];
+        if (distinct.length < 2 || ranked?.has(whole)
+            || distinct.some(entry => ranked?.has(entry.part) || relationDegree.get(entry.part) !== 1)) {
+            continue;
+        }
+        const wholeRect = positions[whole];
+        const parts = distinct
+            .map(entry => ({ ...entry, rect: positions[entry.part] }))
+            .filter((entry): entry is typeof entry & { rect: Rect } => entry.rect !== undefined);
+        if (!wholeRect || parts.length !== distinct.length) {
+            continue;
+        }
+
+        const primary = settings.direction === 'DOWN' ? 'y' as const : 'x' as const;
+        const primarySize = settings.direction === 'DOWN' ? 'height' as const : 'width' as const;
+        const cross = settings.direction === 'DOWN' ? 'x' as const : 'y' as const;
+        const crossSize = settings.direction === 'DOWN' ? 'width' as const : 'height' as const;
+        parts.sort((one, other) =>
+            one.rect[cross] + one.rect[crossSize] / 2 - (other.rect[cross] + other.rect[crossSize] / 2)
+            || one.part.localeCompare(other.part));
+        const originals = [wholeRect, ...parts.map(entry => entry.rect)];
+        const originalBounds = boundsOf(originals);
+        const total = parts.reduce((sum, entry) => sum + entry.rect[crossSize], 0)
+            + settings.nodeSpacing * (parts.length - 1);
+        let along = originalBounds[cross] + (originalBounds[crossSize] - total) / 2;
+        const rowAt = wholeRect[primary] + wholeRect[primarySize] + settings.rankSpacing;
+        const proposed = new Map<string, Rect>();
+        for (const entry of parts) {
+            proposed.set(entry.part, {
+                ...entry.rect,
+                [cross]: Math.round(along),
+                [primary]: Math.round(rowAt)
+            });
+            along += entry.rect[crossSize] + settings.nodeSpacing;
+        }
+        const rowBounds = boundsOf([...proposed.values()]);
+        proposed.set(whole, {
+            ...wholeRect,
+            [cross]: Math.round(rowBounds[cross] + (rowBounds[crossSize] - wholeRect[crossSize]) / 2)
+        });
+
+        const members = new Set([whole, ...parts.map(entry => entry.part)]);
+        const obstacles = [...subject]
+            .filter(id => !members.has(id) && positions[id] !== undefined)
+            .map(id => positions[id]!);
+        const candidateRects = [...proposed.values()];
+        const fits = (dx: number, dy: number): boolean => candidateRects.every(rect => {
+            const moved = { ...rect, x: rect.x + dx, y: rect.y + dy };
+            return !obstacles.some(obstacle => overlaps(moved, obstacle, PARTIAL_GAP));
+        });
+        let translation: Point | undefined;
+        for (let ring = 0; ring <= PREFERRED_SIDE_STEPS && !translation; ring += 1) {
+            for (const offset of ring === 0 ? [{ x: 0, y: 0 }] : partialRing(ring)) {
+                const candidate = { x: offset.x * PARTIAL_STEP, y: offset.y * PARTIAL_STEP };
+                if (fits(candidate.x, candidate.y)) {
+                    translation = candidate;
                     break;
                 }
             }
         }
-        if (chosen) {
-            positions[aspect] = chosen;
+        if (!translation) {
+            continue;
+        }
+        for (const [id, rect] of proposed) {
+            positions[id] = {
+                ...rect,
+                x: Math.round(rect.x + translation.x),
+                y: Math.round(rect.y + translation.y)
+            };
+        }
+        for (const entry of distinct) {
+            handled.add(entry.edge);
         }
     }
+    return handled;
 }
 
 /**
@@ -793,12 +932,13 @@ function orientWholes(
     positions: Positions,
     subject: ReadonlySet<string>,
     ranked: ReadonlySet<string> | undefined,
-    direction: LayoutOptions['direction']
+    direction: LayoutOptions['direction'],
+    skipped: ReadonlySet<string> = new Set()
 ): void {
     const pairs: Array<{ whole: string; part: string }> = [];
     for (const edge of view.edges) {
         if (edge.kind !== 'relation' || edge.source === edge.target
-            || !subject.has(edge.source) || !subject.has(edge.target)) {
+            || !subject.has(edge.source) || !subject.has(edge.target) || skipped.has(edge.id)) {
             continue;
         }
         if (edge.whole) {
@@ -1303,7 +1443,8 @@ export async function autoLayout(
         settleRelators(view, positions, subject);
         orientCharacterizedAspects(view, positions, subject, new Set(), settings);
     }
-    orientWholes(view, positions, subject, ranked, settings.direction);
+    const wholeFans = orientWholeFans(view, positions, subject, ranked, settings);
+    orientWholes(view, positions, subject, ranked, settings.direction, wholeFans);
     const packed = !request.only && !grouped
         ? packComponents(view, positions, subject, appendixIds, settings)
         : false;
