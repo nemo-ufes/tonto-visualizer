@@ -200,3 +200,10 @@ authority for what those constraints mean.
   crossings reject it; at most one additional label collision can trade for a
   materially better semantic or footprint score. Rigid component packing and
   appendix placement remain structural steps outside that choice.
+- Made crowded generalization fans reserve the rendered triangle footprint,
+  including a generalization-set tree sharing the same class border. Fans of
+  five or more heads receive a short rank-normal approach when it adds no
+  centre-line crossing; a legacy-width candidate remains available when the
+  wider ports would make routing worse. The quality harness now reports line-
+  into-triangle and triangle-overlap collisions separately from zero-width line
+  crossings, with `classonly` as the regression benchmark at `Animal`.

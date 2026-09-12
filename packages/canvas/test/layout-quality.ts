@@ -8,6 +8,7 @@ export interface LayoutQuality {
     bounds: { width: number; height: number };
     nodeOverlaps: number;
     edgeCrossings: number;
+    generalizationHeadCollisions: number;
     edgeNodeIntersections: number;
     edgeLength: { total: number; maximum: number };
     taxonomyViolations: number;
@@ -111,6 +112,9 @@ export function measureLayout(
         bounds: { width: bounds.width, height: bounds.height },
         nodeOverlaps,
         edgeCrossings,
+        // Kept distinct from centre-line crossings so benchmark trends say
+        // whether a line or its rendered decorator regressed.
+        generalizationHeadCollisions: rendered.headCollisions,
         edgeNodeIntersections,
         edgeLength: {
             total: Math.round(lengths.reduce((sum, length) => sum + length, 0)),

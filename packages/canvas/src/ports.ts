@@ -49,6 +49,8 @@ interface Arrival {
     aim: Point;
     /** A taxonomy side fixed by the view's layout direction. */
     side?: Side;
+    /** Half the border corridor this end needs beside its neighbours. */
+    clearance?: number;
     /**
      * A loop's end: the side it leaves by, and the neighbouring side it turns
      * towards. It belongs at that end of its side rather than anywhere in the
@@ -122,6 +124,9 @@ const MARGIN = 14;
 /** How close two ends may sit on one side before they read as one. */
 const GAP = 12;
 
+/** Half the width reserved for a hollow generalization triangle. */
+const GENERALIZATION_CLEARANCE = 10;
+
 /** Names one end of one edge: the end of `edge` that touches `node`. */
 export function endKey(edge: string, node: string): string {
     return `${edge}@${node}`;
@@ -157,7 +162,9 @@ export function assignPorts(
     /** Candidate policy for ordinary associations; taxonomy always follows its ray. */
     associationAnchors: AssociationAnchors = 'ray',
     /** Rank direction, when known, so generalizations meet rank-facing sides. */
-    direction?: 'DOWN' | 'RIGHT'
+    direction?: 'DOWN' | 'RIGHT',
+    /** Reserve the rendered triangle footprint, not only its attachment tip. */
+    reserveGeneralizationHeads = true
 ): { ends: Map<string, EdgeEnds>; stems: Map<string, Point> } {
     // The direction everything that goes somewhere leaves in, by class, so that
     // a loop can turn at the corner with the most room around it.
@@ -212,6 +219,9 @@ export function assignPorts(
         push(arrivals, edge.target, {
             edge: edge.id, isSource: false, from: centerOf(source), aim: centerOf(source),
             through: edge.kind === 'generalization' || through.has(endKey(edge.id, edge.target)),
+            ...(edge.kind === 'generalization' && reserveGeneralizationHeads
+                ? { clearance: GENERALIZATION_CLEARANCE }
+                : {}),
             ...(edge.kind === 'generalization' && direction
                 ? { side: direction === 'DOWN' ? 'bottom' as const : 'right' as const }
                 : {})
@@ -223,7 +233,8 @@ export function assignPorts(
             continue;
         }
         push(arrivals, stem.node, {
-            edge: stem.id, isSource: true, from: stem.towards, aim: stem.towards, through: true
+            edge: stem.id, isSource: true, from: stem.towards, aim: stem.towards, through: true,
+            ...(reserveGeneralizationHeads ? { clearance: GENERALIZATION_CLEARANCE } : {})
         });
     }
 
@@ -313,7 +324,8 @@ function place(
                 ? even[index]!
                 : alongThrough(rect, side, arrival.aim)));
             const spaced = ordered.some(arrival => arrival.through || associationAnchors === 'ray')
-                ? separate(wanted, even, lengthOf(rect, side))
+                ? separate(wanted, even, lengthOf(rect, side),
+                    ordered.map(arrival => arrival.clearance ?? GAP / 2))
                 : even;
             ordered.forEach((arrival, index) => {
                 const at = pointOn(rect, side, spaced[index]!);
@@ -400,19 +412,21 @@ function clamp(along: number, length: number): number {
  * with more ends than it has room for falls back on the even share, which at
  * least crowds them in order instead of pushing the last of them off the corner.
  */
-function separate(wanted: number[], even: number[], length: number): number[] {
+function separate(wanted: number[], even: number[], length: number, clearances: number[]): number[] {
     const low = Math.min(MARGIN, length / 2);
     const high = Math.max(length - low, low);
-    if ((wanted.length - 1) * GAP > high - low) {
+    const gapAt = (index: number) => clearances[index - 1]! + clearances[index]!;
+    const required = clearances.slice(1).reduce((sum, _clearance, index) => sum + gapAt(index + 1), 0);
+    if (required > high - low) {
         return even;
     }
     const spaced = [...wanted];
     for (let index = 0; index < spaced.length; index += 1) {
-        const floor = index === 0 ? low : spaced[index - 1]! + GAP;
+        const floor = index === 0 ? low : spaced[index - 1]! + gapAt(index);
         spaced[index] = Math.max(spaced[index]!, floor);
     }
     for (let index = spaced.length - 1; index >= 0; index -= 1) {
-        const ceiling = index === spaced.length - 1 ? high : spaced[index + 1]! - GAP;
+        const ceiling = index === spaced.length - 1 ? high : spaced[index + 1]! - gapAt(index + 1);
         spaced[index] = Math.min(spaced[index]!, ceiling);
     }
     return spaced;

@@ -1011,7 +1011,11 @@ function optimizeRankCrossAxis(
             // call a swap an improvement while adding crossings at the box
             // borders. Tree buses are scored through their member edges here;
             // the final benchmark remains the authority for the rendered tree.
-            const ports = assignPorts(edges, candidate, new Set(), [], 'ray', settings.direction).ends;
+            // Keep the optimizer's historical zero-width port geometry. The
+            // renderer evaluates decorator-aware and legacy fans against the
+            // completed paths, where a wider head reservation cannot silently
+            // add a centre-line crossing.
+            const ports = assignPorts(edges, candidate, new Set(), [], 'ray', settings.direction, false).ends;
             const obstacles = ids.map(id => candidate[id]).filter((rect): rect is Rect => rect !== undefined);
             const bends: Point[] = [];
             const paths: Array<[string, Point[]]> = [];

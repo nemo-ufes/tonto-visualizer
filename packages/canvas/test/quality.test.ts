@@ -29,6 +29,16 @@ async function benchmark(target = fixture) {
 }
 
 describe('layout quality benchmarks', () => {
+    test('keeps the class-only taxonomy clear at a crowded generalization head', async () => {
+        const target = resolve(repository, 'vendor/tontoredesign/examples/classonly.tonto');
+        const { rendered, quality } = await benchmark(target);
+
+        expect(rendered.headCollisions).toBe(0);
+        expect(quality.generalizationHeadCollisions).toBe(0);
+        expect(quality.edgeCrossings).toBe(0);
+        expect(quality.edgeNodeIntersections).toBe(0);
+    });
+
     test('keeps association pressure out of taxonomy corridors', async () => {
         const { laid, rendered, quality } = await benchmark();
         expect(Object.keys(laid.positions)).toHaveLength(12);
@@ -78,7 +88,9 @@ describe('layout quality benchmarks', () => {
         ['gufo', resolve(repository, 'vendor/tontoredesign/examples/gufo.tonto'),
             { width: 1850, height: 1000, crossings: 17, labels: 46, total: 10500, longest: 600 }],
         ['genealogy', resolve(repository, 'packages/canvas/test/fixtures/genealogy.tonto'),
-            { width: 1850, height: 1125, crossings: 6, labels: 1, total: 7200, longest: 560 }],
+            // Crowded generalization heads now use short square approaches;
+            // the extra 118px is deliberate decorator clearance, not sprawl.
+            { width: 1850, height: 1125, crossings: 6, labels: 1, total: 7350, longest: 560 }],
         ['university', resolve(repository, 'vendor/tontoredesign/examples/university'),
             { width: 1400, height: 1250, crossings: 4, labels: 6, total: 6000, longest: 900 }],
         ['parties', resolve(repository, 'packages/view/test/fixtures/parties'),
