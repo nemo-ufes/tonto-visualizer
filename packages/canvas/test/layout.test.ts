@@ -472,6 +472,37 @@ describe('packages and the layout', () => {
         expect(child.y - (middle.y + middle.height)).toBeGreaterThanOrEqual(defaultLayoutOptions.rankSpacing - 1);
     });
 
+    test('places a higher-order type to the left of its base classifier', async () => {
+        const clazz = (name: string, stereotype: string) => ({
+            id: `Sample::${name}`, kind: 'class' as const, name, package: 'Sample',
+            stereotype, color: '#FF99A3', isExternal: false, attributes: []
+        });
+        for (const edge of [
+            {
+                kind: 'relation' as const, id: 'written-relation', stereotype: 'instantiation',
+                source: 'Sample::Person', target: 'Sample::PersonType',
+                sourceEnd: { isConst: false, isAddOnly: false },
+                targetEnd: { isConst: false, isAddOnly: false }
+            },
+            {
+                kind: 'instantiation' as const, id: 'instance-of',
+                source: 'Sample::Person', target: 'Sample::PersonType'
+            }
+        ]) {
+            const view: ViewModel = {
+                groups: [],
+                nodes: [clazz('Person', 'kind'), clazz('PersonType', 'type')],
+                edges: [edge],
+                gensets: []
+            };
+            const positions = await arrange(view, false);
+            const type = positions['Sample::PersonType']!;
+            const base = positions['Sample::Person']!;
+
+            expect(type.x + type.width + defaultLayoutOptions.nodeSpacing).toBeLessThanOrEqual(base.x);
+        }
+    });
+
     /**
      * A relator is a reified relationship, and a reader looks for it between the
      * classes it relates. Both mediations are written inside the relator, so a
