@@ -29,9 +29,9 @@ Working end to end, and rough in places.
   Specializations of one class are gathered into a shared tree. A mediation
   meets a relator on the ray out of its centre, so that the two of them read as
   one line passing through the relator rather than as two lines meeting at a
-  box. Curved associations and right angles are available as alternatives;
-  curved routing retains sampled geometry for labels, selection and collision
-  checks rather than being a cosmetic SVG effect. Automatic layout (ELK,
+  box. Curved detours and right angles are available as alternatives; a direct
+  association remains straight, while a necessary bend is smoothed and retains
+  sampled geometry for labels, selection and collision checks. Automatic layout (ELK,
   layered) places only what has not been placed by hand, seats a relator between
   the classes it mediates -- it is a reified relationship, and that is where a
   reader looks for it -- and can be told to ignore the packages and lay the
