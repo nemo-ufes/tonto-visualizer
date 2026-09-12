@@ -151,6 +151,17 @@ export function distance(one: Point, other: Point): number {
     return Math.hypot(one.x - other.x, one.y - other.y);
 }
 
+/** Two segments cross in their interiors; a shared endpoint is not a crossing. */
+export function segmentsProperlyCross(a: Point, b: Point, c: Point, d: Point): boolean {
+    const side = (one: Point, two: Point, point: Point) =>
+        (two.x - one.x) * (point.y - one.y) - (two.y - one.y) * (point.x - one.x);
+    const abC = side(a, b, c);
+    const abD = side(a, b, d);
+    const cdA = side(c, d, a);
+    const cdB = side(c, d, b);
+    return abC * abD < 0 && cdA * cdB < 0;
+}
+
 /** A point `offset` along the segment that starts the path, for an end label. */
 export function alongPath(points: Point[], fromStart: boolean, offset: number): Point {
     const ordered = fromStart ? points : [...points].reverse();

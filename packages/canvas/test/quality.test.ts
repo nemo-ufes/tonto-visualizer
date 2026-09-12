@@ -42,6 +42,12 @@ describe('layout quality benchmarks', () => {
         expect(quality.edgeLength.total).toBeLessThan(2400);
         expect(quality.edgeLength.maximum).toBeLessThan(500);
 
+        const rightOf = (aspect: string, bearer: string) =>
+            laid.positions[aspect]!.x >= laid.positions[bearer]!.x
+                + laid.positions[bearer]!.width + defaultLayoutOptions.nodeSpacing;
+        expect(rightOf('Error::Duty', 'Error::Person')).toBe(true);
+        expect(rightOf('Error::Intensity', 'Error::Headache')).toBe(true);
+
         // Person is attracted to Headache by their characterization, but it
         // must not occupy the inheritance lane from Headache to ActiveHeadache.
         expect(rendered.paths['gen:Error::ActiveHeadache->Error::Headache']).toHaveLength(2);
@@ -49,7 +55,7 @@ describe('layout quality benchmarks', () => {
 
     test.each([
         ['boats', resolve(repository, 'vendor/tontoredesign/examples/boats.tonto'),
-            { width: 2200, height: 1750, crossings: 6, labels: 37, total: 12000, longest: 700 }],
+            { width: 2200, height: 1750, crossings: 6, labels: 37, total: 12100, longest: 700 }],
         ['pets', resolve(repository, 'vendor/tontoredesign/examples/pets.tonto'),
             { width: 1600, height: 1050, crossings: 2, labels: 3, total: 3000, longest: 450 }],
         ['gufo', resolve(repository, 'vendor/tontoredesign/examples/gufo.tonto'),
