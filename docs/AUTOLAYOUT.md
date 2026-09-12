@@ -64,7 +64,7 @@ exact ELK coordinates.
   shared ranks.
 - [ ] Give partial layout a fixed-neighbour halo, so relations to unselected
   nodes influence placement while those nodes remain immovable.
-- [ ] Make association labels part of the final-layout quality score, then
+- [x] Make association labels part of the final-layout quality score, then
   validate their corridors and routes after semantic movement. Passing centre,
   head and tail label boxes directly to ELK was tried and rolled back: ELK made
   room by inserting and widening ranks, producing a substantially worse overall
@@ -119,12 +119,23 @@ authority for what those constraints mean.
   while the taxonomy rank axis stays fixed. Candidates must improve routed
   intersections, crossings, maximum/total edge length or span, and are rejected
   if the final port-spread/tree rendering worsens crossings or label occlusion.
-  On `genealogy` this reduces crossings from 9 to 7 and label occlusions from
-  28 to 25. Larger diagrams retain the established layout until the rendered
-  candidate score can be updated incrementally enough to remain interactive.
+  On `genealogy` this reduces crossings from 9 to 7. Larger diagrams retain the
+  established layout until the rendered candidate score can be updated
+  incrementally enough to remain interactive.
 - Extended that optimizer from ordering to cross-axis coordinates. Complete
   visual bands move rigidly towards their connected neighbours, preserving
   rank, within-band order and semantic fan shapes. Explicit multi-package
   containers are not translated across their boundaries. On `genealogy`, width
-  falls from 2255 to 1924, crossings from 7 to 6, label occlusions from 25 to
-  18, and total edge length from 7418 to 7032.
+  falls from 2255 to 1924, crossings from 7 to 6, and total edge length from
+  7418 to 7032.
+- Corrected the label-quality measure so the deliberately stacked stereotype,
+  name and end-decoration lines belonging to one relation are treated as one
+  label block rather than as collisions with themselves.
+- Added a bounded final corridor-reservation pass after semantic movement and
+  compaction. When a labelled relation has too little room between its endpoint
+  boxes, it may move only a low-degree, unranked endpoint, and keeps that move
+  only if the final routed rendering has fewer label collisions without adding
+  an edge-node intersection, crossing or taxonomy-lane obstruction. On
+  `genealogy` this removes three of the four genuine remaining label collisions;
+  the final benchmark is 1813 x 1059, 6 crossings, 1 label collision and 6981
+  total edge length.
