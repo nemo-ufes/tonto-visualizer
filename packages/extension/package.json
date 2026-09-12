@@ -1,7 +1,7 @@
 {
     "name": "tonto-visualizer",
     "displayName": "Tonto Visualizer",
-    "version": "0.1.3+20260912001712",
+    "version": "0.1.7+20260912021415",
     "private": true,
     "description": "An OntoUML diagram beside the text: a Tonto model drawn as it is typed, and arranged by hand.",
     "license": "MIT",
@@ -130,7 +130,7 @@
                     "type": "boolean",
                     "default": true,
                     "scope": "window",
-                    "markdownDescription": "Write positions to a `.tontoview` file beside the model, so a hand-arranged diagram survives a restart and can be committed."
+                    "markdownDescription": "After you change an automatically arranged diagram, save it under the model's `views` folder so the hand-arranged view survives a restart and can be committed."
                 }
             }
         }

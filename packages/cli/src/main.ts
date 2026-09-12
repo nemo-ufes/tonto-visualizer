@@ -21,7 +21,6 @@ diagram of the model would hold.
 
   --svg              draw it, rather than describing it
   --dark             the dark theme, with --svg
-  --layout <name>    layered (default), stress, mrtree, radial, force
   --routing <name>   straight (default) or orthogonal
   --direction <dir>  DOWN (default) or RIGHT
   --loose            lay the model out as one graph, ignoring its packages
@@ -41,7 +40,6 @@ export async function run(argv: string[]): Promise<number> {
     let showDatatypes = true;
     let asSvg = false;
     let dark = false;
-    let algorithm: LayoutOptions['algorithm'] = defaultLayoutOptions.algorithm;
     let routing: DisplayOptions['routing'] = defaultDisplayOptions.routing;
     let direction: LayoutOptions['direction'] = defaultLayoutOptions.direction;
     let groupByPackage = defaultLayoutOptions.groupByPackage;
@@ -64,14 +62,15 @@ export async function run(argv: string[]): Promise<number> {
             asSvg = true;
         } else if (argument === '--dark') {
             dark = true;
-        } else if (argument === '--layout') {
-            algorithm = argv[++index] as LayoutOptions['algorithm'];
         } else if (argument === '--routing') {
             routing = argv[++index] as DisplayOptions['routing'];
         } else if (argument === '--direction') {
             direction = argv[++index] as LayoutOptions['direction'];
         } else if (argument === '--loose') {
             groupByPackage = false;
+        } else if (argument.startsWith('-')) {
+            process.stderr.write(`Unknown option: ${argument}\n`);
+            return 2;
         } else {
             paths.push(argument);
         }
@@ -107,9 +106,9 @@ export async function run(argv: string[]): Promise<number> {
     const sizes = Object.fromEntries(view.nodes.map(node => [node.id, sizeOf(node, display)]));
     const laid = await autoLayout(view, sizes, placeNewNodes(view, sizes, {}), {
         ...defaultLayoutOptions,
-        algorithm,
         direction,
         routing,
+        display,
         groupByPackage
     });
     const drawn = render({

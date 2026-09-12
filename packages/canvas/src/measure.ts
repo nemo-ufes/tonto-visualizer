@@ -20,7 +20,7 @@
  * slightly roomy card and never as text spilling out of one.
  */
 
-import type { ViewNode } from 'tonto-view';
+import type { ViewNode, ViewRelation, ViewRelationEnd } from 'tonto-view';
 import type { DisplayOptions } from 'tonto-view';
 import type { Size } from './geometry.js';
 
@@ -144,6 +144,127 @@ export function sizeOf(node: ViewNode, options: DisplayOptions): Size {
     const header = (stereotype ? NODE.stereotypeHeight : 0) + NODE.nameHeight + NODE.headerGap * 2;
     const body = lines.length > 0 ? lines.length * NODE.lineHeight + NODE.headerGap * 2 : 0;
     return { width: round(width), height: round(header + body) };
+}
+
+/** Where ELK should reserve the space the renderer uses for an edge label. */
+export interface EdgeLabelFootprint extends Size {
+    placement: 'CENTER' | 'HEAD' | 'TAIL';
+}
+
+const EDGE_LABEL = {
+    stereotypeHeight: 12,
+    nameHeight: 14,
+    readingMarker: 9,
+    lockWidth: 11,
+    lockGap: 4,
+    endHeight: FONT.edge + 4,
+    /** Air for the line that runs between the two sides of an end label. */
+    endGap: 12,
+    /** UML whole-part diamond, tip to back corner. */
+    diamond: 16
+} as const;
+
+function endText(end: ViewRelationEnd, options: DisplayOptions): {
+    multiplicity?: string;
+    role: string;
+    lock: boolean;
+} {
+    const multiplicity = options.showCardinalities ? multiplicityLabel(end.cardinality) : undefined;
+    const role: string[] = [];
+    if (options.showRoleNames && end.role) {
+        role.push(end.role);
+    }
+    if (options.showEndDecorations) {
+        if (end.isAddOnly) {
+            role.push('{addOnly}');
+        }
+        if (end.subsets) {
+            role.push(`{subsets ${end.subsets}}`);
+        }
+        if (end.redefines) {
+            role.push(`{redefines ${end.redefines}}`);
+        }
+    }
+    return {
+        ...(multiplicity ? { multiplicity } : {}),
+        role: role.join(' '),
+        lock: options.showEndDecorations && !end.isConst
+    };
+}
+
+function endFootprint(
+    end: ViewRelationEnd,
+    whole: boolean,
+    placement: 'HEAD' | 'TAIL',
+    options: DisplayOptions
+): EdgeLabelFootprint | undefined {
+    const { multiplicity, role, lock } = endText(end, options);
+    const multiplicityWidth = multiplicity ? textWidth(multiplicity, FONT.edge) : 0;
+    const roleWidth = textWidth(role, FONT.edge) + (lock ? EDGE_LABEL.lockWidth + EDGE_LABEL.lockGap : 0);
+    const contentWidth = multiplicityWidth + roleWidth
+        + (multiplicityWidth > 0 && roleWidth > 0 ? EDGE_LABEL.endGap : 0);
+    const width = Math.max(contentWidth, whole ? EDGE_LABEL.diamond : 0);
+    if (width === 0) {
+        return undefined;
+    }
+    return {
+        placement,
+        width: round(width),
+        height: Math.max(EDGE_LABEL.endHeight, whole ? EDGE_LABEL.diamond : 0)
+    };
+}
+
+/**
+ * The label boxes an association adds after its line is routed.
+ *
+ * ELK does not draw these labels, but feeding it the same measurements stops it
+ * from placing neighbouring cards in the space the renderer will immediately
+ * need. An inverse pair is measured as the one line the renderer uses for both
+ * declarations, including ends filled in by the declaration not drawn.
+ */
+export function relationLabelFootprints(
+    edge: ViewRelation,
+    options: DisplayOptions,
+    partner?: ViewRelation
+): EdgeLabelFootprint[] {
+    // The derived view always supplies ends. Keeping measurement tolerant makes
+    // it useful for small hand-built graphs in callers and tests as well.
+    const emptyEnd: ViewRelationEnd = { isConst: true, isAddOnly: false };
+    const merge = (one: ViewRelationEnd, other: ViewRelationEnd): ViewRelationEnd => ({ ...other, ...one });
+    const sourceEnd = partner
+        ? merge(edge.sourceEnd ?? emptyEnd, partner.targetEnd ?? emptyEnd)
+        : edge.sourceEnd ?? emptyEnd;
+    const targetEnd = partner
+        ? merge(edge.targetEnd ?? emptyEnd, partner.sourceEnd ?? emptyEnd)
+        : edge.targetEnd ?? emptyEnd;
+    const whole = edge.whole ?? (partner?.whole === 'source' ? 'target' : partner?.whole === 'target' ? 'source' : undefined);
+
+    const readings = [edge, ...(partner ? [partner] : [])].map((one, index) => ({
+        stereotype: options.showRelationStereotypes && one.stereotype
+            && !(index === 1 && edge.stereotype === one.stereotype)
+            ? `«${one.stereotype}»`
+            : undefined,
+        name: options.showRelationNames ? one.name : undefined
+    }));
+    const visibleReadings = readings.filter(one => one.stereotype || one.name);
+    const centre = visibleReadings.length > 0
+        ? {
+            placement: 'CENTER' as const,
+            width: round(Math.max(...visibleReadings.map(one => Math.max(
+                one.name ? textWidth(one.name, FONT.edge) * 1.02 + EDGE_LABEL.readingMarker : 0,
+                one.stereotype ? textWidth(one.stereotype, FONT.edgeStereotype) : 0
+            )))),
+            height: visibleReadings.reduce((height, one) => height
+                + (one.stereotype ? EDGE_LABEL.stereotypeHeight : 0)
+                + (one.name ? EDGE_LABEL.nameHeight : 0), 0)
+        }
+        : undefined;
+
+    return [
+        centre,
+        endFootprint(sourceEnd, whole === 'source', 'TAIL', options),
+        endFootprint(targetEnd, whole === 'target', 'HEAD', options)
+    ].filter((one): one is EdgeLabelFootprint => one !== undefined);
 }
 
 /** Sizes stay whole numbers, so a saved layout is not a page of decimals. */

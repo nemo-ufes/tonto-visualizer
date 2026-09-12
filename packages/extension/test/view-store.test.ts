@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 const filesystem = vi.hoisted(() => ({
     readFile: vi.fn(),
     writeFile: vi.fn(),
+    createDirectory: vi.fn(),
     readDirectory: vi.fn(),
     stat: vi.fn()
 }));
@@ -29,23 +30,42 @@ describe('the view store', () => {
     beforeEach(() => {
         filesystem.readFile.mockReset();
         filesystem.writeFile.mockReset();
+        filesystem.createDirectory.mockReset();
         filesystem.readFile.mockRejectedValue(new Error('not found'));
         filesystem.writeFile.mockResolvedValue(undefined);
+        filesystem.createDirectory.mockResolvedValue(undefined);
         filesystem.readDirectory.mockResolvedValue([]);
         filesystem.stat.mockRejectedValue(new Error('not found'));
     });
 
     test('flushes a pending arrangement when it is disposed', async () => {
         const store = await ViewStore.open(modelUri() as never, 'Sample', true);
+        store.begin('Move');
         store.move({ 'Sample::Person': { x: 24, y: 48 } });
 
         await store.dispose();
 
         expect(filesystem.writeFile).toHaveBeenCalledTimes(1);
+        expect(filesystem.createDirectory.mock.calls[0]![0].path).toBe('/workspace/views');
+        expect(filesystem.writeFile.mock.calls[0]![0].path).toBe('/workspace/views/model.tontoview');
         const bytes = filesystem.writeFile.mock.calls[0]![1] as Uint8Array;
         expect(JSON.parse(Buffer.from(bytes).toString('utf8')).nodes).toEqual({
             'Sample::Person': { x: 24, y: 48 }
         });
+    });
+
+    test('does not create a view file for an untouched automatic layout', async () => {
+        const store = await ViewStore.open(modelUri() as never, 'Sample', true);
+
+        // Automatic layout and reconciliation deliberately happen outside a
+        // user step. They populate the state a later edit will save, but are
+        // not themselves a reason to create a document.
+        store.move({ 'Sample::Person': { x: 24, y: 48 } });
+        store.reroute('works-for', { points: [{ x: 0, y: 0 }, { x: 24, y: 48 }] });
+        await store.dispose();
+
+        expect(filesystem.createDirectory).not.toHaveBeenCalled();
+        expect(filesystem.writeFile).not.toHaveBeenCalled();
     });
 
     test('takes back one step per thing the modeller did, not per change it made', async () => {
@@ -154,33 +174,67 @@ describe('the view store', () => {
         await reopened.dispose();
     });
 
-    test('normalizes a human name into a stable sibling filename', () => {
+    test('normalizes a human name into a stable filename under views', () => {
         expect(viewNameOf('  Core Taxonomy  ')).toBe('core-taxonomy');
         expect(viewNameOf('Relações & Papéis')).toBe('relacoes-papeis');
         expect(viewNameOf('---')).toBeUndefined();
         const uri = viewUriFor(modelUri('/workspace/employment.tonto') as never, 'core-taxonomy');
-        expect(uri.path).toBe('/workspace/employment.core-taxonomy.tontoview');
+        expect(uri.path).toBe('/workspace/views/employment.core-taxonomy.tontoview');
         expect(viewNameFor(modelUri('/workspace/employment.tonto') as never, uri as never))
             .toBe('core-taxonomy');
+        expect(viewNameFor(
+            modelUri('/workspace/employment.tonto') as never,
+            modelUri('/workspace/employment.roles.tontoview') as never
+        )).toBe('roles');
     });
 
     test('discovers only the named views belonging to the exact model', async () => {
-        filesystem.readDirectory.mockResolvedValue([
-            ['employment.roles.tontoview', 1],
-            ['employment.tontoview', 1],
-            ['employment.core-taxonomy.tontoview', 1],
-            ['employment-relations.tontoview', 1],
-            ['employment.notes.txt', 1],
-            ['employment.draft.tontoview', 2]
-        ]);
+        filesystem.readDirectory.mockImplementation(async (uri: { path: string }) => uri.path.endsWith('/views')
+            ? [
+                ['employment.roles.tontoview', 1],
+                ['employment.tontoview', 1],
+                ['employment.core-taxonomy.tontoview', 1],
+                ['employment-relations.tontoview', 1],
+                ['employment.notes.txt', 1],
+                ['employment.draft.tontoview', 2]
+            ]
+            // A legacy name is still discovered, but points at its migration target.
+            : [['employment.people.tontoview', 1]]);
 
         const views = await viewChoicesFor(modelUri('/workspace/employment.tonto') as never);
 
         expect(views.map(view => [view.label, view.description])).toEqual([
-            ['Default view', 'employment.tontoview'],
-            ['core taxonomy', 'employment.core-taxonomy.tontoview'],
-            ['roles', 'employment.roles.tontoview']
+            ['Default view', 'views/employment.tontoview'],
+            ['core taxonomy', 'views/employment.core-taxonomy.tontoview'],
+            ['people', 'views/employment.people.tontoview'],
+            ['roles', 'views/employment.roles.tontoview']
         ]);
+    });
+
+    test('reads a legacy sibling and migrates it only after a user change', async () => {
+        const legacy = {
+            version: 1,
+            focus: 'Sample',
+            nodes: { 'Sample::Person': { x: 12, y: 34 } }
+        };
+        filesystem.readFile.mockImplementation(async (uri: { path: string }) => {
+            if (uri.path === '/workspace/model.tontoview') {
+                return Buffer.from(JSON.stringify(legacy));
+            }
+            throw new Error('not found');
+        });
+        const store = await ViewStore.open(modelUri() as never, 'Sample', true);
+
+        expect(store.state.nodes['Sample::Person']).toEqual({ x: 12, y: 34 });
+        await store.write();
+        expect(filesystem.writeFile).not.toHaveBeenCalled();
+
+        store.begin('Move');
+        store.move({ 'Sample::Person': { x: 56, y: 78 } });
+        await store.dispose();
+
+        expect(filesystem.writeFile).toHaveBeenCalledTimes(1);
+        expect(filesystem.writeFile.mock.calls[0]![0].path).toBe('/workspace/views/model.tontoview');
     });
 
     test('copies the complete current diagram into a named view even when autosave is off', async () => {
@@ -192,7 +246,7 @@ describe('the view store', () => {
 
         expect(filesystem.writeFile).toHaveBeenCalledTimes(1);
         const [uri, bytes] = filesystem.writeFile.mock.calls[0]!;
-        expect(uri.path).toBe('/workspace/model.people.tontoview');
+        expect(uri.path).toBe('/workspace/views/model.people.tontoview');
         expect(JSON.parse(Buffer.from(bytes as Uint8Array).toString('utf8'))).toMatchObject({
             focus: 'Sample',
             nodes: { 'Sample::Person': { x: 24, y: 48 } },
@@ -204,5 +258,16 @@ describe('the view store', () => {
         expect(await viewFileExists(modelUri('/workspace/missing.tontoview') as never)).toBe(false);
         filesystem.stat.mockResolvedValue({ type: 1 });
         expect(await viewFileExists(modelUri('/workspace/present.tontoview') as never)).toBe(true);
+    });
+
+    test('recognizes a legacy sibling before replacing a named view', async () => {
+        filesystem.stat.mockImplementation(async (uri: { path: string }) => {
+            if (uri.path === '/workspace/model.people.tontoview') {
+                return { type: 1 };
+            }
+            throw new Error('not found');
+        });
+
+        expect(await viewFileExists(viewUriFor(modelUri() as never, 'people'))).toBe(true);
     });
 });

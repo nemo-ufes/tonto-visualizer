@@ -57,6 +57,8 @@ export class DiagramPanel {
     private filters: FilterItem[] = [];
     private visibleNodeIds = new Set<string>();
     private hasPresentedView = false;
+    /** The first drawing of an opened view should fill its viewport, exactly once. */
+    private fitNextView = true;
     private selected = new Set<string>();
     private disposal: Promise<void> | undefined;
     /** The last message built, so a panel that becomes ready late still gets it. */
@@ -142,6 +144,7 @@ export class DiagramPanel {
             this.schedule();
             return;
         }
+        this.fitNextView = true;
         const folder = modelRootOf(document.uri);
         const session = new ViewSession({ workspace: [folder] });
         const store = await ViewStore.open(document.uri, undefined, saveArrangement(), viewUri);
@@ -192,7 +195,7 @@ export class DiagramPanel {
         }
         const entered = await vscode.window.showInputBox({
             title: 'Save Diagram as Named View',
-            prompt: 'The view is stored beside the model and can be committed with it.',
+            prompt: "The view is stored under the model's views folder and can be committed with it.",
             placeHolder: 'Core taxonomy',
             validateInput: value => viewNameOf(value) ? undefined : 'Enter a name containing a letter or number.'
         });
@@ -229,16 +232,7 @@ export class DiagramPanel {
         }
     }
 
-    /**
-     * Arranges the diagram, and says whether it could.
-     *
-     * An algorithm can refuse: ELK's `radial` wants a tree, and `boats` and
-     * `gufo` are not one -- one throws `not a tree`, the other runs out of
-     * stack. Nothing caught either, so choosing radial on such a model drew
-     * nothing at all, and the first draw of a view file that had radial saved in
-     * it left the panel empty with no word of why. A picture is meant to survive
-     * a model that does not parse; it had better survive one that does.
-     */
+    /** Arranges the diagram, and leaves the previous picture intact if ELK cannot. */
     async autoLayoutNow(only?: string[]): Promise<boolean> {
         const store = this.store;
         if (!store) {
@@ -256,6 +250,7 @@ export class DiagramPanel {
             laid = await autoLayout(view, sizes, this.positions, {
                 ...store.state.layout,
                 routing: store.state.display.routing,
+                display: store.state.display,
                 ...(only ? { only } : {})
             });
         } catch (error) {
@@ -263,8 +258,7 @@ export class DiagramPanel {
                 return false;
             }
             const message = error instanceof Error ? error.message : String(error);
-            vscode.window.showErrorMessage(
-                `${store.state.layout.algorithm} could not arrange this model: ${message}`);
+            vscode.window.showErrorMessage(`Could not arrange this model: ${message}`);
             // Everything stays where it was, and is drawn: the arrangement that
             // failed is the one nobody sees.
             this.send();
@@ -571,10 +565,14 @@ export class DiagramPanel {
             title: this.document && this.store
                 ? this.diagramTitle(this.document.uri, this.store.location).replace(/^Diagram: /, '')
                 : 'Tonto',
+            ...(this.fitNextView ? { fit: true } : {}),
             ...(stale ? { stale } : {})
         };
         this.last = message;
         this.post(message);
+        if (this.ready) {
+            this.fitNextView = false;
+        }
     }
 
     private post(message: ToPanel): void {
@@ -596,6 +594,7 @@ export class DiagramPanel {
                 this.post({ type: 'theme', dark: isDark(vscode.window.activeColorTheme) });
                 if (this.last) {
                     void this.panel.webview.postMessage(this.last);
+                    this.fitNextView = false;
                 }
                 return;
             case 'moved':
@@ -630,6 +629,13 @@ export class DiagramPanel {
                 return;
             case 'reveal':
                 await this.reveal(message.id);
+                return;
+            case 'moveToNewWindow':
+                // The command acts on the active editor. A message normally
+                // arrives from this webview while it is active; reveal makes
+                // that invariant explicit if focus moved during dispatch.
+                this.panel.reveal(this.panel.viewColumn, false);
+                await vscode.commands.executeCommand('workbench.action.moveEditorToNewWindow');
                 return;
             case 'display':
                 if (store) {
@@ -818,6 +824,7 @@ export class DiagramPanel {
         <span id="scale" class="scale">100%</span>
         <button id="zoomIn" title="Zoom in">+</button>
         <button id="fit" title="Fit to view">Fit</button>
+        <button id="newWindow" title="Move into a New Window">Move into a New Window</button>
         <button id="arrange" title="Arrange the whole diagram automatically">Arrange</button>
         <button id="hide" title="Hide the selected classes or associations" disabled>Hide</button>
         <button id="optionsButton" title="What is drawn">⚙</button>

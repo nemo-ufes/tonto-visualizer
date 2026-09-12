@@ -38,6 +38,8 @@ export type ToPanel =
         packages: string[];
         filters: FilterItem[];
         title: string;
+        /** Centre and scale this newly opened view once; later redraws preserve the viewport. */
+        fit?: boolean;
         /** Set when the model does not parse and the picture is the last good one. */
         stale?: string;
     }
@@ -72,6 +74,7 @@ export type FromPanel =
     | { type: 'autoLayout'; only?: string[] }
     | { type: 'hide'; ids: string[] }
     | { type: 'show'; ids: string[] }
+    | { type: 'moveToNewWindow' }
     /** Without a format, the file the modeller names in the dialog decides. */
     | { type: 'export'; format?: 'svg' | 'png' }
     | { type: 'raster'; id: number; data?: string; error?: string }

@@ -77,13 +77,6 @@ export interface DisplayOptions {
  * modeller asks for the whole thing to be arranged.
  */
 export interface LayoutOptions {
-    /**
-     * `layered` ranks the taxonomy, which is what most models are read by.
-     * `stress` spreads a densely associated model without ranking it, `mrtree`
-     * is for a model that really is a tree, and `radial` puts one thing in the
-     * middle.
-     */
-    algorithm: 'layered' | 'stress' | 'mrtree' | 'radial' | 'force';
     /** Which way generalizations point. Down is what a class diagram is read as. */
     direction: 'DOWN' | 'RIGHT';
     /** Between neighbours in a rank. */
@@ -99,7 +92,6 @@ export interface LayoutOptions {
 }
 
 export const defaultLayoutOptions: LayoutOptions = {
-    algorithm: 'layered',
     direction: 'DOWN',
     nodeSpacing: 60,
     rankSpacing: 100,

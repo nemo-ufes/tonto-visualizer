@@ -40,7 +40,7 @@ function panelHtml(): string {
         <div id="toolbar">
             <span id="title"></span><span id="stale" hidden></span>
             <button id="zoomOut"></button><span id="scale"></span><button id="zoomIn"></button>
-            <button id="fit"></button><button id="arrange"></button>
+            <button id="fit"></button><button id="newWindow"></button><button id="arrange"></button>
             <button id="hide" disabled></button><button id="optionsButton"></button><button id="exportButton"></button>
         </div>
         <div id="options" hidden></div>
@@ -49,7 +49,7 @@ function panelHtml(): string {
     </div>`;
 }
 
-function sendModel(hidden: string[] = [], stale?: string): void {
+function sendModel(hidden: string[] = [], stale?: string, fit = false): void {
     const visibleNodes = view.nodes.filter(node => !hidden.includes(node.id));
     const visible = new Set(visibleNodes.map(node => node.id));
     window.dispatchEvent(new MessageEvent('message', { data: {
@@ -75,6 +75,7 @@ function sendModel(hidden: string[] = [], stale?: string): void {
             { kind: 'association', ids: ['employs'], label: 'Sample::Organization — employs — Sample::Person' }
         ],
         title: 'sample.tonto',
+        ...(fit ? { fit: true } : {}),
         ...(stale ? { stale } : {})
     } }));
 }
@@ -124,6 +125,33 @@ describe('the webview and its host protocol', () => {
             setState: () => undefined
         }));
         await import('../src/webview/main.js');
+    });
+
+    test('offers taxonomy controls without an arrangement-engine choice', () => {
+        sendModel();
+        openOptions();
+
+        expect(chooser('Direction').value).toBe('DOWN');
+        expect(checkbox('Cluster packages').checked).toBe(true);
+        expect([...document.querySelectorAll('label.choice')]
+            .some(candidate => candidate.querySelector('span')?.textContent === 'Arrangement')).toBe(false);
+    });
+
+    test('fits a newly opened view once and preserves later viewport changes', () => {
+        sendModel([], undefined, true);
+        expect(document.getElementById('scale')!.textContent).toBe('200%');
+
+        document.getElementById('zoomOut')!.click();
+        const changed = document.getElementById('scale')!.textContent;
+        sendModel();
+
+        expect(changed).not.toBe('200%');
+        expect(document.getElementById('scale')!.textContent).toBe(changed);
+    });
+
+    test('asks the host to move the diagram into a new window', () => {
+        document.getElementById('newWindow')!.click();
+        expect(posted('moveToNewWindow').at(-1)).toEqual({ type: 'moveToNewWindow' });
     });
 
     test('sends class and association filter changes to the host', () => {
