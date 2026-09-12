@@ -708,6 +708,117 @@ function semanticEdgeWeight(edge: ViewModel['edges'][number]): number {
     return 1;
 }
 
+function semanticGeometryCost(
+    view: ViewModel,
+    positions: Positions,
+    ids: ReadonlySet<string>,
+    settings: LayoutOptions
+): number {
+    const edges = view.edges.filter(edge => ids.has(edge.source) && ids.has(edge.target)
+        && positions[edge.source] !== undefined && positions[edge.target] !== undefined);
+    let cost = edges.reduce((total, edge) => total + Math.hypot(
+        centerOf(positions[edge.source]!).x - centerOf(positions[edge.target]!).x,
+        centerOf(positions[edge.source]!).y - centerOf(positions[edge.target]!).y
+    ) * semanticEdgeWeight(edge), 0);
+    for (const edge of edges) {
+        if (edge.kind !== 'relation') {
+            continue;
+        }
+        const whole = edge.whole === 'source' ? edge.source
+            : edge.whole === 'target' ? edge.target
+                : edge.stereotype === 'constitution' ? edge.source : undefined;
+        if (!whole) {
+            continue;
+        }
+        const part = whole === edge.source ? edge.target : edge.source;
+        const wholeCentre = centerOf(positions[whole]!);
+        const partCentre = centerOf(positions[part]!);
+        if (wholeCentre.x >= partCentre.x && wholeCentre.y >= partCentre.y) {
+            cost += 800;
+        }
+    }
+    for (const node of view.nodes.filter(node => node.stereotype === 'relator' && ids.has(node.id))) {
+        const relator = positions[node.id];
+        const relata = [...new Set(edges
+            .filter(edge => edge.kind === 'relation' && edge.stereotype === 'mediation'
+                && (edge.source === node.id || edge.target === node.id))
+            .map(edge => edge.source === node.id ? edge.target : edge.source))]
+            .map(id => positions[id])
+            .filter((rect): rect is Rect => rect !== undefined);
+        if (!relator || relata.length < 2) {
+            continue;
+        }
+        const at = centerOf(relator);
+        const left = Math.min(...relata.map(rect => centerOf(rect).x));
+        const right = Math.max(...relata.map(rect => centerOf(rect).x));
+        const top = Math.min(...relata.map(rect => centerOf(rect).y));
+        const bottom = Math.max(...relata.map(rect => centerOf(rect).y));
+        cost += (Math.max(0, left - at.x, at.x - right)
+            + Math.max(0, top - at.y, at.y - bottom)) * 5;
+    }
+    if (settings.groupByPackage) {
+        const packageOf = new Map(view.nodes.map(node => [node.id, node.package]));
+        const primary = settings.direction === 'DOWN' ? 'y' : 'x';
+        const cross = settings.direction === 'DOWN' ? 'x' : 'y';
+        for (const at of new Set([...ids].map(id => positions[id]?.[primary]).filter(one => one !== undefined))) {
+            const packages = [...ids].filter(id => positions[id]?.[primary] === at)
+                .sort((one, other) => positions[one]![cross] - positions[other]![cross])
+                .map(id => packageOf.get(id));
+            const runs = packages.filter((pkg, index) => index === 0 || pkg !== packages[index - 1]).length;
+            cost += (runs - new Set(packages).size) * 300;
+        }
+    }
+    return Math.round(cost);
+}
+
+/** Keeps a semantic proposal only when the completed drawing remains safer. */
+function guardedSemanticCandidate(
+    view: ViewModel,
+    positions: Positions,
+    settings: LayoutOptions,
+    mutate: () => void
+): boolean {
+    const ids = Object.keys(positions);
+    if (ids.length > MAX_CROSS_AXIS_NODES) {
+        mutate();
+        return true;
+    }
+    const members = new Set(ids);
+    const edgeIds = new Set(view.edges
+        .filter(edge => members.has(edge.source) && members.has(edge.target))
+        .map(edge => edge.id));
+    const beforePositions = Object.fromEntries(ids.map(id => [id, { ...positions[id]! }]));
+    const before = renderedSafety(view, positions, ids, edgeIds, settings.direction);
+    const beforeCost = semanticGeometryCost(view, positions, members, settings);
+    const beforeBounds = boundsOf(ids.map(id => positions[id]!));
+    const beforeFootprint = Math.max(beforeBounds.width / TARGET_ASPECT_RATIO, beforeBounds.height);
+    mutate();
+    const overlapsNode = ids.some((id, index) => ids.slice(index + 1)
+        .some(other => overlaps(positions[id]!, positions[other]!)));
+    const after = renderedSafety(view, positions, ids, edgeIds, settings.direction);
+    const afterCost = semanticGeometryCost(view, positions, members, settings);
+    const afterBounds = boundsOf(ids.map(id => positions[id]!));
+    const afterFootprint = Math.max(afterBounds.width / TARGET_ASPECT_RATIO, afterBounds.height);
+    const safe = !overlapsNode
+        && after.intersections <= before.intersections
+        && after.crossings <= before.crossings
+        // One label may trade for a materially shorter or more semantic
+        // candidate; larger regressions remain categorically rejected.
+        && after.labelOcclusions <= before.labelOcclusions + 1;
+    const improves = after.intersections < before.intersections
+        || after.crossings < before.crossings
+        || after.labelOcclusions < before.labelOcclusions
+        || afterCost < beforeCost
+        || afterFootprint < beforeFootprint;
+    if (safe && improves) {
+        return true;
+    }
+    for (const id of ids) {
+        positions[id] = beforePositions[id]!;
+    }
+    return false;
+}
+
 function overlapArea(one: Rect, other: Rect): number {
     return Math.max(0, Math.min(one.x + one.width, other.x + other.width) - Math.max(one.x, other.x))
         * Math.max(0, Math.min(one.y + one.height, other.y + other.height) - Math.max(one.y, other.y));
@@ -945,74 +1056,14 @@ function optimizeRankCrossAxis(
                     }
                 }
             }
-            const lengths = paths.map(([id, points]) => ({
-                edge: edgeById.get(id)!,
-                length: pathLength(points)
-            }));
+            const lengths = paths.map(([, points]) => pathLength(points));
             const bounds = boundsOf(ids.map(id => candidate[id]).filter((rect): rect is Rect => rect !== undefined));
-            const packageFragments = settings.groupByPackage
-                ? [...new Set(ids.map(id => candidate[id]?.[primary]).filter(at => at !== undefined))]
-                    .reduce((total, at) => {
-                        const packages = ids.filter(id => candidate[id]?.[primary] === at)
-                            .sort((one, other) => candidate[one]![cross] - candidate[other]![cross])
-                            .map(id => packageOf.get(id));
-                        const runs = packages.filter((pkg, index) => index === 0 || pkg !== packages[index - 1]).length;
-                        return total + runs - new Set(packages).size;
-                    }, 0)
-                : 0;
-            let wholeOrderViolations = 0;
-            for (const edge of edges) {
-                if (edge.kind !== 'relation') {
-                    continue;
-                }
-                const whole = edge.whole === 'source' ? edge.source
-                    : edge.whole === 'target' ? edge.target
-                        : edge.stereotype === 'constitution' ? edge.source : undefined;
-                if (!whole) {
-                    continue;
-                }
-                const part = whole === edge.source ? edge.target : edge.source;
-                const wholeCentre = candidate[whole] && centerOf(candidate[whole]!);
-                const partCentre = candidate[part] && centerOf(candidate[part]!);
-                // Screen reading allows either conventional ordering: whole
-                // before part from left to right, or whole over part.
-                if (wholeCentre && partCentre
-                    && wholeCentre.x >= partCentre.x && wholeCentre.y >= partCentre.y) {
-                    wholeOrderViolations += 1;
-                }
-            }
-            let mediationDistance = 0;
-            for (const node of view.nodes.filter(node => node.stereotype === 'relator' && members.has(node.id))) {
-                const relator = candidate[node.id];
-                const relata = [...new Set(edges
-                    .filter(edge => edge.kind === 'relation' && edge.stereotype === 'mediation'
-                        && (edge.source === node.id || edge.target === node.id))
-                    .map(edge => edge.source === node.id ? edge.target : edge.source))]
-                    .map(id => candidate[id])
-                    .filter((rect): rect is Rect => rect !== undefined);
-                if (!relator || relata.length < 2) {
-                    continue;
-                }
-                const at = centerOf(relator);
-                const left = Math.min(...relata.map(rect => centerOf(rect).x));
-                const right = Math.max(...relata.map(rect => centerOf(rect).x));
-                const top = Math.min(...relata.map(rect => centerOf(rect).y));
-                const bottom = Math.max(...relata.map(rect => centerOf(rect).y));
-                mediationDistance += Math.max(0, left - at.x, at.x - right)
-                    + Math.max(0, top - at.y, at.y - bottom);
-            }
-            const semanticCost = Math.round(
-                lengths.reduce((total, item) => total + item.length * semanticEdgeWeight(item.edge), 0)
-                + wholeOrderViolations * 800
-                + mediationDistance * 5
-                + packageFragments * 300
-            );
             return {
                 intersections,
                 crossings,
-                semanticCost,
-                maximumLength: Math.round(Math.max(0, ...lengths.map(item => item.length))),
-                totalLength: Math.round(lengths.reduce((sum, item) => sum + item.length, 0)),
+                semanticCost: semanticGeometryCost(view, candidate, members, settings),
+                maximumLength: Math.round(Math.max(0, ...lengths)),
+                totalLength: Math.round(lengths.reduce((sum, length) => sum + length, 0)),
                 span: Math.round(bounds[crossSize])
             };
         };
@@ -2248,20 +2299,19 @@ export async function autoLayout(
     let ranked: Set<string> | undefined;
     if (!request.only) {
         ranked = enforceTaxonomyRanks(view, positions, subject, settings, grouped);
+    }
+    guardedSemanticCandidate(view, positions, settings, () => {
         settleRelators(view, positions, subject, ranked ? settings.direction : undefined, ranked);
         if (ranked) {
             settleOrphans(view, positions, subject, ranked);
         }
         orientCharacterizedAspects(view, positions, subject, ranked ?? new Set(), settings);
-    } else {
-        settleRelators(view, positions, subject);
-        orientCharacterizedAspects(view, positions, subject, new Set(), settings);
-    }
-    const wholeFans = orientWholeFans(view, positions, subject, ranked, settings);
-    orientWholes(view, positions, subject, ranked, settings.direction, wholeFans);
-    if (!request.only && ranked) {
-        optimizeRankCrossAxis(view, positions, subject, ranked, appendixIds, settings, !grouped, wholeFans);
-    }
+        const wholeFans = orientWholeFans(view, positions, subject, ranked, settings);
+        orientWholes(view, positions, subject, ranked, settings.direction, wholeFans);
+        if (!request.only && ranked) {
+            optimizeRankCrossAxis(view, positions, subject, ranked, appendixIds, settings, !grouped, wholeFans);
+        }
+    });
     const packed = !request.only && !grouped
         ? packComponents(view, positions, subject, appendixIds, settings)
         : false;
