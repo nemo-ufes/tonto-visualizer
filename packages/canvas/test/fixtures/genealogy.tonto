@@ -1,0 +1,207 @@
+// Genealogy: the people a family tree is made of, the events at the edges of
+// their lives, the relators that found kinship, and the records that attest to
+// them. What a family tree draws as a line -- "parent of", "married to" -- is
+// here the relator that makes the line hold, so that what genealogists argue
+// about (which filiation is biological, when a marriage began, which record
+// says so) has somewhere to be written.
+
+package Genealogy
+
+enum BloodGroup {
+    o,
+    a,
+    b,
+    ab
+}
+
+/// A name as a record writes it.
+///
+/// Two names with the same parts are the same name: a name has no identity
+/// beyond its parts, so it is a datatype and not a kind.
+datatype PersonName {
+    given: string
+    family: string
+}
+
+// ---------------------------------------------------------------- people
+
+/// A human being.
+///
+/// Identity comes from the individual, not from any kinship they stand in:
+/// one and the same person is somebody's child and somebody else's parent.
+kind Person {
+    /// The name they were given at birth. Later names go in `alsoKnownAs`.
+    name: const PersonName
+    alsoKnownAs: ordered PersonName [*]
+    @begin bornOn: const date [0..1]
+    @end diedOn: const date [0..1]
+}
+
+/// Recorded sex, which a genealogical source states and does not revise.
+subkind Man specializes Person
+subkind Woman specializes Person
+
+disjoint complete genset recordedSex where Man, Woman specializes Person
+
+/// Someone who has not reached the age of majority.
+phase Minor specializes Person
+
+/// Someone who has.
+phase Adult specializes Person
+
+// Age is a property of the person and of nothing else, which is what makes
+// these phases rather than roles: no relationship has to stand for them.
+disjoint complete genset lifeStage where Minor, Adult specializes Person
+
+/// Blood group, as a paternity case reads it.
+quality BloodType {
+    @characterization [1] -- [1] (const) Person
+    group: BloodGroup
+}
+
+// ------------------------------------------------------------- filiation
+
+/// The relationship one parent and one child stand in.
+///
+/// The relator, not the line on the chart, is what a genealogist argues
+/// about: it is what is biological or adoptive, what a record attests, and
+/// what a later finding overturns.
+// Both relator ends are [1..*] and neither can be narrowed: a parent has a
+// filiation per child, and a child has one per parent. That two filiations
+// must not bind the same pair is a constraint, not a multiplicity.
+relator Filiation {
+    @mediation [1..*] -- [1] (const) Parent
+    @mediation [1..*] -- [1] (const) Child
+}
+
+/// Filiation by descent.
+subkind BiologicalFiliation specializes Filiation
+
+/// Filiation by law.
+subkind AdoptiveFiliation specializes Filiation
+
+// Not complete: a filiation may be recognised on other grounds -- a
+// legitimation, a step-parent's acknowledgement -- and this model does not
+// claim to have enumerated them.
+disjoint genset groundsOfFiliation where BiologicalFiliation, AdoptiveFiliation specializes Filiation
+
+/// Someone a filiation binds as the older party.
+role Parent specializes Person
+
+/// Someone a filiation binds as the younger party.
+role Child specializes Person
+
+/// A parent who is a man.
+role Father specializes Parent, Man
+
+/// A parent who is a woman.
+role Mother specializes Parent, Woman
+
+/// True of a parent and a child because a filiation mediates them. A parent
+/// is an ancestor at one step, which is what the specialization says.
+@material relation Parent [1..*] -- isParentOf -- [0..*] Child specializes isAncestorOf
+
+/// The transitive closure of `isParentOf`: the relation a pedigree is drawn
+/// to show.
+///
+/// A plain association and not a `@material` one, because no single relator
+/// makes it hold -- a chain of filiations does, and the chain is what the
+/// model stores.
+relation Person [0..*] -- isAncestorOf -- [0..*] Person
+
+// -------------------------------------------------------------- marriage
+
+/// Someone a marriage binds.
+role Spouse specializes Person
+
+/// The relationship two spouses stand in.
+relator Marriage {
+    @mediation [1..*] -- [2] (const) Spouse
+    @begin startedOn: const date [0..1]
+    @end endedOn: const date [0..1]
+}
+
+/// True of two people because a marriage mediates them. Only the marriage
+/// that stands: a widow is no longer married to whom she was.
+@material relation Spouse [1] -- isMarriedTo -- [1] Spouse
+
+// ---------------------------------------------------------------- events
+
+/// An event a civil register exists to record.
+category VitalEvent of events
+
+/// The event a person begins in.
+event Birth specializes VitalEvent {
+    @begin @end occurredOn: const date
+}
+
+/// The event a person ends in.
+event Death specializes VitalEvent {
+    @begin @end occurredOn: const date
+}
+
+/// The ceremony a marriage begins in, civil or religious.
+event Wedding specializes VitalEvent {
+    @begin startedAt: const date
+    @end finishedAt: const date
+}
+
+@creation relation Person (const) [1] -- wasBornIn -- [1] (const) Birth
+
+@termination relation Person (const) [0..1] -- diedIn -- [1] (const) Death
+
+@creation relation Marriage (const) [1] -- wasEnteredIn -- [1] (const) Wedding
+
+/// The woman who bore the child. This is the participation a biological
+/// filiation on the mother's side is read off.
+@participation relation Woman (const) [1] -- gaveBirthIn -- [0..*] (const) Birth specializes takesPartIn
+
+/// Whom the event is about: the child born, the person who died, the two who
+/// married. A register entry with no subject records nothing.
+@participation relation Person (const) [1..*] -- takesPartIn -- [0..*] (const) VitalEvent
+
+@participation relation Spouse (const) [2] -- marriesIn -- [0..*] (const) Wedding specializes takesPartIn
+
+/// Where something happened.
+kind Place {
+    name: string
+}
+
+// Historical and not existential: a parish that has since been dissolved is
+// still where the baptism took place.
+@historicalDependence relation VitalEvent (addOnly) [0..*] -- tookPlaceIn -- [1] (const) Place
+
+/// Someone who left the country they were living in, and did not come to
+/// have not left it. That is what separates this from a role: emigrating is
+/// an event, and afterwards it has happened.
+historicalRole Emigrant specializes Person {
+    @participation (const) [0..*] -- [1] Emigration
+}
+
+event Emigration {
+    @begin departedOn: const date
+    @end arrivedOn: const date
+}
+
+// --------------------------------------------------------------- records
+
+/// The document a researcher actually holds: a parish register entry, a civil
+/// certificate, a census return.
+///
+/// It is not the event. Two records may attest the same birth and disagree,
+/// and a record may be lost while what it recorded still happened.
+kind VitalRecord {
+    reference: string
+    @begin issuedOn: const date [0..1]
+}
+
+@historicalDependence relation VitalRecord (addOnly) [0..*] -- registers -- [1] (const) VitalEvent
+
+/// The people a census return counts under one roof.
+///
+/// A collective, not a functional complex: the members contribute uniformly,
+/// and the household endures while they come and go. Two members at least --
+/// one person under one roof is a person, not a collective of them.
+collective Household {
+    @membership [0..1] <>-- [2..*] (members) Person
+}

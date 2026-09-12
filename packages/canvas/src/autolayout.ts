@@ -208,6 +208,33 @@ function shelfPack(components: ComponentBox[], targetWidth: number, gap: number)
     return { boxes, width, height: y + rowHeight };
 }
 
+/**
+ * Every stable order while there are few enough to search, else the established
+ * tall-first order. Shelf width alone cannot recover from an unlucky order:
+ * with three differently shaped components, the one that fits beside the tall
+ * component may sit third and be forced onto the next shelf by the wide one in
+ * between. Seven components keep the complete search below 5,040 orders.
+ */
+function componentOrders(components: ComponentBox[]): ComponentBox[][] {
+    if (components.length > 7) {
+        return [components];
+    }
+    const orders: ComponentBox[][] = [];
+    const visit = (prefix: ComponentBox[], remaining: ComponentBox[]): void => {
+        if (remaining.length === 0) {
+            orders.push(prefix);
+            return;
+        }
+        for (let index = 0; index < remaining.length; index += 1) {
+            visit([...prefix, remaining[index]!], [
+                ...remaining.slice(0, index), ...remaining.slice(index + 1)
+            ]);
+        }
+    };
+    visit([], components);
+    return orders;
+}
+
 /** The screen-sized square needed to contain bounds at the target aspect. */
 function packingScore(width: number, height: number): number {
     return Math.max(width / TARGET_ASPECT_RATIO, height);
@@ -252,12 +279,14 @@ function packComponents(
     }
 
     let best: ReturnType<typeof shelfPack> | undefined;
-    for (const candidate of [...candidates].sort((one, other) => one - other)) {
-        const packed = shelfPack(components, candidate, gap);
-        if (!best || packingScore(packed.width, packed.height) < packingScore(best.width, best.height)
-            || (packingScore(packed.width, packed.height) === packingScore(best.width, best.height)
-                && packed.width * packed.height < best.width * best.height)) {
-            best = packed;
+    for (const order of componentOrders(components)) {
+        for (const candidate of [...candidates].sort((one, other) => one - other)) {
+            const packed = shelfPack(order, candidate, gap);
+            if (!best || packingScore(packed.width, packed.height) < packingScore(best.width, best.height)
+                || (packingScore(packed.width, packed.height) === packingScore(best.width, best.height)
+                    && packed.width * packed.height < best.width * best.height)) {
+                best = packed;
+            }
         }
     }
     if (!best) {

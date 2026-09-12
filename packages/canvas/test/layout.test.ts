@@ -76,6 +76,40 @@ describe('arranging a model', () => {
         }
     });
 
+    test('searches component order when differently shaped components leave a shelf hole', async () => {
+        const view = taxonomy(0);
+        view.nodes.push(
+            {
+                id: 'Sample::Wide', kind: 'class', name: 'Wide', package: 'Sample',
+                stereotype: 'kind', color: '#FF99A3', isExternal: false, attributes: []
+            },
+            {
+                id: 'Sample::Short', kind: 'class', name: 'Short', package: 'Sample',
+                stereotype: 'kind', color: '#FF99A3', isExternal: false, attributes: []
+            }
+        );
+        view.groups[0]!.nodes.push('Sample::Wide', 'Sample::Short');
+        const sizes = {
+            'Sample::Root': { width: 400, height: 260 },
+            'Sample::Wide': { width: 550, height: 190 },
+            'Sample::Short': { width: 300, height: 180 }
+        };
+
+        const { positions } = await autoLayout(view, sizes, {}, {
+            ...defaultLayoutOptions, groupByPackage: false
+        });
+        const rects = Object.values(positions);
+        const width = Math.max(...rects.map(one => one.x + one.width)) - Math.min(...rects.map(one => one.x));
+        const height = Math.max(...rects.map(one => one.y + one.height)) - Math.min(...rects.map(one => one.y));
+
+        // The short component belongs beside the tall one. A fixed tall-first
+        // order puts the wide component between them and scores over 550.
+        expect(Math.max(width / 1.6, height)).toBeLessThan(525);
+        for (const [index, rect] of rects.entries()) {
+            expect(rects.slice(index + 1).some(other => overlaps(rect, other))).toBe(false);
+        }
+    });
+
     test('puts a supertype above its subtypes', async () => {
         const view = taxonomy(3);
         const positions = await arrange(view, false);
