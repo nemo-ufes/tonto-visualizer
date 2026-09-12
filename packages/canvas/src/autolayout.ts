@@ -527,6 +527,15 @@ function overlapArea(one: Rect, other: Rect): number {
         * Math.max(0, Math.min(one.y + one.height, other.y + other.height) - Math.max(one.y, other.y));
 }
 
+/** Width requested by a relation, including layout-only fixtures with bare ends. */
+function layoutLabelWidth(edge: ViewModel['edges'][number]): number {
+    return edge.kind === 'relation' ? labelWidth({
+        ...edge,
+        sourceEnd: edge.sourceEnd ?? { isConst: false, isAddOnly: false },
+        targetEnd: edge.targetEnd ?? { isConst: false, isAddOnly: false }
+    }, defaultDisplayOptions) : 0;
+}
+
 /** A rendering safe for skeletal relations in layout-only unit fixtures. */
 function renderForLayoutScore(view: ViewModel, positions: Positions) {
     // A few layout unit tests intentionally use skeletal relation ends. They
@@ -562,12 +571,14 @@ function renderedLabelOcclusions(svg: string, positions: Positions): number {
         const width = textWidth(text, size) + 6;
         const anchor = /text-anchor="(\w+)"/.exec(attributes)?.[1] ?? 'start';
         const left = anchor === 'middle' ? x - width / 2 : anchor === 'end' ? x - width : x;
-        return [{ x: left, y: y - size, width, height: size + 4 }];
+        const owner = /data-for="([^"]+)"/.exec(attributes)?.[1];
+        return [{ x: left, y: y - size, width, height: size + 4, owner }];
     });
     const nodes = Object.values(positions);
     let occlusions = labels.filter(label => nodes.some(node => overlapArea(label, node) > 0)).length;
     for (let one = 0; one < labels.length; one += 1) {
-        occlusions += labels.slice(one + 1).filter(other => overlapArea(labels[one]!, other) > 0).length;
+        occlusions += labels.slice(one + 1).filter(other =>
+            labels[one]!.owner !== other.owner && overlapArea(labels[one]!, other) > 0).length;
     }
     return occlusions;
 }
@@ -655,7 +666,7 @@ function optimizeRankCrossAxis(
     const covered = inversePairs(view.edges).covered;
     const visibleEdges = view.edges.filter(edge => !covered.has(edge.id)
         && subject.has(edge.source) && subject.has(edge.target));
-    const protectedCrossAxis = new Set(visibleEdges
+    const protectedNodes = new Set(visibleEdges
         .filter(edge => protectedEdges.has(edge.id))
         .flatMap(edge => [edge.source, edge.target]));
     const byPair = new Map<string, typeof visibleEdges>();
@@ -665,8 +676,8 @@ function optimizeRankCrossAxis(
     }
     for (const pair of byPair.values()) {
         if (pair.length > 1) {
-            protectedCrossAxis.add(pair[0]!.source);
-            protectedCrossAxis.add(pair[0]!.target);
+            protectedNodes.add(pair[0]!.source);
+            protectedNodes.add(pair[0]!.target);
         }
     }
     const incident = new Map<string, typeof visibleEdges>();
@@ -865,7 +876,7 @@ function optimizeRankCrossAxis(
         for (let pass = 0; pass < 4; pass += 1) {
             let changed = false;
             for (const [, bandIds] of [...bands].sort(([one], [other]) => one - other)) {
-                if (bandIds.some(id => protectedCrossAxis.has(id))) {
+                if (bandIds.some(id => protectedNodes.has(id))) {
                     continue;
                 }
                 const band = new Set(bandIds);
@@ -903,6 +914,103 @@ function optimizeRankCrossAxis(
                     return candidate;
                 });
                 changed = acceptCandidates(candidates, band) || changed;
+            }
+            if (!changed) {
+                break;
+            }
+        }
+
+        // A labelled relation whose boxes nearly touch has no corridor: every
+        // midpoint and end-label candidate is still inside one endpoint or the
+        // other. Give a low-degree, unranked endpoint just enough distance for
+        // that block, and retain the move only when the final renderer reports
+        // fewer real label collisions without sacrificing a crossing or an
+        // inheritance lane. This is deliberately after compaction, which is
+        // the pass that can close a previously adequate corridor.
+        const edgeIds = new Set(edges.map(edge => edge.id));
+        const corridors = taxonomyCorridors(view, positions, ranked);
+        const nodeById = new Map(view.nodes.map(node => [node.id, node]));
+        for (let pass = 0; pass < 2; pass += 1) {
+            let changed = false;
+            for (const edge of [...edges]
+                .filter(edge => edge.kind === 'relation' && edge.source !== edge.target)
+                .sort((one, other) => layoutLabelWidth(other)
+                    - layoutLabelWidth(one) || one.id.localeCompare(other.id))) {
+                if (edge.kind !== 'relation') {
+                    continue;
+                }
+                const source = positions[edge.source];
+                const targetRect = positions[edge.target];
+                if (!source || !targetRect) {
+                    continue;
+                }
+                const centreDemand = layoutLabelWidth(edge);
+                const hasEndDemand = [edge.sourceEnd, edge.targetEnd].some(end =>
+                    !end || end.cardinality || end.role || end.isAddOnly || end.subsets || end.redefines || !end.isConst);
+                const required = Math.max(96, centreDemand + 40, hasEndDemand ? 128 : 0);
+                const from = borderPoint(source, centerOf(targetRect));
+                const to = borderPoint(targetRect, centerOf(source));
+                const available = Math.hypot(to.x - from.x, to.y - from.y);
+                if (available >= required) {
+                    continue;
+                }
+                const movable = [edge.source, edge.target]
+                    .filter(id => !ranked.has(id) && !protectedNodes.has(id)
+                        && nodeById.get(id)?.stereotype !== 'relator'
+                        && (incident.get(id)?.length ?? 0) <= 2)
+                    .sort((one, other) => (incident.get(one)?.length ?? 0) - (incident.get(other)?.length ?? 0)
+                        || one.localeCompare(other));
+                if (movable.length === 0) {
+                    continue;
+                }
+                const before = renderedSafety(view, positions, ids, edgeIds);
+                let best: { positions: Positions; safety: RenderedSafety; distance: number; id: string } | undefined;
+                for (const id of movable) {
+                    const rect = positions[id]!;
+                    const fixed = positions[id === edge.source ? edge.target : edge.source]!;
+                    const rectCentre = centerOf(rect);
+                    const fixedCentre = centerOf(fixed);
+                    const dx = rectCentre.x - fixedCentre.x;
+                    const dy = rectCentre.y - fixedCentre.y;
+                    const length = Math.hypot(dx, dy) || 1;
+                    const distance = Math.min(required - available, 180);
+                    const directions = [
+                        { x: dx / length, y: dy / length },
+                        { x: Math.sign(dx) || 1, y: 0 },
+                        { x: -(Math.sign(dx) || 1), y: 0 },
+                        { x: 0, y: Math.sign(dy) || 1 },
+                        { x: 0, y: -(Math.sign(dy) || 1) }
+                    ];
+                    for (const direction of directions) {
+                        for (const share of [1, 1.25, 1.5]) {
+                            const shift = distance * share;
+                            const candidate = { ...positions };
+                            candidate[id] = {
+                                ...rect,
+                                x: Math.round(rect.x + direction.x * shift),
+                                y: Math.round(rect.y + direction.y * shift)
+                            };
+                            const moved = candidate[id]!;
+                            if (!clear(candidate, new Set([id])) || corridors.some(corridor =>
+                                segmentHitsRect(corridor.from, corridor.to, moved, TAXONOMY_CORRIDOR))) {
+                                continue;
+                            }
+                            const safety = renderedSafety(view, candidate, ids, edgeIds);
+                            if (safety.intersections > before.intersections || safety.crossings > before.crossings
+                                || safety.labelOcclusions >= before.labelOcclusions) {
+                                continue;
+                            }
+                            if (!best || safety.labelOcclusions < best.safety.labelOcclusions
+                                || (safety.labelOcclusions === best.safety.labelOcclusions && shift < best.distance)) {
+                                best = { positions: candidate, safety, distance: shift, id };
+                            }
+                        }
+                    }
+                }
+                if (best) {
+                    positions[best.id] = best.positions[best.id]!;
+                    changed = true;
+                }
             }
             if (!changed) {
                 break;
@@ -1110,7 +1218,7 @@ function orientCharacterizedAspects(
         // the synthetic label nodes ELK previously turned into extra ranks.
         // The latter was rolled back; here a long stereotype merely increases
         // the preferred horizontal gap between the pair that carries it.
-        const labelGap = Math.max(0, ...direct.map(edge => labelWidth(edge, defaultDisplayOptions) + 36));
+        const labelGap = Math.max(0, ...direct.map(edge => layoutLabelWidth(edge) + 36));
         const gap = Math.max(settings.nodeSpacing, 40, Math.round(labelGap));
         const bearerMiddleY = bearerRects.reduce(
             (sum, one) => sum + one.y + one.height / 2, 0) / bearerRects.length - rect.height / 2;

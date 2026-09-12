@@ -39,7 +39,8 @@ function labelBoxes(svg: string): Rect[] {
         const width = textWidth(text, size) + 6;
         const anchor = /text-anchor="(\w+)"/.exec(attributes)?.[1] ?? 'start';
         const left = anchor === 'middle' ? x - width / 2 : anchor === 'end' ? x - width : x;
-        return [{ x: left, y: y - size, width, height: size + 4 }];
+        const owner = /data-for="([^"]+)"/.exec(attributes)?.[1];
+        return [{ x: left, y: y - size, width, height: size + 4, owner }];
     });
 }
 
@@ -101,7 +102,8 @@ export function measureLayout(
     }
     let labelOcclusions = labels.filter(label => nodes.some(node => overlapArea(label, node) > 0)).length;
     for (let one = 0; one < labels.length; one += 1) {
-        labelOcclusions += labels.slice(one + 1).filter(other => overlapArea(labels[one]!, other) > 0).length;
+        labelOcclusions += labels.slice(one + 1).filter(other =>
+            labels[one]!.owner !== other.owner && overlapArea(labels[one]!, other) > 0).length;
     }
 
     const bounds = boundsOf(Object.values(positions));
