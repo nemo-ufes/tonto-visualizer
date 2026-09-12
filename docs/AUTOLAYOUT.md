@@ -122,3 +122,9 @@ authority for what those constraints mean.
   On `genealogy` this reduces crossings from 9 to 7 and label occlusions from
   28 to 25. Larger diagrams retain the established layout until the rendered
   candidate score can be updated incrementally enough to remain interactive.
+- Extended that optimizer from ordering to cross-axis coordinates. Complete
+  visual bands move rigidly towards their connected neighbours, preserving
+  rank, within-band order and semantic fan shapes. Explicit multi-package
+  containers are not translated across their boundaries. On `genealogy`, width
+  falls from 2255 to 1924, crossings from 7 to 6, label occlusions from 25 to
+  18, and total edge length from 7418 to 7032.

@@ -78,7 +78,7 @@ describe('layout quality benchmarks', () => {
         ['gufo', resolve(repository, 'vendor/tontoredesign/examples/gufo.tonto'),
             { width: 1850, height: 1000, crossings: 17, labels: 46, total: 10500, longest: 600 }],
         ['genealogy', resolve(repository, 'packages/canvas/test/fixtures/genealogy.tonto'),
-            { width: 2350, height: 1125, crossings: 7, labels: 25, total: 7500, longest: 600 }],
+            { width: 2000, height: 1125, crossings: 6, labels: 18, total: 7100, longest: 570 }],
         ['university', resolve(repository, 'vendor/tontoredesign/examples/university'),
             { width: 1400, height: 1250, crossings: 4, labels: 6, total: 6000, longest: 900 }],
         ['parties', resolve(repository, 'packages/view/test/fixtures/parties'),
