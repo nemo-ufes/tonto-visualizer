@@ -720,6 +720,10 @@ function semanticEdgeWeight(edge: ViewModel['edges'][number]): number {
     if (edge.kind === 'generalization') {
         return 8;
     }
+    if (edge.kind === 'instantiation'
+        || (edge.kind === 'relation' && edge.stereotype === 'instantiation')) {
+        return 3;
+    }
     if (edge.kind !== 'relation') {
         return 1;
     }
@@ -748,6 +752,15 @@ function semanticGeometryCost(
         centerOf(positions[edge.source]!).y - centerOf(positions[edge.target]!).y
     ) * semanticEdgeWeight(edge), 0);
     for (const edge of edges) {
+        if (edge.kind === 'instantiation'
+            || (edge.kind === 'relation' && edge.stereotype === 'instantiation')) {
+            const type = positions[edge.target]!;
+            const base = positions[edge.source]!;
+            const violation = type.x + type.width + settings.nodeSpacing - base.x;
+            if (violation > 0) {
+                cost += 500 + violation * 4;
+            }
+        }
         if (edge.kind !== 'relation') {
             continue;
         }
@@ -796,6 +809,94 @@ function semanticGeometryCost(
         }
     }
     return Math.round(cost);
+}
+
+/** Whether an edge says its target is a higher-order type of its source. */
+function isInstantiation(edge: ViewModel['edges'][number]): boolean {
+    return edge.kind === 'instantiation'
+        || (edge.kind === 'relation' && edge.stereotype === 'instantiation');
+}
+
+/**
+ * Prefers a higher-order type to the left of the classifiers it classifies.
+ *
+ * A type may have a taxonomy of its own (`CarModel` specializes `CarType`), so
+ * moving only the named target would break that taxonomy. Generalization-
+ * connected type families therefore move rigidly. If the left-hand corridor
+ * is occupied, the preference yields instead of overlapping another class.
+ */
+function orientInstantiationTypes(
+    view: ViewModel,
+    positions: Positions,
+    subject: ReadonlySet<string>,
+    settings: LayoutOptions
+): void {
+    const instantiations = view.edges.filter(edge => isInstantiation(edge)
+        && edge.source !== edge.target && subject.has(edge.source) && subject.has(edge.target)
+        && positions[edge.source] !== undefined && positions[edge.target] !== undefined);
+    if (instantiations.length === 0) {
+        return;
+    }
+
+    const taxonomy = new Map<string, Set<string>>();
+    for (const edge of view.edges) {
+        if (edge.kind !== 'generalization' || !subject.has(edge.source) || !subject.has(edge.target)) {
+            continue;
+        }
+        taxonomy.set(edge.source, new Set([...(taxonomy.get(edge.source) ?? []), edge.target]));
+        taxonomy.set(edge.target, new Set([...(taxonomy.get(edge.target) ?? []), edge.source]));
+    }
+    const familyOf = (seed: string): string[] => {
+        const family: string[] = [];
+        const visited = new Set<string>();
+        const visit = [seed];
+        while (visit.length > 0) {
+            const id = visit.pop()!;
+            if (visited.has(id)) {
+                continue;
+            }
+            visited.add(id);
+            family.push(id);
+            visit.push(...(taxonomy.get(id) ?? []));
+        }
+        return family.sort();
+    };
+
+    const groups = new Map<string, { ids: string[]; edges: typeof instantiations }>();
+    for (const edge of instantiations) {
+        const ids = familyOf(edge.target);
+        if (ids.includes(edge.source)) {
+            continue;
+        }
+        const key = ids[0]!;
+        const group = groups.get(key) ?? { ids, edges: [] };
+        group.edges.push(edge);
+        groups.set(key, group);
+    }
+
+    const gap = Math.max(settings.nodeSpacing, 40);
+    for (const group of [...groups.values()].sort((one, other) => one.ids[0]!.localeCompare(other.ids[0]!))) {
+        const required = Math.min(...group.edges.map(edge => {
+            const type = positions[edge.target]!;
+            const base = positions[edge.source]!;
+            return base.x - gap - type.width - type.x;
+        }));
+        if (required >= 0) {
+            continue;
+        }
+        const members = new Set(group.ids);
+        const obstacles = Object.entries(positions)
+            .filter(([id]) => !members.has(id))
+            .map(([, rect]) => rect);
+        for (let step = 0; step <= PREFERRED_SIDE_STEPS; step += 1) {
+            const dx = Math.round(required - step * PARTIAL_STEP);
+            const moved = group.ids.map(id => ({ ...positions[id]!, x: positions[id]!.x + dx }));
+            if (moved.every(rect => !obstacles.some(obstacle => overlaps(rect, obstacle, 24)))) {
+                group.ids.forEach((id, index) => positions[id] = moved[index]!);
+                break;
+            }
+        }
+    }
 }
 
 /** Keeps a semantic proposal only when the completed drawing remains safer. */
@@ -2344,6 +2445,9 @@ export async function autoLayout(
         settleRelators(view, positions, subject, ranked ? settings.direction : undefined, ranked);
         if (ranked) {
             settleOrphans(view, positions, subject, ranked);
+        }
+        if (!grouped) {
+            orientInstantiationTypes(view, positions, subject, settings);
         }
         orientCharacterizedAspects(view, positions, subject, ranked ?? new Set(), settings);
         const wholeFans = orientWholeFans(view, positions, subject, ranked, settings);

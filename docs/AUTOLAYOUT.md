@@ -129,6 +129,10 @@ authority for what those constraints mean.
   attribute. Crowded heads retain up to a 120px border; `classonly` therefore
   keeps zero head collisions. Existing non-condensed views retain their proven
   108px minimum and benchmark geometry.
+- Added a soft left-side preference for higher-order types connected by either
+  an `@instantiation` relation or an `instanceOf` declaration. A type taxonomy
+  moves as one rigid family, and the preference yields to collision, explicit
+  package containers and final crossing checks.
 - Used the modeller's saved `error.tontoview` arrangement as a qualitative
   target. A whole with several leaf parts is now placed as a compact fan instead
   of applying the pairwise whole-before-part rule repeatedly and producing a
