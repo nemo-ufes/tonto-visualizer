@@ -24,8 +24,30 @@ import type { ViewNode } from 'tonto-view';
 import type { DisplayOptions } from 'tonto-view';
 import type { Size } from './geometry.js';
 
-export const FONT = {
-    family: '"Helvetica Neue", Helvetica, Arial, "Liberation Sans", sans-serif',
+export interface FontMetrics {
+    family: string;
+    kind: DisplayOptions['fontFamily'];
+    scale: number;
+    name: number;
+    stereotype: number;
+    attribute: number;
+    edge: number;
+    edgeStereotype: number;
+}
+
+const FONT_FAMILIES: Record<DisplayOptions['fontFamily'], string> = {
+    sans: '"Helvetica Neue", Helvetica, Arial, "Liberation Sans", sans-serif',
+    serif: '"Times New Roman", "Liberation Serif", Times, serif',
+    monospace: '"SFMono-Regular", Consolas, "Liberation Mono", monospace'
+};
+
+const FONT_SCALES: Record<DisplayOptions['fontSize'], number> = {
+    small: 0.88,
+    medium: 1,
+    large: 1.15
+};
+
+const BASE_FONT = {
     name: 13,
     stereotype: 11,
     attribute: 12,
@@ -33,6 +55,23 @@ export const FONT = {
     /** A relation's stereotype, which sits over its name rather than beside it. */
     edgeStereotype: 9.5
 } as const;
+
+export function fontMetrics(options: Pick<DisplayOptions, 'fontFamily' | 'fontSize'>): FontMetrics {
+    const scale = FONT_SCALES[options.fontSize];
+    const scaled = (size: number) => Math.round(size * scale * 100) / 100;
+    return {
+        family: FONT_FAMILIES[options.fontFamily],
+        kind: options.fontFamily,
+        scale,
+        name: scaled(BASE_FONT.name),
+        stereotype: scaled(BASE_FONT.stereotype),
+        attribute: scaled(BASE_FONT.attribute),
+        edge: scaled(BASE_FONT.edge),
+        edgeStereotype: scaled(BASE_FONT.edgeStereotype)
+    };
+}
+
+export const FONT = fontMetrics({ fontFamily: 'sans', fontSize: 'medium' });
 
 /** Average advance per character, as a fraction of the size. */
 const ADVANCE = 0.53;
@@ -50,17 +89,23 @@ const WIDE = new Set([...'mwMW@%«»&']);
 const NARROW_FACTOR = 0.62;
 const WIDE_FACTOR = 1.42;
 
-export function textWidth(text: string, size: number, bold = false): number {
+export function textWidth(
+    text: string, size: number, bold = false, family: DisplayOptions['fontFamily'] = 'sans'
+): number {
+    if (family === 'monospace') {
+        return text.length * size * (bold ? 0.64 : 0.62);
+    }
     let units = 0;
     for (const character of text) {
         units += NARROW.has(character) ? NARROW_FACTOR : WIDE.has(character) ? WIDE_FACTOR : 1;
     }
-    return units * size * (bold ? BOLD_ADVANCE : ADVANCE);
+    const familyFactor = family === 'serif' ? 1.04 : 1;
+    return units * size * (bold ? BOLD_ADVANCE : ADVANCE) * familyFactor;
 }
 
 export const NODE = {
-    minWidth: 120,
-    padding: 12,
+    minWidth: 108,
+    padding: 8,
     headerGap: 4,
     lineHeight: 17,
     stereotypeHeight: 15,
@@ -132,17 +177,19 @@ export function nodeLabel(node: ViewNode, options: DisplayOptions): string {
 }
 
 export function sizeOf(node: ViewNode, options: DisplayOptions): Size {
+    const font = fontMetrics(options);
     const label = nodeLabel(node, options);
     const stereotype = stereotypeLabel(node);
     const lines = attributeLines(node, options);
     const width = Math.max(
         NODE.minWidth,
-        textWidth(label, FONT.name, true) + NODE.padding * 2,
-        stereotype ? textWidth(stereotype, FONT.stereotype) + NODE.padding * 2 : 0,
-        ...lines.map(line => textWidth(line, FONT.attribute) + NODE.padding * 2)
+        textWidth(label, font.name, true, font.kind) + NODE.padding * 2,
+        stereotype ? textWidth(stereotype, font.stereotype, false, font.kind) + NODE.padding * 2 : 0,
+        ...lines.map(line => textWidth(line, font.attribute, false, font.kind) + NODE.padding * 2)
     );
-    const header = (stereotype ? NODE.stereotypeHeight : 0) + NODE.nameHeight + NODE.headerGap * 2;
-    const body = lines.length > 0 ? lines.length * NODE.lineHeight + NODE.headerGap * 2 : 0;
+    const header = (stereotype ? NODE.stereotypeHeight * font.scale : 0)
+        + NODE.nameHeight * font.scale + NODE.headerGap * 2;
+    const body = lines.length > 0 ? lines.length * NODE.lineHeight * font.scale + NODE.headerGap * 2 : 0;
     return { width: round(width), height: round(header + body) };
 }
 

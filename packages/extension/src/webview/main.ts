@@ -918,6 +918,17 @@ function fillOptions(): void {
             value => host.postMessage({ type: 'layout', layout: { groupByPackage: value } }))
     ];
     optionsPanel.append(section('Shape', arrangement));
+    optionsPanel.append(section('Text', [
+        choice('Typeface', [['sans', 'Sans-serif'], ['serif', 'Serif'], ['monospace', 'Monospace']],
+            display.fontFamily,
+            value => host.postMessage({
+                type: 'display', display: { fontFamily: value as DisplayOptions['fontFamily'] }
+            })),
+        choice('Text size', [['small', 'Small'], ['medium', 'Medium'], ['large', 'Large']], display.fontSize,
+            value => host.postMessage({
+                type: 'display', display: { fontSize: value as DisplayOptions['fontSize'] }
+            }))
+    ]));
     const selectedNodes = [...selection].filter(id => positions[id] !== undefined);
     const pinned = new Set(constraints.pinned);
     const unpins = selectedNodes.length > 0 && selectedNodes.every(id => pinned.has(id));

@@ -41,6 +41,8 @@ export interface ContentOptions {
 
 /** How an edge gets from one box to the other. */
 export type RoutingStyle = 'straight' | 'orthogonal';
+export type DiagramFontFamily = 'sans' | 'serif' | 'monospace';
+export type DiagramFontSize = 'small' | 'medium' | 'large';
 
 export interface DisplayOptions {
     /** Draw classifier names and inheritance only, preserving the other choices for later. */
@@ -52,6 +54,10 @@ export interface DisplayOptions {
      * choice rather than the default.
      */
     routing: RoutingStyle;
+    /** Portable font stack used by cards and relationship labels. */
+    fontFamily: DiagramFontFamily;
+    /** A stable size preset, so saved layouts do not depend on editor zoom. */
+    fontSize: DiagramFontSize;
     showAttributes: boolean;
     showCardinalities: boolean;
     showRelationNames: boolean;
@@ -113,6 +119,8 @@ export const defaultContentOptions: ContentOptions = {
 export const defaultDisplayOptions: DisplayOptions = {
     taxonomyOnly: false,
     routing: 'straight',
+    fontFamily: 'sans',
+    fontSize: 'medium',
     showAttributes: true,
     showCardinalities: true,
     showRelationNames: true,

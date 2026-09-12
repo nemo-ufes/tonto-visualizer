@@ -133,9 +133,28 @@ describe('the webview and its host protocol', () => {
 
         expect(chooser('Direction').value).toBe('DOWN');
         expect(chooser('Maximum rank span').value).toBe('2000');
+        expect(chooser('Typeface').value).toBe('sans');
+        expect(chooser('Text size').value).toBe('medium');
         expect(checkbox('Cluster packages').checked).toBe(true);
         expect([...document.querySelectorAll('label.choice')]
             .some(candidate => candidate.querySelector('span')?.textContent === 'Arrangement')).toBe(false);
+    });
+
+    test('offers persisted typeface and text-size choices', () => {
+        sendModel();
+        openOptions();
+
+        const typeface = chooser('Typeface');
+        typeface.value = 'monospace';
+        typeface.dispatchEvent(new Event('change', { bubbles: true }));
+        expect(posted('display').at(-1)).toEqual({
+            type: 'display', display: { fontFamily: 'monospace' }
+        });
+
+        const size = chooser('Text size');
+        size.value = 'large';
+        size.dispatchEvent(new Event('change', { bubbles: true }));
+        expect(posted('display').at(-1)).toEqual({ type: 'display', display: { fontSize: 'large' } });
     });
 
     test('offers to pin the selected classifiers', () => {

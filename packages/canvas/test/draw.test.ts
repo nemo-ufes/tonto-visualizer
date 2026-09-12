@@ -169,7 +169,27 @@ describe('drawing', () => {
     test('sizes a card to what it has to hold', () => {
         const [person, employee] = model().nodes;
         expect(sizeOf(person!, display).height).toBeGreaterThan(sizeOf(employee!, display).height);
-        expect(sizeOf(employee!, display).width).toBeGreaterThanOrEqual(120);
+        expect(sizeOf(employee!, display).width).toBe(108);
+    });
+
+    test('measures and renders the selected portable font preset', () => {
+        const person = model().nodes[0]!;
+        const small = { ...display, fontFamily: 'sans' as const, fontSize: 'small' as const };
+        const largeMono = { ...display, fontFamily: 'monospace' as const, fontSize: 'large' as const };
+        const smallSize = sizeOf(person, small);
+        const largeSize = sizeOf(person, largeMono);
+        const svg = render({
+            view: model(),
+            positions: placeNewNodes(model(), Object.fromEntries(
+                model().nodes.map(node => [node.id, sizeOf(node, largeMono)])
+            ), {}),
+            display: largeMono
+        }).svg;
+
+        expect(largeSize.width).toBeGreaterThan(smallSize.width);
+        expect(largeSize.height).toBeGreaterThan(smallSize.height);
+        expect(svg).toContain('font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace');
+        expect(svg).toContain('font-size: 12.65px');
     });
 
     test('leaves placed elements where they are and finds room for the rest', () => {
