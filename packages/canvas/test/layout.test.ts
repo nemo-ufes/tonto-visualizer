@@ -3,7 +3,7 @@ import type { ViewModel } from 'tonto-view';
 import { defaultDisplayOptions, defaultLayoutOptions } from 'tonto-view';
 import { applyLayoutConstraints, autoLayout } from '../src/autolayout.js';
 import type { Point, Rect } from '../src/geometry.js';
-import { overlaps } from '../src/geometry.js';
+import { boundsOf, overlaps } from '../src/geometry.js';
 import { sizeOf } from '../src/measure.js';
 import { render } from '../src/render.js';
 
@@ -169,6 +169,28 @@ describe('arranging a model', () => {
         // compact appendix, not above the hierarchy as if it were another root.
         expect(laid.positions['Sample::Neighbour']!.y)
             .toBeGreaterThanOrEqual(taxonomyBottom + defaultLayoutOptions.rankSpacing);
+    });
+
+    test('wraps a broad taxonomy rank deterministically by stable id', async () => {
+        const view = taxonomy(8);
+        const sizes = Object.fromEntries(view.nodes.map(node => [node.id, sizeOf(node, display)]));
+        const request = { ...defaultLayoutOptions, groupByPackage: false, maxRankSpan: 360 };
+        const first = await autoLayout(view, sizes, {}, request);
+        const second = await autoLayout(view, sizes, {}, request);
+        const children = view.nodes.slice(1).map(node => first.positions[node.id]!);
+        const rows = new Map<number, Rect[]>();
+        for (const rect of children) {
+            rows.set(rect.y, [...(rows.get(rect.y) ?? []), rect]);
+        }
+
+        expect(first.positions).toEqual(second.positions);
+        expect(rows.size).toBeGreaterThan(1);
+        for (const row of rows.values()) {
+            expect(boundsOf(row).width).toBeLessThanOrEqual(360);
+        }
+        const root = first.positions['Sample::Root']!;
+        expect(Math.min(...children.map(rect => rect.y)))
+            .toBeGreaterThanOrEqual(root.y + root.height + defaultLayoutOptions.rankSpacing);
     });
 
     test('centres a generalization when an association joins the same classes', async () => {

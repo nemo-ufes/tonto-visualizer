@@ -132,6 +132,7 @@ describe('the webview and its host protocol', () => {
         openOptions();
 
         expect(chooser('Direction').value).toBe('DOWN');
+        expect(chooser('Maximum rank span').value).toBe('2000');
         expect(checkbox('Cluster packages').checked).toBe(true);
         expect([...document.querySelectorAll('label.choice')]
             .some(candidate => candidate.querySelector('span')?.textContent === 'Arrangement')).toBe(false);

@@ -1941,8 +1941,6 @@ function enforceTaxonomyRanks(
                 return oneRect[cross] + oneRect[crossSize] / 2 - (otherRect[cross] + otherRect[crossSize] / 2)
                     || one.localeCompare(other);
             });
-            const rowRects = rowIds.map(id => positions[id]!);
-            const thickness = Math.max(...rowRects.map(rect => rect[primarySize]));
             if (packageContainers) {
                 // Compound packages already own disjoint cross-axis bands.
                 // Retain those bands while sharing the taxonomy's rank axis;
@@ -1950,21 +1948,38 @@ function enforceTaxonomyRanks(
                 for (const id of rowIds) {
                     rects.set(id, { ...positions[id]!, [primary]: Math.round(at) });
                 }
+                at += Math.max(...rowIds.map(id => positions[id]![primarySize])) + settings.rankSpacing;
             } else {
-                const length = rowRects.reduce((sum, rect) => sum + rect[crossSize], 0)
-                    + settings.nodeSpacing * Math.max(rowIds.length - 1, 0);
-                let along = crossMiddle - length / 2;
-                for (const id of rowIds) {
-                    const rect = positions[id]!;
-                    rects.set(id, {
-                        ...rect,
-                        [primary]: Math.round(at),
-                        [cross]: Math.round(along)
-                    });
-                    along += rect[crossSize] + settings.nodeSpacing;
+                const rowLength = (line: string[]) => line.reduce(
+                    (sum, id) => sum + positions[id]![crossSize], 0)
+                    + settings.nodeSpacing * Math.max(line.length - 1, 0);
+                const wraps = settings.maxRankSpan > 0 && rowLength(rowIds) > settings.maxRankSpan;
+                const ordered = wraps ? [...rowIds].sort((one, other) => one.localeCompare(other)) : rowIds;
+                const lines: string[][] = [];
+                for (const id of ordered) {
+                    const line = lines.at(-1);
+                    if (!line || (settings.maxRankSpan > 0
+                        && rowLength([...line, id]) > settings.maxRankSpan)) {
+                        lines.push([id]);
+                    } else {
+                        line.push(id);
+                    }
+                }
+                for (const [lineIndex, line] of lines.entries()) {
+                    let along = crossMiddle - rowLength(line) / 2;
+                    for (const id of line) {
+                        const rect = positions[id]!;
+                        rects.set(id, {
+                            ...rect,
+                            [primary]: Math.round(at),
+                            [cross]: Math.round(along)
+                        });
+                        along += rect[crossSize] + settings.nodeSpacing;
+                    }
+                    at += Math.max(...line.map(id => positions[id]![primarySize]))
+                        + (lineIndex === lines.length - 1 ? settings.rankSpacing : settings.nodeSpacing);
                 }
             }
-            at += thickness + settings.rankSpacing;
         }
         return { ids, rects, original: boundsOf(originals) };
     }).sort((one, other) => one.original.y - other.original.y || one.original.x - other.original.x);
