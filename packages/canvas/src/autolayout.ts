@@ -1,7 +1,7 @@
 /**
  * Automatic layout, when it is asked for.
  *
- * The default is ELK's layered algorithm, because a class diagram is read by its
+ * ELK's layered algorithm is used because a class diagram is read by its
  * taxonomy: supertypes above subtypes, one rank per level. Three things are done
  * to it here, all of them because a UFO model is not the graph a layered
  * algorithm expects.
@@ -18,20 +18,22 @@
  * is therefore put back into ranks computed only from generalizations, around
  * the location and cross-rank order ELK chose for it.
  *
- * Packages become compound nodes when they are drawn as boxes, so a package's
- * classes stay together instead of scattering and leaving the box drawn around
- * half the diagram.
+ * Several packages become compound nodes when they are drawn as boxes, so each
+ * package's classes stay together instead of scattering and leaving the box
+ * drawn around half the diagram. One package stays flat, which lets ELK pack
+ * its disconnected components instead of stretching them into a row.
  *
- * The other algorithms are there because no single one suits every model:
- * `stress` for a densely associated model with little taxonomy, `mrtree` for one
- * that really is a tree, `radial` for a model with one thing at its centre.
+ * Disconnected components are compacted after those semantic repairs. Keeping
+ * a component rigid preserves its internal reading while recovering the space
+ * the independent repairs otherwise leave between unrelated pieces.
  */
 
 import * as elkModule from 'elkjs/lib/elk.bundled.js';
-import type { LayoutOptions, ViewModel } from 'tonto-view';
-import { defaultLayoutOptions, inversePairs } from 'tonto-view';
+import type { DisplayOptions, LayoutOptions, ViewModel } from 'tonto-view';
+import { defaultDisplayOptions, defaultLayoutOptions, inversePairs } from 'tonto-view';
 import type { Point, Rect, Size } from './geometry.js';
 import { borderPoint, boundsOf, centerOf, overlaps } from './geometry.js';
+import { relationLabelFootprints } from './measure.js';
 import type { Positions } from './place.js';
 import type { RoutingStyle } from './route.js';
 import { routeEdge } from './route.js';
@@ -40,6 +42,7 @@ const GROUP_PADDING = 18;
 const GROUP_HEADER = 20;
 const PARTIAL_GAP = 24;
 const PARTIAL_STEP = 40;
+const TARGET_ASPECT_RATIO = 1.6;
 
 /**
  * ELK ships one bundle for CommonJS and for the browser, so the constructor
@@ -62,8 +65,17 @@ interface ElkEdge {
     id: string;
     sources: string[];
     targets: string[];
+    labels?: ElkLabel[];
     layoutOptions?: Record<string, string>;
     sections?: Array<{ startPoint: ElkPoint; endPoint: ElkPoint; bendPoints?: ElkPoint[] }>;
+}
+
+interface ElkLabel {
+    id: string;
+    text: string;
+    width: number;
+    height: number;
+    layoutOptions: Record<string, string>;
 }
 
 interface ElkNode {
@@ -86,6 +98,8 @@ export interface AutoLayoutRequest extends Partial<LayoutOptions> {
      * which is what keeps it looking right after a drag.
      */
     routing?: RoutingStyle;
+    /** What will actually be written on the edges this layout is making room for. */
+    display?: DisplayOptions;
 }
 
 export interface AutoLayoutResult {
@@ -101,68 +115,220 @@ export interface AutoLayoutResult {
     routes: Record<string, Point[]>;
 }
 
-/** What each algorithm is told, beyond the spacings every one of them takes. */
+/** What the layered initializer is told. */
 function optionsFor(settings: LayoutOptions, routing: RoutingStyle): Record<string, string> {
     const edgeRouting = routing === 'orthogonal' ? 'ORTHOGONAL' : 'POLYLINE';
-    switch (settings.algorithm) {
-        case 'stress':
-            return {
-                'elk.algorithm': 'stress',
-                // Long enough that a label between two boxes has somewhere to sit.
-                'elk.stress.desiredEdgeLength': String(settings.rankSpacing * 2.6)
-            };
-        case 'force':
-            return {
-                'elk.algorithm': 'force',
-                'elk.force.repulsivePower': '1',
-                'elk.spacing.nodeNode': String(settings.nodeSpacing * 1.6)
-            };
-        case 'mrtree':
-            return {
-                'elk.algorithm': 'mrtree',
-                'elk.direction': settings.direction,
-                'elk.mrtree.searchOrder': 'DFS',
-                'elk.spacing.nodeNode': String(settings.nodeSpacing),
-                'elk.layered.spacing.nodeNodeBetweenLayers': String(settings.rankSpacing)
-            };
-        case 'radial':
-            return { 'elk.algorithm': 'radial', 'elk.spacing.nodeNode': String(settings.nodeSpacing) };
-        case 'layered':
-        default:
-            return {
-                'elk.algorithm': 'layered',
-                'elk.direction': settings.direction,
-                'elk.edgeRouting': edgeRouting,
-                'elk.spacing.nodeNode': String(settings.nodeSpacing),
-                'elk.spacing.edgeNode': String(Math.round(settings.nodeSpacing * 0.5)),
-                'elk.spacing.edgeEdge': '12',
-                'elk.layered.spacing.nodeNodeBetweenLayers': String(settings.rankSpacing),
-                'elk.layered.spacing.edgeNodeBetweenLayers': String(Math.round(settings.rankSpacing * 0.4)),
-                // Straight taxonomy legs, at the cost of a wider drawing: a
-                // supertype sitting over the middle of its subtypes is the thing
-                // the reader is looking for.
-                'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
-                'elk.layered.nodePlacement.bk.fixedAlignment': 'BALANCED',
-                'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
-                'elk.layered.thoroughness': '20'
-                // Nothing here bounds the width, and it is worth saying so
-                // rather than appearing to. `elk.aspectRatio` was set to 1.6 for
-                // years and did nothing at all: layered reads it only through
-                // its wrapping phase, and wrapping applies to path-like graphs
-                // -- 0.3, 1.6 and 8 produce the same drawing to the pixel on
-                // every model here, and `elk.layered.wrapping.strategy` changes
-                // none of them either. So a rank as wide as a category has
-                // kinds is as wide as the drawing gets: eight kinds of twelve
-                // subkinds each come out 17220 across and 664 deep. Bounding it
-                // means folding a rank into several rows here, which is a
-                // decision about how a taxonomy should read and not a setting.
-            };
-    }
+    return {
+        'elk.algorithm': 'layered',
+        'elk.direction': settings.direction,
+        'elk.edgeRouting': edgeRouting,
+        'elk.spacing.nodeNode': String(settings.nodeSpacing),
+        'elk.spacing.edgeNode': String(Math.round(settings.nodeSpacing * 0.5)),
+        'elk.spacing.edgeEdge': '12',
+        'elk.spacing.edgeLabel': '8',
+        'elk.layered.spacing.nodeNodeBetweenLayers': String(settings.rankSpacing),
+        'elk.layered.spacing.edgeNodeBetweenLayers': String(Math.round(settings.rankSpacing * 0.4)),
+        // Straight taxonomy legs, at the cost of a wider drawing: a
+        // supertype sitting over the middle of its subtypes is the thing
+        // the reader is looking for.
+        'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
+        'elk.layered.nodePlacement.bk.fixedAlignment': 'BALANCED',
+        'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
+        'elk.layered.thoroughness': '20'
+        // Nothing here bounds the width, and it is worth saying so rather than
+        // appearing to. Layered layout ignores `elk.aspectRatio` without a
+        // wrapping policy; broad taxonomies need an explicit stable folding
+        // policy rather than another engine selector.
+    };
 }
 
-/** Algorithms that understand a node containing other nodes. */
-function supportsGroups(algorithm: LayoutOptions['algorithm']): boolean {
-    return algorithm === 'layered' || algorithm === 'mrtree';
+interface ComponentBox {
+    ids: string[];
+    bounds: Rect;
+}
+
+interface PackedBox {
+    component: ComponentBox;
+    x: number;
+    y: number;
+}
+
+/** Weak components of the visible graph, including an unjoined node as one. */
+function weakComponents(
+    view: ViewModel,
+    subject: ReadonlySet<string>,
+    excluded: ReadonlySet<string>
+): string[][] {
+    const ids = [...subject].filter(id => !excluded.has(id)).sort();
+    const neighbours = new Map(ids.map(id => [id, new Set<string>()]));
+    for (const edge of view.edges) {
+        if (!neighbours.has(edge.source) || !neighbours.has(edge.target)) {
+            continue;
+        }
+        neighbours.get(edge.source)!.add(edge.target);
+        neighbours.get(edge.target)!.add(edge.source);
+    }
+
+    const unseen = new Set(ids);
+    const components: string[][] = [];
+    for (const first of ids) {
+        if (!unseen.delete(first)) {
+            continue;
+        }
+        const component: string[] = [];
+        const visit = [first];
+        while (visit.length > 0) {
+            const id = visit.pop()!;
+            component.push(id);
+            for (const neighbour of [...(neighbours.get(id) ?? [])].sort().reverse()) {
+                if (unseen.delete(neighbour)) {
+                    visit.push(neighbour);
+                }
+            }
+        }
+        components.push(component.sort());
+    }
+    return components;
+}
+
+/** Places rectangles on shelves and reports the occupied bounds. */
+function shelfPack(components: ComponentBox[], targetWidth: number, gap: number): {
+    boxes: PackedBox[];
+    width: number;
+    height: number;
+} {
+    const boxes: PackedBox[] = [];
+    let x = 0;
+    let y = 0;
+    let rowHeight = 0;
+    let width = 0;
+    for (const component of components) {
+        if (x > 0 && x + component.bounds.width > targetWidth) {
+            x = 0;
+            y += rowHeight + gap;
+            rowHeight = 0;
+        }
+        boxes.push({ component, x, y });
+        x += component.bounds.width + gap;
+        rowHeight = Math.max(rowHeight, component.bounds.height);
+        width = Math.max(width, x - gap);
+    }
+    return { boxes, width, height: y + rowHeight };
+}
+
+/** The screen-sized square needed to contain bounds at the target aspect. */
+function packingScore(width: number, height: number): number {
+    return Math.max(width / TARGET_ASPECT_RATIO, height);
+}
+
+/**
+ * Recovers space between unrelated pieces after semantic adjustment.
+ *
+ * Every weak component moves rigidly, so taxonomy ranks, mediation placement
+ * and whole-part order survive. The shelf width is searched rather than fixed:
+ * that makes the result follow the actual component shapes while still aiming
+ * at a canvas-shaped drawing. Equal candidates retain stable id order.
+ */
+function packComponents(
+    view: ViewModel,
+    positions: Positions,
+    subject: ReadonlySet<string>,
+    excluded: ReadonlySet<string>,
+    settings: LayoutOptions
+): boolean {
+    const components = weakComponents(view, subject, excluded)
+        .filter(ids => ids.every(id => positions[id] !== undefined))
+        .map(ids => ({ ids, bounds: boundsOf(ids.map(id => positions[id]!)) }));
+    if (components.length < 2) {
+        return false;
+    }
+
+    // Tall pieces first make shelves useful; ids settle every tie and make the
+    // answer independent of ELK's component enumeration.
+    components.sort((one, other) => other.bounds.height - one.bounds.height
+        || other.bounds.width - one.bounds.width || one.ids[0]!.localeCompare(other.ids[0]!));
+    const gap = Math.max(settings.nodeSpacing, 40);
+    const maxWidth = Math.max(...components.map(component => component.bounds.width));
+    const allInOneRow = components.reduce((sum, component) => sum + component.bounds.width, 0)
+        + gap * (components.length - 1);
+    const paddedArea = components.reduce(
+        (sum, component) => sum + (component.bounds.width + gap) * (component.bounds.height + gap), 0);
+    const idealWidth = Math.sqrt(paddedArea * TARGET_ASPECT_RATIO);
+    const candidates = new Set<number>([maxWidth, allInOneRow, idealWidth]);
+    for (let step = 1; step <= 24; step += 1) {
+        candidates.add(maxWidth + (allInOneRow - maxWidth) * step / 24);
+    }
+
+    let best: ReturnType<typeof shelfPack> | undefined;
+    for (const candidate of [...candidates].sort((one, other) => one - other)) {
+        const packed = shelfPack(components, candidate, gap);
+        if (!best || packingScore(packed.width, packed.height) < packingScore(best.width, best.height)
+            || (packingScore(packed.width, packed.height) === packingScore(best.width, best.height)
+                && packed.width * packed.height < best.width * best.height)) {
+            best = packed;
+        }
+    }
+    if (!best) {
+        return false;
+    }
+
+    const currentBounds = boundsOf(components.flatMap(component => component.ids.map(id => positions[id]!)));
+    if (packingScore(best.width, best.height) >= packingScore(currentBounds.width, currentBounds.height)) {
+        return false;
+    }
+    for (const box of best.boxes) {
+        const dx = currentBounds.x + box.x - box.component.bounds.x;
+        const dy = currentBounds.y + box.y - box.component.bounds.y;
+        for (const id of box.component.ids) {
+            const rect = positions[id]!;
+            positions[id] = { ...rect, x: Math.round(rect.x + dx), y: Math.round(rect.y + dy) };
+        }
+    }
+    return true;
+}
+
+/**
+ * Keeps unconnected datatypes and enumerations after the model ELK arranged.
+ *
+ * ELK's LAST constraint puts one inside the last layer of its connected
+ * component. In a flat graph it is still a component of its own, so component
+ * packing can put it above the taxonomy; a compound package happened to hide
+ * that distinction. Move the appendix as one piece after every other node,
+ * retaining the compact shape ELK chose for several entries.
+ */
+function placeAppendixAfter(
+    positions: Positions,
+    appendix: ReadonlySet<string>,
+    subject: ReadonlySet<string>,
+    settings: LayoutOptions
+): void {
+    const ids = [...appendix].filter(id => subject.has(id) && positions[id] !== undefined);
+    const body = [...subject]
+        .filter(id => !appendix.has(id) && positions[id] !== undefined)
+        .map(id => positions[id]!);
+    if (ids.length === 0 || body.length === 0) {
+        return;
+    }
+
+    const appendixBounds = boundsOf(ids.map(id => positions[id]!));
+    const bodyBounds = boundsOf(body);
+    const translation = settings.direction === 'DOWN'
+        ? {
+            x: bodyBounds.x + bodyBounds.width / 2 - (appendixBounds.x + appendixBounds.width / 2),
+            y: bodyBounds.y + bodyBounds.height + settings.rankSpacing - appendixBounds.y
+        }
+        : {
+            x: bodyBounds.x + bodyBounds.width + settings.rankSpacing - appendixBounds.x,
+            y: bodyBounds.y + bodyBounds.height / 2 - (appendixBounds.y + appendixBounds.height / 2)
+        };
+    for (const id of ids) {
+        const rect = positions[id]!;
+        positions[id] = {
+            ...rect,
+            x: Math.round(rect.x + translation.x),
+            y: Math.round(rect.y + translation.y)
+        };
+    }
 }
 
 /**
@@ -811,7 +977,8 @@ export async function autoLayout(
     request: AutoLayoutRequest = {}
 ): Promise<AutoLayoutResult> {
     const settings: LayoutOptions = { ...defaultLayoutOptions, ...request };
-    const routing = request.routing ?? 'straight';
+    const routing = request.routing ?? request.display?.routing ?? defaultDisplayOptions.routing;
+    const display: DisplayOptions = { ...defaultDisplayOptions, ...request.display, routing };
     const subject = new Set(request.only ?? view.nodes.map(node => node.id));
     const inverses = inversePairs(view.edges);
     const hasTaxonomy = view.edges.some(edge => edge.kind === 'generalization'
@@ -823,7 +990,14 @@ export async function autoLayout(
 
     const sizeOf = (id: string): Size => sizes[id] ?? { width: 160, height: 60 };
 
-    const grouped = settings.groupByPackage && supportsGroups(settings.algorithm);
+    const populatedGroups = view.groups.filter(group => group.nodes.some(id => subject.has(id)));
+    // A compound node earns its cost only when there is another package to
+    // keep it apart from. With one package, INCLUDE_CHILDREN makes ELK lay the
+    // package's disconnected components in one strip instead of packing them:
+    // twelve isolated cards become a row thirty-one times wider than it is
+    // high. The renderer can still draw the one package around the flat layout.
+    const grouped = settings.groupByPackage && populatedGroups.length > 1;
+    const groupOf = new Map(populatedGroups.flatMap(group => group.nodes.map(id => [id, group.id] as const)));
     const algorithmOptions = optionsFor(settings, routing);
     /**
      * A datatype nothing is joined to is put after the model, not into it.
@@ -842,14 +1016,15 @@ export async function autoLayout(
      * pointed at from.
      */
     const joined = new Set(view.edges.flatMap(edge => [edge.source, edge.target]));
-    const kindOf = new Map(view.nodes.map(node => [node.id, node.kind]));
+    const appendixIds = new Set(view.nodes
+        .filter(node => !joined.has(node.id) && (node.kind === 'datatype' || node.kind === 'enumeration'))
+        .map(node => node.id));
     const appendix = (id: string): Pick<ElkNode, 'layoutOptions'> | Record<string, never> =>
-        settings.algorithm === 'layered' && !joined.has(id)
-            && (kindOf.get(id) === 'datatype' || kindOf.get(id) === 'enumeration')
+        appendixIds.has(id)
             ? { layoutOptions: { 'elk.layered.layering.layerConstraint': 'LAST' } }
             : {};
     const children: ElkNode[] = grouped
-        ? view.groups
+        ? populatedGroups
             .map(group => ({
                 id: group.id,
                 // The options are repeated on every package, not only on the
@@ -904,10 +1079,39 @@ export async function autoLayout(
                     };
                 }
                 const turned = turnedMediations.has(edge.id);
+                // ELK handles labels on edges inside a compound graph, but a
+                // label on an edge crossing compound boundaries makes it push
+                // the package nodes apart by the label's full rank width. The
+                // space between package frames already gives the renderer a
+                // clear corridor; reserve explicit boxes where labels compete
+                // with the cards inside the same layout graph.
+                const labels = edge.kind === 'relation'
+                    && (!grouped || groupOf.get(edge.source) === groupOf.get(edge.target))
+                    ? relationLabelFootprints(edge, display, inverses.partnerOf.get(edge.id))
+                        .map((label, index) => {
+                            const placement = turned
+                                ? label.placement === 'HEAD' ? 'TAIL'
+                                    : label.placement === 'TAIL' ? 'HEAD'
+                                        : label.placement
+                                : label.placement;
+                            return {
+                                id: `${edge.id}:label:${index}`,
+                                // ELK drops a label with no text before layout
+                                // even when explicit dimensions were supplied.
+                                // The real text remains the renderer's concern;
+                                // this keeps its measured placeholder alive.
+                                text: ' ',
+                                width: label.width,
+                                height: label.height,
+                                layoutOptions: { 'elk.edgeLabels.placement': placement }
+                            };
+                        })
+                    : undefined;
                 return {
                     id: edge.id,
                     sources: [turned ? edge.target : edge.source],
                     targets: [turned ? edge.source : edge.target],
+                    ...(labels && labels.length > 0 ? { labels } : {}),
                     layoutOptions: edge.kind === 'relation' && edge.stereotype === 'mediation'
                         // A mediation should come out straight where it can: it
                         // is the line that says what the relator is between.
@@ -942,7 +1146,7 @@ export async function autoLayout(
         .filter(id => positions[id] !== undefined)
         .map(id => [id, { ...positions[id]! }]));
     let ranked: Set<string> | undefined;
-    if (settings.algorithm === 'layered' && !request.only) {
+    if (!request.only) {
         ranked = enforceTaxonomyRanks(view, positions, subject, settings);
         settleRelators(view, positions, subject, ranked ? settings.direction : undefined, ranked);
         if (ranked) {
@@ -952,6 +1156,12 @@ export async function autoLayout(
         settleRelators(view, positions, subject);
     }
     orientWholes(view, positions, subject, ranked, settings.direction);
+    const packed = !request.only && !grouped
+        ? packComponents(view, positions, subject, appendixIds, settings)
+        : false;
+    if (!request.only && !grouped) {
+        placeAppendixAfter(positions, appendixIds, subject, settings);
+    }
     if (request.only) {
         placePartialLayout(positions, current, subject);
     }
@@ -1004,7 +1214,8 @@ export async function autoLayout(
                 }
                 const sourceShift = { x: source.x - oldSource.x, y: source.y - oldSource.y };
                 const targetShift = { x: target.x - oldTarget.x, y: target.y - oldTarget.y };
-                routes[edge.id] = sourceShift.x === targetShift.x && sourceShift.y === targetShift.y
+                routes[edge.id] = !packed
+                    && sourceShift.x === targetShift.x && sourceShift.y === targetShift.y
                     ? ordered.map(point => ({
                         x: Math.round(point.x + sourceShift.x),
                         y: Math.round(point.y + sourceShift.y)
@@ -1031,7 +1242,7 @@ export async function autoLayout(
     // relators it strands are worth turning -- and the turn is kept only if it
     // seats more of them.
     const plain = await attempt(new Set());
-    if (settings.algorithm === 'layered' && hasTaxonomy && !request.only) {
+    if (hasTaxonomy && !request.only) {
         return plain;
     }
     const stranded = strandedRelators(view, plain.positions, subject);

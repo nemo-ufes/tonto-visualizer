@@ -19,6 +19,7 @@ describe('view file options', () => {
                 showLegend: 1
             },
             layout: {
+                // Written by older versions; no longer part of the options.
                 algorithm: 'unknown',
                 direction: 'UP',
                 nodeSpacing: -1,
@@ -44,6 +45,7 @@ describe('view file options', () => {
             },
             display: { showLegend: true, routing: 'orthogonal' },
             layout: {
+                // Legacy engine choices are ignored in favour of taxonomy layout.
                 algorithm: 'stress', direction: 'RIGHT', nodeSpacing: 0,
                 rankSpacing: 120, groupByPackage: false
             }
@@ -63,7 +65,7 @@ describe('view file options', () => {
             routing: 'orthogonal'
         });
         expect(view.layout).toEqual({
-            algorithm: 'stress', direction: 'RIGHT', nodeSpacing: 0,
+            direction: 'RIGHT', nodeSpacing: 0,
             rankSpacing: 120, groupByPackage: false
         });
     });

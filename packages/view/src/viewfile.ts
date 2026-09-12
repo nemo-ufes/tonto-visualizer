@@ -4,8 +4,8 @@
  * A diagram someone has laid out by hand is work, and work that lives only in a
  * webview's memory is lost at the next window reload. So positions, routes,
  * hidden elements and the options that produced the view are written beside the
- * model as `*.tontoview` -- plain JSON, small enough to read, diffable enough to
- * review, and one file per view so a large model can have several.
+ * model under `views/*.tontoview` -- plain JSON, small enough to read, diffable
+ * enough to review, and one file per view so a large model can have several.
  *
  * Nothing here touches the file system: the extension reads and writes, this
  * decides what a file means once it is open.
@@ -140,8 +140,6 @@ function readDisplayOptions(value: unknown): DisplayOptions {
 function readLayoutOptions(value: unknown): LayoutOptions {
     const source = recordOf(value);
     return {
-        algorithm: oneOf(source.algorithm, ['layered', 'stress', 'mrtree', 'radial', 'force'])
-            ? source.algorithm : defaultLayoutOptions.algorithm,
         direction: oneOf(source.direction, ['DOWN', 'RIGHT'])
             ? source.direction : defaultLayoutOptions.direction,
         nodeSpacing: nonNegativeNumberOr(source.nodeSpacing, defaultLayoutOptions.nodeSpacing),

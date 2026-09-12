@@ -127,10 +127,11 @@ produced a smaller drawing three times out of five and a much worse one on
 classes -- laid out as one graph they interleave, and a box round the classes of
 one package enclosed three from another, which the reader would believe.
 
-**(b) Layout, only where the modeller has not spoken.** `elkjs` (the layered
-algorithm, packages as compound nodes) runs when a view is first drawn or when
-an arrangement is asked for. Elements with a saved position are pinned; only new and
-unpositioned ones are placed, near the neighbours they connect to. **Adding a
+**(b) Layout, only where the modeller has not spoken.** `elkjs` (layered
+taxonomy, with multiple packages as compound nodes) runs when a view is first
+drawn or when an arrangement is asked for. Elements with a saved position are
+pinned; only new and unpositioned ones are placed, near the neighbours they
+connect to. **Adding a
 class must not rearrange the diagram** — that property is the whole point, and
 it is what a re-render through PlantUML can never offer. An explicit *Auto-layout*
 command (all, or selection) is there for when the modeller does want it.
@@ -171,12 +172,13 @@ spread apart, and a line that would cross an unrelated class takes one bend
 round it, since a straight line through a class is worse than no line at all.
 Right angles remain, as a choice, for the taxonomies they do suit.
 
-**(d) The arrangement is a document.** Positions, waypoints, hidden elements and
-the option state are written to a `*.tontoview` JSON file beside the model:
-plain, diffable, and committable, so a hand-arranged diagram survives a restart
-and can be shared with a co-author or reviewed in a pull request. Several views
-over one model are then just several files — which is how OntoUML tools think of
-diagrams, and what a large model needs.
+**(d) The arrangement is a document.** After the modeller changes an automatic
+arrangement, positions, waypoints, hidden elements and the option state are
+written to a `views/*.tontoview` JSON file: plain, diffable, and committable, so
+a hand-arranged diagram survives a restart and can be shared with a co-author
+or reviewed in a pull request. An untouched automatic drawing creates no file.
+Several views over one model are then just several files — which is how OntoUML
+tools think of diagrams, and what a large model needs.
 
   A view file keyed by qualified name goes stale when a class is renamed. The
   entry is kept, not dropped, and the view reports what it can no longer place,

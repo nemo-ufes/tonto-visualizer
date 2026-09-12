@@ -40,7 +40,8 @@ Working end to end, and rough in places.
   open the declaration, cursor-follows-selection, a scope that is either the
   opened file's packages or the whole workspace, package, class and association
   filters, display options, nature legend, SVG export, and default or named
-  `.tontoview` files beside the model holding separate arrangements.
+  `.tontoview` files under the model's `views` folder holding separate
+  arrangements. An untouched automatic layout creates no file.
 
 The notation covers classes with stereotypes and attributes, datatypes and
 enumerations, generalizations, generalization sets as one shared triangle with
@@ -71,9 +72,9 @@ export, and any editing of the model from the diagram.
     node packages/cli/bin/tonto-view.js vendor/tontoredesign/examples/university
 
 With a diagram open, **Tonto: Save Diagram as Named View** copies its current
-content and arrangement to a named sibling such as
-`employment.core-taxonomy.tontoview`. **Tonto: Open Diagram View** switches
-between that model's default and named views.
+content and arrangement to a named file such as
+`views/employment.core-taxonomy.tontoview`. **Tonto: Open Diagram View**
+switches between that model's default and named views.
 
 The Tonto language itself is consumed as a pinned submodule under `vendor/`,
 never edited from here — one grammar, one set of checks, one answer about what a

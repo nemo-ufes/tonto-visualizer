@@ -94,6 +94,9 @@ window.addEventListener('message', event => {
         staleLabel.hidden = !message.stale;
         staleLabel.textContent = message.stale ? `does not parse — showing the last good diagram` : '';
         draw();
+        if (message.fit) {
+            fit();
+        }
         if (selectionChanged) {
             reportSelection();
         } else {
@@ -789,6 +792,7 @@ function updateArrangeTitle(): void {
 element('zoomIn').addEventListener('click', () => zoomAt(scale * 1.2, centreX(), centreY()));
 element('zoomOut').addEventListener('click', () => zoomAt(scale / 1.2, centreX(), centreY()));
 element('fit').addEventListener('click', fit);
+element('newWindow').addEventListener('click', () => host.postMessage({ type: 'moveToNewWindow' }));
 element('arrange').addEventListener('click', () => {
     const selectedNodes = [...selection].filter(id => positions[id] !== undefined);
     host.postMessage(selectedNodes.length > 0
@@ -841,29 +845,16 @@ function fillOptions(): void {
     ];
 
     optionsPanel.replaceChildren();
-    const algorithm = layout?.algorithm ?? 'layered';
     const arrangement = [
         choice('Lines', [['straight', 'Straight'], ['orthogonal', 'Right-angled']], display.routing,
             value => host.postMessage({ type: 'display', display: { routing: value as DisplayOptions['routing'] } })),
-        choice('Arrangement', [
-            ['layered', 'Layered (taxonomy)'],
-            ['stress', 'Spread'],
-            ['mrtree', 'Tree'],
-            ['radial', 'Radial'],
-            ['force', 'Force-directed']
-        ], algorithm,
-            value => host.postMessage({ type: 'layout', layout: { algorithm: value as LayoutOptions['algorithm'] } }))
+        choice('Direction', [['DOWN', 'Top to bottom'], ['RIGHT', 'Left to right']], layout?.direction ?? 'DOWN',
+            value => host.postMessage({ type: 'layout', layout: { direction: value as LayoutOptions['direction'] } })),
+        // A package is a neighbourhood preference. Keeping it enabled may
+        // leave a hierarchy across package boundaries staggered.
+        toggle('Cluster packages', layout?.groupByPackage ?? true,
+            value => host.postMessage({ type: 'layout', layout: { groupByPackage: value } }))
     ];
-    if (algorithm === 'layered' || algorithm === 'mrtree') {
-        arrangement.push(
-            choice('Direction', [['DOWN', 'Top to bottom'], ['RIGHT', 'Left to right']], layout?.direction ?? 'DOWN',
-                value => host.postMessage({ type: 'layout', layout: { direction: value as LayoutOptions['direction'] } })),
-            // A package is a neighbourhood preference. Keeping it enabled may
-            // leave a hierarchy across package boundaries staggered.
-            toggle('Cluster packages', layout?.groupByPackage ?? true,
-                value => host.postMessage({ type: 'layout', layout: { groupByPackage: value } }))
-        );
-    }
     optionsPanel.append(section('Shape', arrangement));
     optionsPanel.append(section('Drawn', displayRows.map(([key, label]) =>
         toggle(label, Boolean(display?.[key]), value => host.postMessage({ type: 'display', display: { [key]: value } })))));

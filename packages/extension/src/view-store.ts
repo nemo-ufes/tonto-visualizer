@@ -1,10 +1,13 @@
 /**
- * The `.tontoview` file: read when a diagram opens, written when it moves.
+ * The `.tontoview` file: read when a diagram opens, written after the modeller
+ * changes the automatically produced view.
  *
- * Beside the model rather than in the extension's storage, because an
- * arrangement is part of the work: it belongs in the repository with the model
- * it explains, where a co-author gets it by pulling and a reviewer sees it in a
- * diff.
+ * In the model's `views` directory rather than in the extension's storage,
+ * because an arrangement is part of the work: it belongs in the repository
+ * with the model it explains, where a co-author gets it by pulling and a
+ * reviewer sees it in a diff. An untouched automatic arrangement is not work to
+ * persist, so neither the directory nor the file is made until a user action
+ * changes it.
  *
  * The store also keeps what the arrangement was, so a view change can be taken
  * back. The history lives here rather than in the panel for the same reason the
@@ -53,15 +56,31 @@ export class ViewStore {
         modelUri: vscode.Uri, focus: string | undefined, enabled: boolean,
         uri: vscode.Uri = viewUriFor(modelUri)
     ): Promise<ViewStore> {
+        let bytes: Uint8Array | undefined;
         try {
-            const bytes = await vscode.workspace.fs.readFile(uri);
-            return new ViewStore(uri, readViewFile(JSON.parse(Buffer.from(bytes).toString('utf8'))), enabled);
+            bytes = await vscode.workspace.fs.readFile(uri);
         } catch {
-            // No file, or one that is not JSON any more. Either way the diagram
-            // opens; what it cannot do is overwrite something it failed to read,
-            // so a broken file is left alone until the first deliberate move.
-            return new ViewStore(uri, emptyViewFile(focus), enabled);
+            // Files written before views had their own directory remain
+            // readable. The store still targets the new URI, so the first
+            // deliberate edit migrates the view without touching the old file.
+            const name = viewNameFor(modelUri, uri);
+            if (uri.path === viewUriFor(modelUri, name).path) {
+                try {
+                    bytes = await vscode.workspace.fs.readFile(legacyViewUriFor(modelUri, name));
+                } catch {
+                    // No saved view yet is the ordinary first-open case.
+                }
+            }
         }
+        if (bytes) {
+            try {
+                return new ViewStore(uri, readViewFile(JSON.parse(Buffer.from(bytes).toString('utf8'))), enabled);
+            } catch {
+                // A broken file must not prevent the diagram from opening. It
+                // remains untouched until a deliberate edit replaces it.
+            }
+        }
+        return new ViewStore(uri, emptyViewFile(focus), enabled);
     }
 
     get state(): ViewFile {
@@ -76,7 +95,7 @@ export class ViewStore {
     async copyTo(uri: vscode.Uri): Promise<void> {
         await this.write();
         const text = JSON.stringify(this.file, undefined, 2) + '\n';
-        await vscode.workspace.fs.writeFile(uri, Buffer.from(text, 'utf8'));
+        await writeViewFile(uri, Buffer.from(text, 'utf8'));
     }
 
     /**
@@ -94,26 +113,32 @@ export class ViewStore {
     }
 
     move(positions: Record<string, Placement>): void {
-        this.record();
+        const userChanged = this.record();
         this.file = { ...this.file, nodes: { ...this.file.nodes, ...positions } };
-        this.schedule();
+        if (userChanged || this.dirty) {
+            this.schedule();
+        }
     }
 
     reroute(edge: string, route: EdgeRoute | undefined): void {
-        this.record();
+        const userChanged = this.record();
         if (route) {
             this.file = { ...this.file, edges: { ...this.file.edges, [edge]: route } };
         } else {
             const { [edge]: _dropped, ...rest } = this.file.edges;
             this.file = { ...this.file, edges: rest };
         }
-        this.schedule();
+        if (userChanged || this.dirty) {
+            this.schedule();
+        }
     }
 
     update(patch: Partial<Pick<ViewFile, 'content' | 'display' | 'layout'>>): void {
-        this.record();
+        const userChanged = this.record();
         this.file = { ...this.file, ...patch };
-        this.schedule();
+        if (userChanged || this.dirty) {
+            this.schedule();
+        }
     }
 
     /** What the next undo would take back, and the next redo would put back. */
@@ -146,9 +171,9 @@ export class ViewStore {
     }
 
     /** Closes the open step, if the change about to be made is the first in it. */
-    private record(): void {
+    private record(): boolean {
         if (!this.step) {
-            return;
+            return false;
         }
         this.done.push(this.step);
         this.step = undefined;
@@ -158,6 +183,7 @@ export class ViewStore {
         // Anything taken back is only on offer until something else is done;
         // a history that branches is one nobody can hold in their head.
         this.undone.length = 0;
+        return true;
     }
 
     /**
@@ -188,7 +214,7 @@ export class ViewStore {
         const text = JSON.stringify(this.file, undefined, 2) + '\n';
         this.dirty = false;
         const write = this.writes.then(async () => {
-            await vscode.workspace.fs.writeFile(this.uri, Buffer.from(text, 'utf8'));
+            await writeViewFile(this.uri, Buffer.from(text, 'utf8'));
         });
         // Keep the queue usable after a reported write failure; callers still
         // receive the original rejection from `write`.
@@ -219,8 +245,17 @@ export interface ViewChoice {
     uri: vscode.Uri;
 }
 
-/** `Person.tonto` has `Person.tontoview` and, for example, `Person.roles.tontoview`. */
+/** `Person.tonto` has `views/Person.tontoview` and `views/Person.roles.tontoview`. */
 export function viewUriFor(modelUri: vscode.Uri, name?: string): vscode.Uri {
+    const suffix = name ? `.${name}.tontoview` : '.tontoview';
+    const slash = modelUri.path.lastIndexOf('/');
+    const directory = modelUri.path.slice(0, slash + 1);
+    const stem = modelUri.path.slice(slash + 1).replace(/\.tonto$/i, '');
+    return modelUri.with({ path: `${directory}views/${stem}${suffix}` });
+}
+
+/** The sibling location used before view files moved into `views`. */
+function legacyViewUriFor(modelUri: vscode.Uri, name?: string): vscode.Uri {
     const suffix = name ? `.${name}.tontoview` : '.tontoview';
     return modelUri.with({ path: modelUri.path.replace(/\.tonto$/i, '') + suffix });
 }
@@ -232,50 +267,76 @@ export function viewNameOf(value: string): string | undefined {
     return name || undefined;
 }
 
-/** The name encoded in a sibling view URI, or undefined for the default view. */
+/** The name encoded in a current or legacy view URI, or undefined for the default view. */
 export function viewNameFor(modelUri: vscode.Uri, viewUri: vscode.Uri): string | undefined {
-    const stem = modelUri.path.replace(/\.tonto$/i, '');
-    if (viewUri.path === `${stem}.tontoview`) {
-        return undefined;
+    for (const defaultUri of [viewUriFor(modelUri), legacyViewUriFor(modelUri)]) {
+        if (viewUri.path === defaultUri.path) {
+            return undefined;
+        }
     }
-    const prefix = `${stem}.`;
-    const suffix = '.tontoview';
-    return viewUri.path.startsWith(prefix) && viewUri.path.endsWith(suffix)
-        ? viewUri.path.slice(prefix.length, -suffix.length) || undefined
-        : undefined;
+    for (const named of [viewUriFor(modelUri, ''), legacyViewUriFor(modelUri, '')]) {
+        const prefix = named.path.replace(/\.tontoview$/, '.');
+        const suffix = '.tontoview';
+        if (viewUri.path.startsWith(prefix) && viewUri.path.endsWith(suffix)) {
+            return viewUri.path.slice(prefix.length, -suffix.length) || undefined;
+        }
+    }
+    return undefined;
 }
 
 /** Finds only views whose filename identifies this exact model. */
 export async function viewChoicesFor(modelUri: vscode.Uri): Promise<ViewChoice[]> {
     const slash = modelUri.path.lastIndexOf('/');
-    const directory = modelUri.with({ path: modelUri.path.slice(0, slash || 1) });
+    const parentPath = modelUri.path.slice(0, slash + 1);
+    const directory = modelUri.with({ path: parentPath });
+    const viewsDirectory = modelUri.with({ path: `${parentPath}views` });
     const modelFile = modelUri.path.slice(slash + 1);
     const stem = modelFile.replace(/\.tonto$/i, '');
     let entries: [string, vscode.FileType][] = [];
+    let legacyEntries: [string, vscode.FileType][] = [];
     try {
-        entries = await vscode.workspace.fs.readDirectory(directory);
+        entries = await vscode.workspace.fs.readDirectory(viewsDirectory);
     } catch {
         // The default view can still be opened in an untitled or virtual
         // workspace whose directory cannot be enumerated.
     }
-    const named = entries
+    try {
+        legacyEntries = await vscode.workspace.fs.readDirectory(directory);
+    } catch {
+        // Legacy discovery is best effort and can disappear after migration.
+    }
+    const filenames = new Set(entries
         .filter(([file, type]) => type === vscode.FileType.File
             && file.startsWith(`${stem}.`) && file.endsWith('.tontoview')
             && file !== `${stem}.tontoview`)
-        .map(([file]) => {
+        .map(([file]) => file));
+    for (const [file, type] of legacyEntries) {
+        if (type === vscode.FileType.File && file.startsWith(`${stem}.`)
+            && file.endsWith('.tontoview') && file !== `${stem}.tontoview`) {
+            filenames.add(file);
+        }
+    }
+    const named = [...filenames]
+        .map(file => {
             const name = file.slice(stem.length + 1, -'.tontoview'.length);
             return {
                 label: labelOfView(name),
-                description: file,
-                uri: modelUri.with({ path: `${modelUri.path.slice(0, slash + 1)}${file}` })
+                description: `views/${file}`,
+                uri: viewUriFor(modelUri, name)
             };
         })
         .sort((left, right) => left.label.localeCompare(right.label));
     return [{
         label: 'Default view',
-        description: `${stem}.tontoview`,
+        description: `views/${stem}.tontoview`,
         uri: viewUriFor(modelUri)
     }, ...named];
+}
+
+async function writeViewFile(uri: vscode.Uri, bytes: Uint8Array): Promise<void> {
+    const slash = uri.path.lastIndexOf('/');
+    await vscode.workspace.fs.createDirectory(uri.with({ path: uri.path.slice(0, slash || 1) }));
+    await vscode.workspace.fs.writeFile(uri, bytes);
 }
 
 export async function viewFileExists(uri: vscode.Uri): Promise<boolean> {
@@ -283,7 +344,19 @@ export async function viewFileExists(uri: vscode.Uri): Promise<boolean> {
         await vscode.workspace.fs.stat(uri);
         return true;
     } catch {
-        return false;
+        const marker = '/views/';
+        const at = uri.path.lastIndexOf(marker);
+        if (at < 0) {
+            return false;
+        }
+        try {
+            await vscode.workspace.fs.stat(uri.with({
+                path: `${uri.path.slice(0, at)}/${uri.path.slice(at + marker.length)}`
+            }));
+            return true;
+        } catch {
+            return false;
+        }
     }
 }
 

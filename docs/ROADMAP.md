@@ -10,7 +10,7 @@ views, navigation and review before it considers drawing-to-edit operations.
 |---|---|---|---|
 | 1 | Named diagram views | A large model needs several intentional diagrams, each with its own content, arrangement and notation choices. | In progress |
 | 2 | Focus and search | A modeller must be able to find one declaration and see only its immediate semantic neighbourhood. | Planned |
-| 3 | Layout constraints | Pinning, alignment, distribution and bounded taxonomy rows let automatic layout assist rather than replace a hand arrangement. | Planned |
+| 3 | [Layout constraints](AUTOLAYOUT.md) | Pinning, alignment, distribution and bounded taxonomy rows let automatic layout assist rather than replace a hand arrangement. | In progress |
 | 4 | Diagnostics overlay | Errors and warnings belong on the affected card or relation, with a direct route back to the declaration. | Planned |
 | 5 | Semantic revision diff | Ontology review should show added, removed and changed declarations against a Git revision without throwing away the familiar arrangement. | Planned |
 | 6 | Diagram navigation | A minimap, back/forward history and breadcrumbs keep very large drawings navigable. | Planned |
@@ -24,28 +24,31 @@ model authoritative.
 
 ## 1. Named diagram views
 
-One model may have a default view and any number of named views beside it:
+One model may have a default view and any number of named views under `views`:
 
 ```text
 employment.tonto
-employment.tontoview
-employment.core-taxonomy.tontoview
-employment-relations.tontoview       # not a view of employment.tonto
+views/
+    employment.tontoview
+    employment.core-taxonomy.tontoview
+    employment-relations.tontoview   # not a view of employment.tonto
 ```
 
 The association is intentionally lexical and local. A named view of
-`employment.tonto` is `employment.<name>.tontoview` in the same directory. The
-view continues to contain only content choices, positions, routes and display
-options; the filename identifies its model, so version 1 of the file format does
-not need another path that can go stale when a repository moves.
+`employment.tonto` is `views/employment.<name>.tontoview`. The view continues to
+contain only content choices, positions, routes and display options; the
+filename identifies its model, so version 1 of the file format does not need
+another path that can go stale when a repository moves. The folder and default
+view are created lazily, only after the modeller changes the automatic result.
 
 ### Delivery slices
 
-- [x] Discover the default and named sibling views.
+- [x] Discover the default and named views belonging to a model.
 - [x] Save the current diagram as a named view.
 - [x] Switch among views without reopening the model.
 - [x] Show the active view in the panel and canvas titles.
 - [x] Cover filename normalization, discovery and copied state with tests.
+- [x] Keep views under `views/` and create no file for an untouched automatic layout.
 - [ ] Put the view switcher in the panel toolbar as well as the command palette.
 - [ ] Create an empty named view as an alternative to copying the current one.
 - [ ] Rename and delete named views with explicit, recoverable file operations.
