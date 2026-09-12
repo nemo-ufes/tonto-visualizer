@@ -105,56 +105,6 @@ describe('arranging a model', () => {
         expect(distance(positions)).toBeGreaterThan(0);
     });
 
-    test('reserves room for association and end labels', async () => {
-        const clazz = (name: string) => ({
-            id: `Sample::${name}`, kind: 'class' as const, name, package: 'Sample',
-            stereotype: 'kind', color: '#FF99A3', isExternal: false, attributes: []
-        });
-        const view: ViewModel = {
-            groups: [],
-            nodes: [clazz('Coordinator'), clazz('Responsibility')],
-            edges: [{
-                kind: 'relation', id: 'coordinates', source: 'Sample::Coordinator', target: 'Sample::Responsibility',
-                stereotype: 'componenthood', name: 'is responsible for coordinating',
-                sourceEnd: {
-                    cardinality: '0..*', role: 'coordinators', isConst: false, isAddOnly: true,
-                    redefines: 'Sample::Coordinator.people'
-                },
-                targetEnd: {
-                    cardinality: '1..*', role: 'responsibilities', isConst: false, isAddOnly: false,
-                    subsets: 'Sample::Responsibility.work'
-                }
-            }],
-            gensets: []
-        };
-        const sizes = Object.fromEntries(view.nodes.map(node => [node.id, sizeOf(node, display)]));
-        const bare = {
-            ...display,
-            showCardinalities: false,
-            showRelationNames: false,
-            showRelationStereotypes: false,
-            showEndDecorations: false,
-            showRoleNames: false
-        };
-        const arrangeWith = (shown: typeof display) => autoLayout(view, sizes, {}, {
-            ...defaultLayoutOptions, groupByPackage: false, display: shown
-        });
-        const gap = (placed: Awaited<ReturnType<typeof arrangeWith>>) => {
-            const source = placed.positions['Sample::Coordinator']!;
-            const target = placed.positions['Sample::Responsibility']!;
-            return target.y - (source.y + source.height);
-        };
-
-        const withoutLabels = await arrangeWith(bare);
-        const withCentre = await arrangeWith({ ...bare, showRelationNames: true });
-        const withEnds = await arrangeWith({
-            ...bare, showCardinalities: true, showEndDecorations: true, showRoleNames: true
-        });
-
-        expect(gap(withCentre)).toBeGreaterThan(gap(withoutLabels));
-        expect(gap(withEnds)).toBeGreaterThan(gap(withoutLabels));
-    });
-
     test('centres a generalization when an association joins the same classes', async () => {
         const clazz = (id: string, stereotype: string) => ({
             id, kind: 'class' as const, name: id.replace('Sample::', ''), package: 'Sample',

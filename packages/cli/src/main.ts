@@ -108,7 +108,6 @@ export async function run(argv: string[]): Promise<number> {
         ...defaultLayoutOptions,
         direction,
         routing,
-        display,
         groupByPackage
     });
     const drawn = render({
