@@ -26,6 +26,7 @@ export interface FontMetrics {
     stretch: 'normal' | 'condensed';
     cardMinWidth: number;
     cardPadding: number;
+    attributeWrapWidth: number;
     scale: number;
     name: number;
     stereotype: number;
@@ -77,8 +78,9 @@ export function fontMetrics(options: Pick<DisplayOptions, 'fontFamily' | 'fontSi
         family: FONT_FAMILIES[options.fontFamily],
         kind: options.fontFamily,
         stretch: options.fontFamily === 'condensed' ? 'condensed' : 'normal',
-        cardMinWidth: options.fontFamily === 'condensed' ? 96 : 108,
+        cardMinWidth: options.fontFamily === 'condensed' ? 72 : 108,
         cardPadding: options.fontFamily === 'condensed' ? 6 : 8,
+        attributeWrapWidth: options.fontFamily === 'condensed' ? 132 : Number.POSITIVE_INFINITY,
         scale,
         name: scaled(BASE_FONT.name),
         stereotype: scaled(BASE_FONT.stereotype),
@@ -179,6 +181,48 @@ export function attributeLines(node: ViewNode, options: DisplayOptions): string[
     });
 }
 
+/** Attribute rows after wrapping at the spaces already present in Tonto. */
+export function wrappedAttributeLines(
+    node: ViewNode,
+    options: DisplayOptions,
+    maxWidth = fontMetrics(options).attributeWrapWidth
+): string[] {
+    const font = fontMetrics(options);
+    return attributeLines(node, options).flatMap(line => {
+        const words = line.split(' ');
+        const rows: string[] = [];
+        let row = '';
+        for (const word of words) {
+            const candidate = row ? `${row} ${word}` : word;
+            if (row && textWidth(candidate, font.attribute, false, font.kind) > maxWidth + 1) {
+                rows.push(row);
+                row = word;
+            } else {
+                row = candidate;
+            }
+        }
+        if (row) {
+            rows.push(row);
+        }
+        // A lone cardinality is visually detached from the type it qualifies.
+        // Pull the preceding word onto that last row when it still fits, which
+        // also gives other short final fragments a more balanced break.
+        const last = rows.at(-1);
+        const previous = rows.at(-2);
+        if (rows.length > 1 && last && previous && !last.includes(' ')) {
+            const previousWords = previous.split(' ');
+            const moved = previousWords.at(-1)!;
+            const balancedLast = `${moved} ${last}`;
+            if (previousWords.length > 1
+                && textWidth(balancedLast, font.attribute, false, font.kind) <= maxWidth + 1) {
+                rows[rows.length - 2] = previousWords.slice(0, -1).join(' ');
+                rows[rows.length - 1] = balancedLast;
+            }
+        }
+        return rows;
+    });
+}
+
 /** The `«kind»` line, when there is one to draw. */
 export function stereotypeLabel(node: ViewNode): string | undefined {
     if (node.kind === 'unresolved') {
@@ -196,7 +240,7 @@ export function sizeOf(node: ViewNode, options: DisplayOptions): Size {
     const font = fontMetrics(options);
     const label = nodeLabel(node, options);
     const stereotype = stereotypeLabel(node);
-    const lines = attributeLines(node, options);
+    const lines = wrappedAttributeLines(node, options, font.attributeWrapWidth);
     const width = Math.max(
         font.cardMinWidth,
         textWidth(label, font.name, true, font.kind) + font.cardPadding * 2,
