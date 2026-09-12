@@ -97,3 +97,6 @@ authority for what those constraints mean.
 - Protected the direct corridor between a general and its specific from the
   association-only classes settled after taxonomy ranks. This keeps later
   semantic repair from turning a straight inheritance line into a detour.
+- Added a soft right-side preference for qualities and extrinsic modes beside
+  the bearer identified by their characterization. Taxonomy membership and
+  collision-free placement remain stronger constraints.

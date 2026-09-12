@@ -30,12 +30,15 @@
 
 import * as elkModule from 'elkjs/lib/elk.bundled.js';
 import type { LayoutOptions, ViewModel } from 'tonto-view';
-import { defaultLayoutOptions, inversePairs } from 'tonto-view';
+import { defaultDisplayOptions, defaultLayoutOptions, inversePairs } from 'tonto-view';
 import type { Point, Rect, Size } from './geometry.js';
-import { borderPoint, boundsOf, centerOf, overlaps, segmentHitsRect } from './geometry.js';
+import {
+    borderPoint, boundsOf, centerOf, overlaps, segmentHitsRect, segmentsProperlyCross
+} from './geometry.js';
 import type { Positions } from './place.js';
 import type { RoutingStyle } from './route.js';
 import { routeEdge } from './route.js';
+import { labelWidth } from './render.js';
 
 const GROUP_PADDING = 18;
 const GROUP_HEADER = 20;
@@ -43,6 +46,7 @@ const PARTIAL_GAP = 24;
 const PARTIAL_STEP = 40;
 const TARGET_ASPECT_RATIO = 1.6;
 const TAXONOMY_CORRIDOR = 12;
+const PREFERRED_SIDE_STEPS = 12;
 
 /**
  * ELK ships one bundle for CommonJS and for the browser, so the constructor
@@ -445,6 +449,30 @@ function settleRelators(
     }
 }
 
+interface Corridor {
+    from: Point;
+    to: Point;
+}
+
+/** The direct inheritance lanes established by semantic re-ranking. */
+function taxonomyCorridors(
+    view: ViewModel,
+    positions: Positions,
+    ranked: ReadonlySet<string>
+): Corridor[] {
+    return view.edges.flatMap(edge => {
+        if (edge.kind !== 'generalization' || !ranked.has(edge.source) || !ranked.has(edge.target)) {
+            return [];
+        }
+        const source = positions[edge.source];
+        const target = positions[edge.target];
+        return source && target ? [{
+            from: borderPoint(source, centerOf(target)),
+            to: borderPoint(target, centerOf(source))
+        }] : [];
+    });
+}
+
 /**
  * Moves a class with no supertype and no subtype -- alone, or together with
  * whichever others like it it associates with -- towards the middle of
@@ -487,17 +515,7 @@ function settleOrphans(
     // and its specific forces the router to draw inheritance around a class it
     // has nothing to do with. Keep a modest lane around the direct border-to-
     // border path while the orphan components search for their nearest place.
-    const taxonomyCorridors = view.edges.flatMap(edge => {
-        if (edge.kind !== 'generalization' || !ranked.has(edge.source) || !ranked.has(edge.target)) {
-            return [];
-        }
-        const source = positions[edge.source];
-        const target = positions[edge.target];
-        return source && target ? [{
-            from: borderPoint(source, centerOf(target)),
-            to: borderPoint(target, centerOf(source))
-        }] : [];
-    });
+    const corridors = taxonomyCorridors(view, positions, ranked);
 
     const neighboursOf = new Map<string, Set<string>>();
     for (const edge of view.edges) {
@@ -566,7 +584,7 @@ function settleOrphans(
             const rect = positions[id]!;
             const moved = { ...rect, x: Math.round(rect.x + dx), y: Math.round(rect.y + dy) };
             return !others.some(one => overlaps(moved, one, 24))
-                && !taxonomyCorridors.some(corridor =>
+                && !corridors.some(corridor =>
                     segmentHitsRect(corridor.from, corridor.to, moved, TAXONOMY_CORRIDOR));
         });
 
@@ -596,6 +614,129 @@ function settleOrphans(
                 x: Math.round(rect.x + translation.x),
                 y: Math.round(rect.y + translation.y)
             };
+        }
+    }
+}
+
+/**
+ * Places dependent aspects where their characterization is normally read.
+ *
+ * A quality or extrinsic mode is visually subordinate to its bearer, but ELK
+ * sees characterization as just another directed edge and often puts the
+ * aspect above or to the left as though it were a supertype. The language has
+ * already identified the classifier and the characterization's ends, so use
+ * those facts as a soft right-side preference. A classified aspect that is
+ * itself in a taxonomy stays with that taxonomy; its rank is stronger than the
+ * preference, and the eventual cross-axis optimizer can weigh both together.
+ */
+function orientCharacterizedAspects(
+    view: ViewModel,
+    positions: Positions,
+    subject: ReadonlySet<string>,
+    ranked: ReadonlySet<string>,
+    settings: LayoutOptions
+): void {
+    const nodes = new Map(view.nodes.map(node => [node.id, node]));
+    const prefersRight = (id: string): boolean => {
+        const node = nodes.get(id);
+        return node?.stereotype === 'extrinsicMode' || node?.stereotype === 'quality';
+    };
+    const bearers = new Map<string, Set<string>>();
+    for (const edge of view.edges) {
+        if (edge.kind !== 'relation' || edge.stereotype !== 'characterization'
+            || !subject.has(edge.source) || !subject.has(edge.target) || !prefersRight(edge.source)) {
+            continue;
+        }
+        bearers.set(edge.source, new Set([...(bearers.get(edge.source) ?? []), edge.target]));
+    }
+
+    const corridors = taxonomyCorridors(view, positions, ranked);
+    for (const [aspect, bearerIds] of [...bearers].sort(([one], [other]) => one.localeCompare(other))) {
+        // Moving a member independently would undo the taxonomy's cross-axis
+        // ordering even when it happens not to alter the formal rank.
+        if (ranked.has(aspect)) {
+            continue;
+        }
+        const rect = positions[aspect];
+        const bearerRects = [...bearerIds]
+            .map(id => positions[id])
+            .filter((one): one is Rect => one !== undefined);
+        if (!rect || bearerRects.length === 0) {
+            continue;
+        }
+        const direct = view.edges.filter(edge => edge.kind === 'relation'
+            && ((edge.source === aspect && bearerIds.has(edge.target))
+                || (edge.target === aspect && bearerIds.has(edge.source))));
+        // This is a targeted reservation along one association corridor, not
+        // the synthetic label nodes ELK previously turned into extra ranks.
+        // The latter was rolled back; here a long stereotype merely increases
+        // the preferred horizontal gap between the pair that carries it.
+        const labelGap = Math.max(0, ...direct.map(edge => labelWidth(edge, defaultDisplayOptions) + 36));
+        const gap = Math.max(settings.nodeSpacing, 40, Math.round(labelGap));
+        const desiredX = Math.max(...bearerRects.map(one => one.x + one.width)) + gap;
+        if (rect.x >= desiredX) {
+            continue;
+        }
+        const desiredY = Math.round(bearerRects.reduce(
+            (sum, one) => sum + one.y + one.height / 2, 0) / bearerRects.length - rect.height / 2);
+        const obstacles = Object.entries(positions)
+            .filter(([id]) => id !== aspect)
+            .map(([, one]) => one);
+        const incident = view.edges.filter(edge => edge.source === aspect || edge.target === aspect);
+        const crossingsAt = (candidate: Rect): number => {
+            const pointOf = (id: string): Point | undefined => id === aspect
+                ? centerOf(candidate)
+                : positions[id] ? centerOf(positions[id]!) : undefined;
+            let crossings = 0;
+            for (const edge of incident) {
+                const from = pointOf(edge.source);
+                const to = pointOf(edge.target);
+                if (!from || !to) {
+                    continue;
+                }
+                for (const other of view.edges) {
+                    if (other.id === edge.id || other.source === aspect || other.target === aspect
+                        || other.source === edge.source || other.source === edge.target
+                        || other.target === edge.source || other.target === edge.target) {
+                        continue;
+                    }
+                    const otherFrom = pointOf(other.source);
+                    const otherTo = pointOf(other.target);
+                    if (otherFrom && otherTo && segmentsProperlyCross(from, to, otherFrom, otherTo)) {
+                        crossings += 1;
+                    }
+                }
+            }
+            return crossings;
+        };
+        const previousCrossings = crossingsAt(rect);
+        const fits = (candidate: Rect): boolean => !obstacles.some(one => overlaps(candidate, one, PARTIAL_GAP))
+            && !corridors.some(corridor =>
+                segmentHitsRect(corridor.from, corridor.to, candidate, TAXONOMY_CORRIDOR))
+            && crossingsAt(candidate) <= previousCrossings;
+
+        let chosen: Rect | undefined;
+        // Preserve the bearer's row before trying a nearer x with a large
+        // vertical displacement: "to the right" should read horizontally
+        // wherever the surrounding graph has a clear corridor for it.
+        for (let row = 0; row <= PREFERRED_SIDE_STEPS && !chosen; row += 1) {
+            const offsets = row === 0 ? [0] : [-row * PARTIAL_STEP, row * PARTIAL_STEP];
+            for (let column = 0; column <= PREFERRED_SIDE_STEPS; column += 1) {
+                const x = desiredX + column * PARTIAL_STEP;
+                for (const offset of offsets) {
+                    const candidate = { ...rect, x, y: desiredY + offset };
+                    if (fits(candidate)) {
+                        chosen = candidate;
+                        break;
+                    }
+                }
+                if (chosen) {
+                    break;
+                }
+            }
+        }
+        if (chosen) {
+            positions[aspect] = chosen;
         }
     }
 }
@@ -1128,8 +1269,10 @@ export async function autoLayout(
         if (ranked) {
             settleOrphans(view, positions, subject, ranked);
         }
+        orientCharacterizedAspects(view, positions, subject, ranked ?? new Set(), settings);
     } else {
         settleRelators(view, positions, subject);
+        orientCharacterizedAspects(view, positions, subject, new Set(), settings);
     }
     orientWholes(view, positions, subject, ranked, settings.direction);
     const packed = !request.only && !grouped

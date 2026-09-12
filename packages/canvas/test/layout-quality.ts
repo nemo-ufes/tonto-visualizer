@@ -1,6 +1,6 @@
 import type { ViewModel } from 'tonto-view';
 import type { Point, Rect } from '../src/geometry.js';
-import { boundsOf, segmentHitsRect } from '../src/geometry.js';
+import { boundsOf, segmentHitsRect, segmentsProperlyCross } from '../src/geometry.js';
 import { FONT, textWidth } from '../src/measure.js';
 import type { Rendered } from '../src/render.js';
 
@@ -17,17 +17,6 @@ export interface LayoutQuality {
 function pathLength(points: Point[]): number {
     return points.slice(1).reduce((sum, point, index) =>
         sum + Math.hypot(point.x - points[index]!.x, point.y - points[index]!.y), 0);
-}
-
-/** Proper crossings only: touching at a shared endpoint is not a crossing. */
-function crosses(a: Point, b: Point, c: Point, d: Point): boolean {
-    const side = (one: Point, two: Point, point: Point) =>
-        (two.x - one.x) * (point.y - one.y) - (two.y - one.y) * (point.x - one.x);
-    const abC = side(a, b, c);
-    const abD = side(a, b, d);
-    const cdA = side(c, d, a);
-    const cdB = side(c, d, b);
-    return abC * abD < 0 && cdA * cdB < 0;
 }
 
 function overlapArea(one: Rect, other: Rect): number {
@@ -84,7 +73,7 @@ export function measureLayout(
             const first = paths[one]![1];
             const second = paths[two]![1];
             if (first.slice(1).some((to, index) => second.slice(1).some((otherTo, otherIndex) =>
-                crosses(first[index]!, to, second[otherIndex]!, otherTo)))) {
+                segmentsProperlyCross(first[index]!, to, second[otherIndex]!, otherTo)))) {
                 edgeCrossings += 1;
             }
         }
