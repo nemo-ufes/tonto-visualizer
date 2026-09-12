@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import type { ViewModel } from 'tonto-view';
 import { defaultDisplayOptions, defaultLayoutOptions } from 'tonto-view';
-import { autoLayout } from '../src/autolayout.js';
+import { applyLayoutConstraints, autoLayout } from '../src/autolayout.js';
 import type { Point, Rect } from '../src/geometry.js';
 import { overlaps } from '../src/geometry.js';
 import { sizeOf } from '../src/measure.js';
@@ -618,12 +618,34 @@ describe('packages and the layout', () => {
         const laid = await autoLayout(view, sizes, current, {
             ...defaultLayoutOptions,
             groupByPackage: false,
-            constraints: { pinned: ['Sample::Root'] }
+            constraints: { pinned: ['Sample::Root'], alignments: [], distributions: [] }
         });
 
         expect(laid.positions['Sample::Root']).toEqual(current['Sample::Root']);
         expect(laid.positions['Sample::Sub0']).toBeDefined();
         expect(laid.positions['Sample::Sub1']).toBeDefined();
+    });
+
+    test('applies persistent alignment and distribution without moving a pin', () => {
+        const positions = {
+            A: { x: 0, y: 0, width: 100, height: 60 },
+            B: { x: 300, y: 100, width: 100, height: 60 },
+            C: { x: 700, y: 200, width: 100, height: 60 }
+        };
+        applyLayoutConstraints(positions, {
+            pinned: ['A'],
+            alignments: [{ axis: 'y', nodes: ['A', 'B', 'C'] }],
+            distributions: [{ axis: 'x', nodes: ['A', 'B', 'C'] }]
+        });
+
+        const centre = (id: keyof typeof positions) => ({
+            x: positions[id].x + positions[id].width / 2,
+            y: positions[id].y + positions[id].height / 2
+        });
+        expect(positions.A).toEqual({ x: 0, y: 0, width: 100, height: 60 });
+        expect(centre('B').y).toBe(centre('A').y);
+        expect(centre('C').y).toBe(centre('A').y);
+        expect(centre('B').x - centre('A').x).toBe(centre('C').x - centre('B').x);
     });
 
     test('returns orthogonal routes attached source to target after settling relators', async () => {

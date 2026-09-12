@@ -7,7 +7,7 @@
  */
 
 import * as vscode from 'vscode';
-import type { ContentOptions, DisplayOptions, ViewModel } from 'tonto-view';
+import type { ContentOptions, DisplayOptions, ViewConstraints, ViewModel } from 'tonto-view';
 import { contentAfter, derive, expandInverseIds, idsAtSource, packagesInScope, reconcile } from 'tonto-view';
 import { ViewSession } from 'tonto-view/session';
 import { autoLayout } from 'tonto-canvas';
@@ -724,6 +724,17 @@ export class DiagramPanel {
                     this.send();
                 }
                 return;
+            case 'constraint':
+                if (store) {
+                    const ids = [...new Set(message.ids.filter(id => this.positions[id] !== undefined))].sort();
+                    if (ids.length === 0) {
+                        return;
+                    }
+                    store.begin('Layout constraint');
+                    store.update({ constraints: constraintsAfter(store.state.constraints, message.action, ids) });
+                    this.send();
+                }
+                return;
             case 'undo':
                 await this.stepBack(true);
                 return;
@@ -877,6 +888,36 @@ export class DiagramPanel {
         }
         await store?.dispose();
     }
+}
+
+function constraintsAfter(
+    current: ViewConstraints,
+    action: Extract<FromPanel, { type: 'constraint' }>['action'],
+    ids: string[]
+): ViewConstraints {
+    const selected = new Set(ids);
+    const trim = <T extends { axis: 'x' | 'y'; nodes: string[] }>(groups: T[], minimum: number, axis?: 'x' | 'y') =>
+        groups.map(group => axis === undefined || group.axis === axis
+            ? { ...group, nodes: group.nodes.filter(id => !selected.has(id)) } : group)
+            .filter(group => group.nodes.length >= minimum);
+    if (action === 'clear') {
+        return {
+            pinned: current.pinned.filter(id => !selected.has(id)),
+            alignments: trim(current.alignments, 2),
+            distributions: trim(current.distributions, 3)
+        };
+    }
+    const axis = action.endsWith('-x') ? 'x' : 'y';
+    if (action.startsWith('align')) {
+        return {
+            ...current,
+            alignments: [...trim(current.alignments, 2, axis), { axis, nodes: ids }]
+        };
+    }
+    return {
+        ...current,
+        distributions: [...trim(current.distributions, 3, axis), { axis, nodes: ids }]
+    };
 }
 
 function updateMode(): string {

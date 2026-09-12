@@ -75,6 +75,11 @@ export type FromPanel =
     | { type: 'content'; content: Partial<ContentOptions> }
     | { type: 'autoLayout'; only?: string[] }
     | { type: 'pin'; ids: string[]; pinned: boolean }
+    | {
+        type: 'constraint';
+        action: 'align-x' | 'align-y' | 'distribute-x' | 'distribute-y' | 'clear';
+        ids: string[];
+    }
     | { type: 'hide'; ids: string[] }
     | { type: 'show'; ids: string[] }
     | { type: 'moveToNewWindow' }
