@@ -356,7 +356,7 @@ function applyViewport(): void {
 }
 
 function fit(): void {
-    const padding = 24;
+    const padding = 12;
     scale = clamp(Math.min(
         (viewport.clientWidth - padding) / bounds.width,
         (viewport.clientHeight - padding) / bounds.height
@@ -715,7 +715,10 @@ viewport.addEventListener('wheel', event => {
     // either, so it pans too, and zooms the way it always has -- with the
     // buttons, or Ctrl/⌘ held down.
     if (event.ctrlKey || event.metaKey) {
-        zoomAt(scale * (event.deltaY < 0 ? 1.12 : 1 / 1.12), event.clientX, event.clientY);
+        // A pinch fires many of these in a burst, and 1.12 compounded across a
+        // burst is most of the zoom range in the time it takes to notice the
+        // gesture registered at all.
+        zoomAt(scale * (event.deltaY < 0 ? 1.05 : 1 / 1.05), event.clientX, event.clientY);
         return;
     }
     panX -= event.deltaX;
