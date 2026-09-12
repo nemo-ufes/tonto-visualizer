@@ -829,7 +829,8 @@ function orientInstantiationTypes(
     view: ViewModel,
     positions: Positions,
     subject: ReadonlySet<string>,
-    settings: LayoutOptions
+    settings: LayoutOptions,
+    finalGeometry = false
 ): void {
     const instantiations = view.edges.filter(edge => isInstantiation(edge)
         && edge.source !== edge.target && subject.has(edge.source) && subject.has(edge.target)
@@ -888,12 +889,97 @@ function orientInstantiationTypes(
         const obstacles = Object.entries(positions)
             .filter(([id]) => !members.has(id))
             .map(([, rect]) => rect);
-        for (let step = 0; step <= PREFERRED_SIDE_STEPS; step += 1) {
-            const dx = Math.round(required - step * PARTIAL_STEP);
-            const moved = group.ids.map(id => ({ ...positions[id]!, x: positions[id]!.x + dx }));
-            if (moved.every(rect => !obstacles.some(obstacle => overlaps(rect, obstacle, 24)))) {
-                group.ids.forEach((id, index) => positions[id] = moved[index]!);
-                break;
+        if (!finalGeometry) {
+            for (let step = 0; step <= PREFERRED_SIDE_STEPS; step += 1) {
+                const dx = Math.round(required - step * PARTIAL_STEP);
+                const moved = group.ids.map(id => ({ ...positions[id]!, x: positions[id]!.x + dx }));
+                if (moved.every(rect => !obstacles.some(obstacle => overlaps(rect, obstacle, 24)))) {
+                    group.ids.forEach((id, index) => positions[id] = moved[index]!);
+                    break;
+                }
+            }
+            continue;
+        }
+        const ids = Object.keys(positions);
+        const all = new Set(ids);
+        const edgeIds = new Set(view.edges
+            .filter(edge => all.has(edge.source) && all.has(edge.target))
+            .map(edge => edge.id));
+        const beforeSafety = ids.length <= MAX_CROSS_AXIS_NODES
+            ? renderedSafety(view, positions, ids, edgeIds, settings.direction)
+            : undefined;
+        const beforeCost = semanticGeometryCost(view, positions, all, settings);
+        const beforeBounds = boundsOf(ids.map(id => positions[id]!));
+        const beforeFootprint = Math.max(beforeBounds.width / TARGET_ASPECT_RATIO, beforeBounds.height);
+        const aligned = Math.round(group.edges.reduce((sum, edge) =>
+            sum + centerOf(positions[edge.source]!).y - centerOf(positions[edge.target]!).y, 0)
+            / group.edges.length);
+        const verticalShifts = new Set([0, aligned]);
+        for (let step = 1; step <= 4; step += 1) {
+            verticalShifts.add(aligned - step * PARTIAL_STEP);
+            verticalShifts.add(aligned + step * PARTIAL_STEP);
+        }
+        const candidates: Array<{
+            positions: Positions;
+            safety?: RenderedSafety;
+            maximumLength: number;
+            totalLength: number;
+            cost: number;
+            footprint: number;
+        }> = [];
+        for (const dy of verticalShifts) {
+            for (let step = 0; step <= PREFERRED_SIDE_STEPS; step += 1) {
+                const dx = Math.round(required - step * PARTIAL_STEP);
+                const moved = group.ids.map(id => ({
+                    ...positions[id]!, x: positions[id]!.x + dx, y: positions[id]!.y + dy
+                }));
+                if (moved.some(rect => obstacles.some(obstacle => overlaps(rect, obstacle, 24)))) {
+                    continue;
+                }
+                const proposal = { ...positions };
+                group.ids.forEach((id, index) => proposal[id] = moved[index]!);
+                const safety = beforeSafety
+                    ? renderedSafety(view, proposal, ids, edgeIds, settings.direction)
+                    : undefined;
+                if (safety && beforeSafety && (safety.intersections > beforeSafety.intersections
+                    || safety.crossings > beforeSafety.crossings
+                    || safety.labelOcclusions > beforeSafety.labelOcclusions + 1)) {
+                    continue;
+                }
+                const cost = semanticGeometryCost(view, proposal, all, settings);
+                const bounds = boundsOf(ids.map(id => proposal[id]!));
+                const footprint = Math.max(bounds.width / TARGET_ASPECT_RATIO, bounds.height);
+                if (cost < beforeCost || footprint < beforeFootprint) {
+                    const lengths = view.edges.flatMap(edge => {
+                        const source = proposal[edge.source];
+                        const target = proposal[edge.target];
+                        return source && target ? [Math.hypot(
+                            centerOf(source).x - centerOf(target).x,
+                            centerOf(source).y - centerOf(target).y
+                        )] : [];
+                    });
+                    candidates.push({
+                        positions: proposal,
+                        safety,
+                        maximumLength: Math.max(0, ...lengths),
+                        totalLength: lengths.reduce((sum, length) => sum + length, 0),
+                        cost,
+                        footprint
+                    });
+                }
+            }
+        }
+        const best = candidates.sort((one, other) =>
+            (one.safety?.intersections ?? 0) - (other.safety?.intersections ?? 0)
+            || (one.safety?.crossings ?? 0) - (other.safety?.crossings ?? 0)
+            || (one.safety?.labelOcclusions ?? 0) - (other.safety?.labelOcclusions ?? 0)
+            || one.maximumLength - other.maximumLength
+            || one.totalLength - other.totalLength
+            || one.cost - other.cost
+            || one.footprint - other.footprint)[0];
+        if (best) {
+            for (const id of group.ids) {
+                positions[id] = best.positions[id]!;
             }
         }
     }
@@ -2461,6 +2547,12 @@ export async function autoLayout(
         : false;
     if (!request.only && !grouped) {
         placeAppendixAfter(positions, appendixIds, subject, settings);
+    }
+    // Compaction is allowed to shorten ordinary links, but it must not silently
+    // undo the reading order of an instantiation. Apply that soft preference to
+    // the final compact geometry, with one safety decision per type family.
+    if (!grouped) {
+        orientInstantiationTypes(view, positions, subject, settings, true);
     }
     if (request.only || pinned.size > 0) {
         placePartialLayout(view, positions, current, subject);

@@ -132,7 +132,9 @@ authority for what those constraints mean.
 - Added a soft left-side preference for higher-order types connected by either
   an `@instantiation` relation or an `instanceOf` declaration. A type taxonomy
   moves as one rigid family, and the preference yields to collision, explicit
-  package containers and final crossing checks.
+  package containers and final crossing checks. The preference runs after
+  cross-axis compaction and each higher-order family has its own safety decision,
+  so a bad route in one family cannot roll back a valid placement in another.
 - Used the modeller's saved `error.tontoview` arrangement as a qualitative
   target. A whole with several leaf parts is now placed as a compact fan instead
   of applying the pairwise whole-before-part rule repeatedly and producing a
