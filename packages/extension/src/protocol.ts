@@ -37,7 +37,6 @@ export type ToPanel =
         layout: LayoutOptions;
         packages: string[];
         filters: FilterItem[];
-        title: string;
         /** Centre and scale this newly opened view once; later redraws preserve the viewport. */
         fit?: boolean;
         /** Set when the model does not parse and the picture is the last good one. */

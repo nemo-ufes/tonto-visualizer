@@ -32,7 +32,6 @@ const scaleLabel = element('scale');
 const optionsPanel = element('options');
 const legendPanel = element('legend');
 const staleLabel = element('stale');
-const titleLabel = element('title');
 
 let view: ViewModel = { groups: [], nodes: [], edges: [], gensets: [] };
 let positions: Record<string, Rect> = {};
@@ -90,7 +89,6 @@ window.addEventListener('message', event => {
         layout = message.layout;
         packages = message.packages;
         filters = message.filters;
-        titleLabel.textContent = message.title;
         staleLabel.hidden = !message.stale;
         staleLabel.textContent = message.stale ? `does not parse — showing the last good diagram` : '';
         draw();
