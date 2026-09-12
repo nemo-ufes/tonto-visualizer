@@ -21,7 +21,7 @@ import type { FilterItem } from '../protocol.js';
 
 interface HostApi {
     postMessage(message: unknown): void;
-    getState(): { scale?: number; x?: number; y?: number } | undefined;
+    getState(): { scale?: number; x?: number; y?: number; fit?: boolean } | undefined;
     setState(state: unknown): void;
 }
 
@@ -52,6 +52,7 @@ const stored = host.getState() ?? {};
 let scale = stored.scale ?? 1;
 let panX = stored.x ?? 0;
 let panY = stored.y ?? 0;
+let fitMode = stored.fit ?? false;
 let bounds: Rect = { x: 0, y: 0, width: 1, height: 1 };
 /** Set while a drag is in flight, so a redraw does not yank the boxes back. */
 let dragging: DragState | undefined;
@@ -95,10 +96,11 @@ window.addEventListener('message', event => {
         filters = message.filters;
         staleLabel.hidden = !message.stale;
         staleLabel.textContent = message.stale ? `does not parse — showing the last good diagram` : '';
-        draw();
         if (message.fit) {
-            fit();
+            fitMode = true;
         }
+        updateFitToggle();
+        draw();
         if (selectionChanged) {
             reportSelection();
         } else {
@@ -177,7 +179,11 @@ function draw(): void {
     paths = drawn.paths;
     canvas.innerHTML = drawn.svg;
     drawHandles();
-    applyViewport();
+    if (fitMode) {
+        fitViewport();
+    } else {
+        applyViewport();
+    }
 }
 
 /**
@@ -360,11 +366,11 @@ function repaint(edge: string, points: Point[]): void {
 function applyViewport(): void {
     canvas.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
     scaleLabel.textContent = `${Math.round(scale * 100)}%`;
-    host.setState({ scale, x: panX, y: panY });
+    host.setState({ scale, x: panX, y: panY, fit: fitMode });
     drawHandles();
 }
 
-function fit(): void {
+function fitViewport(): void {
     const padding = 12;
     scale = clamp(Math.min(
         (viewport.clientWidth - padding) / bounds.width,
@@ -375,7 +381,29 @@ function fit(): void {
     applyViewport();
 }
 
+function updateFitToggle(): void {
+    const button = element('fit');
+    button.setAttribute('aria-pressed', String(fitMode));
+    button.title = fitMode ? 'Stop fitting to view' : 'Fit to view';
+}
+
+function setFitMode(active: boolean): void {
+    fitMode = active;
+    updateFitToggle();
+    if (active) {
+        fitViewport();
+    } else {
+        applyViewport();
+    }
+}
+
+function fit(): void {
+    setFitMode(true);
+}
+
 function zoomAt(next: number, clientX: number, clientY: number): void {
+    fitMode = false;
+    updateFitToggle();
     const rect = viewport.getBoundingClientRect();
     const x = clientX - rect.left;
     const y = clientY - rect.top;
@@ -512,6 +540,10 @@ viewport.addEventListener('pointermove', event => {
     }
 
     if (dragging.ids.length === 0) {
+        if (fitMode) {
+            fitMode = false;
+            updateFitToggle();
+        }
         panX += event.clientX - dragging.startX;
         panY += event.clientY - dragging.startY;
         dragging.startX = event.clientX;
@@ -732,6 +764,8 @@ viewport.addEventListener('wheel', event => {
     }
     panX -= event.deltaX;
     panY -= event.deltaY;
+    fitMode = false;
+    updateFitToggle();
     applyViewport();
 }, { passive: false });
 
@@ -800,8 +834,11 @@ function updateArrangeTitle(): void {
 
 element('zoomIn').addEventListener('click', () => zoomAt(scale * 1.2, centreX(), centreY()));
 element('zoomOut').addEventListener('click', () => zoomAt(scale / 1.2, centreX(), centreY()));
-element('fit').addEventListener('click', fit);
-element('newWindow').addEventListener('click', () => host.postMessage({ type: 'moveToNewWindow' }));
+element('fit').addEventListener('click', () => setFitMode(!fitMode));
+element('newWindow').addEventListener('click', () => {
+    setFitMode(true);
+    host.postMessage({ type: 'moveToNewWindow' });
+});
 element('arrange').addEventListener('click', () => {
     const selectedNodes = [...selection].filter(id => positions[id] !== undefined);
     host.postMessage(selectedNodes.length > 0
@@ -828,6 +865,17 @@ window.addEventListener('pointerdown', event => {
         optionsPanel.hidden = true;
     }
 }, true);
+
+const followViewportSize = () => {
+    if (fitMode) {
+        fitViewport();
+    }
+};
+window.addEventListener('resize', followViewportSize);
+if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(followViewportSize).observe(viewport);
+}
+updateFitToggle();
 
 /** The options panel is rebuilt from the state the host holds, never from itself. */
 function fillOptions(): void {

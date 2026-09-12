@@ -116,8 +116,8 @@ describe('the webview and its host protocol', () => {
     beforeAll(async () => {
         document.body.innerHTML = panelHtml();
         const viewport = document.getElementById('viewport')!;
-        Object.defineProperty(viewport, 'clientWidth', { value: 900 });
-        Object.defineProperty(viewport, 'clientHeight', { value: 700 });
+        Object.defineProperty(viewport, 'clientWidth', { value: 900, configurable: true });
+        Object.defineProperty(viewport, 'clientHeight', { value: 700, configurable: true });
         Object.assign(viewport, { setPointerCapture: () => undefined });
         vi.stubGlobal('acquireVsCodeApi', () => ({
             postMessage: (message: unknown) => messages.push(message),
@@ -174,18 +174,40 @@ describe('the webview and its host protocol', () => {
     test('fits a newly opened view once and preserves later viewport changes', () => {
         sendModel([], undefined, true);
         expect(document.getElementById('scale')!.textContent).toBe('200%');
+        expect(document.getElementById('fit')!.getAttribute('aria-pressed')).toBe('true');
 
         document.getElementById('zoomOut')!.click();
         const changed = document.getElementById('scale')!.textContent;
+        expect(document.getElementById('fit')!.getAttribute('aria-pressed')).toBe('false');
         sendModel();
 
         expect(changed).not.toBe('200%');
         expect(document.getElementById('scale')!.textContent).toBe(changed);
     });
 
+    test('keeps fitting while the viewport changes size', () => {
+        sendModel([], undefined, true);
+        const before = document.getElementById('scale')!.textContent;
+        const viewport = document.getElementById('viewport')!;
+        Object.defineProperty(viewport, 'clientWidth', { value: 300, configurable: true });
+        Object.defineProperty(viewport, 'clientHeight', { value: 180, configurable: true });
+
+        window.dispatchEvent(new Event('resize'));
+
+        expect(document.getElementById('fit')!.getAttribute('aria-pressed')).toBe('true');
+        expect(document.getElementById('scale')!.textContent).not.toBe(before);
+        Object.defineProperty(viewport, 'clientWidth', { value: 900, configurable: true });
+        Object.defineProperty(viewport, 'clientHeight', { value: 700, configurable: true });
+        window.dispatchEvent(new Event('resize'));
+    });
+
     test('asks the host to move the diagram into a new window', () => {
+        if (document.getElementById('fit')!.getAttribute('aria-pressed') === 'true') {
+            document.getElementById('fit')!.click();
+        }
         document.getElementById('newWindow')!.click();
         expect(posted('moveToNewWindow').at(-1)).toEqual({ type: 'moveToNewWindow' });
+        expect(document.getElementById('fit')!.getAttribute('aria-pressed')).toBe('true');
     });
 
     test('sends class and association filter changes to the host', () => {

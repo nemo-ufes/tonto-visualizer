@@ -87,6 +87,7 @@ describe('the panel chrome', () => {
             .map(match => match[1]);
         expect(controls.slice(0, 3)).toEqual(['fit', 'arrange', 'newWindow']);
         expect(controls).not.toContain('title');
+        expect(toolbar![1]).toContain('id="fit" title="Fit to view" aria-pressed="false"');
     });
 
     test('falls back to the font the diagram is drawn in', () => {
