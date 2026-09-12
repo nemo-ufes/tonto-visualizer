@@ -41,8 +41,9 @@ Working end to end, and rough in places.
   opened file's packages or the whole workspace, package, class and association
   filters, display options, nature legend, SVG export, and default or named
   `.tontoview` files under the model's `views` folder holding separate
-  arrangements. Portable typeface and text-size presets keep card measurement
-  consistent across machines. A persisted **Taxonomy only** setting hides
+  arrangements. Typeface presets range from condensed and humanist sans-serif
+  to book serif and monospace, apply to all diagram text, and share their
+  measurements with exported SVG. A persisted **Taxonomy only** setting hides
   attributes and
   associations and arranges from inheritance alone. Pins, centre alignment,
   equal distribution and a maximum taxonomy-rank span are also persisted and

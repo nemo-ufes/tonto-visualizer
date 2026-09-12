@@ -150,7 +150,9 @@ function readDisplayOptions(value: unknown): DisplayOptions {
         taxonomyOnly: booleanOr(source.taxonomyOnly, defaultDisplayOptions.taxonomyOnly),
         routing: oneOf(source.routing, ['straight', 'orthogonal'])
             ? source.routing : defaultDisplayOptions.routing,
-        fontFamily: oneOf(source.fontFamily, ['sans', 'serif', 'monospace'])
+        fontFamily: oneOf(source.fontFamily, [
+            'sans', 'condensed', 'humanist', 'geometric', 'serif', 'book', 'monospace'
+        ])
             ? source.fontFamily : defaultDisplayOptions.fontFamily,
         fontSize: oneOf(source.fontSize, ['small', 'medium', 'large'])
             ? source.fontSize : defaultDisplayOptions.fontSize,

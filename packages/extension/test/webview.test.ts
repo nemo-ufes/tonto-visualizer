@@ -145,10 +145,13 @@ describe('the webview and its host protocol', () => {
         openOptions();
 
         const typeface = chooser('Typeface');
-        typeface.value = 'monospace';
+        expect([...typeface.options].map(option => option.value)).toEqual([
+            'sans', 'condensed', 'humanist', 'geometric', 'serif', 'book', 'monospace'
+        ]);
+        typeface.value = 'condensed';
         typeface.dispatchEvent(new Event('change', { bubbles: true }));
         expect(posted('display').at(-1)).toEqual({
-            type: 'display', display: { fontFamily: 'monospace' }
+            type: 'display', display: { fontFamily: 'condensed' }
         });
 
         const size = chooser('Text size');

@@ -192,6 +192,28 @@ describe('drawing', () => {
         expect(svg).toContain('font-size: 12.65px');
     });
 
+    test('offers a condensed font that reduces every measured text role', () => {
+        const person = { ...model().nodes[0]!, name: 'CharacterizationRelationship' };
+        const regular = { ...display, fontFamily: 'sans' as const };
+        const condensed = { ...display, fontFamily: 'condensed' as const };
+        const regularSize = sizeOf(person, regular);
+        const condensedSize = sizeOf(person, condensed);
+        const svg = render({
+            view: model(),
+            positions: placeNewNodes(model(), Object.fromEntries(
+                model().nodes.map(node => [node.id, sizeOf(node, condensed)])
+            ), {}),
+            display: condensed
+        }).svg;
+
+        expect(condensedSize.width).toBeLessThan(regularSize.width);
+        expect(sizeOf(model().nodes[1]!, condensed).width).toBe(96);
+        expect(textWidth('«characterization»', FONT.edge, false, 'condensed'))
+            .toBeLessThan(textWidth('«characterization»', FONT.edge, false, 'sans'));
+        expect(svg).toContain('font-stretch: condensed');
+        expect(svg).toContain('"Avenir Next Condensed", "Arial Narrow"');
+    });
+
     test('leaves placed elements where they are and finds room for the rest', () => {
         const view = model();
         const sizes = Object.fromEntries(view.nodes.map(node => [node.id, sizeOf(node, display)]));

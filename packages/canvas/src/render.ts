@@ -369,6 +369,7 @@ export function render(input: RenderInput): Rendered {
    Stated once at the top, no layer can lose it again. */
 text {
     font-family: ${font.family};
+    font-stretch: ${font.stretch};
     font-size: ${font.edge}px;
     fill: ${theme.text};
     font-variant-numeric: tabular-nums;
@@ -584,7 +585,7 @@ export function drawNode(
         let lineY = y + NODE.headerGap;
         for (const line of lines) {
             lineY += font.attribute;
-            compartment += `<text class="tv-attribute" x="${rect.x + NODE.padding}" y="${lineY}">${escape(line)}</text>`;
+            compartment += `<text class="tv-attribute" x="${rect.x + font.cardPadding}" y="${lineY}">${escape(line)}</text>`;
             lineY += NODE.lineHeight * font.scale - font.attribute;
         }
     }
