@@ -2172,6 +2172,15 @@ export async function autoLayout(
     }
 
     const sizeOf = (id: string): Size => sizes[id] ?? { width: 160, height: 60 };
+    // Card widths below the historical 120px baseline are a drawing
+    // improvement, not a reason for ELK to choose a different discrete rank
+    // order. Plan in the proven envelope, then tighten each box around its
+    // measured content after semantic placement. Centres and topology stay
+    // stable while the visible card loses its unused side padding.
+    const layoutSizeOf = (id: string): Size => {
+        const size = sizeOf(id);
+        return { ...size, width: Math.max(size.width, 120) };
+    };
 
     const populatedGroups = view.groups.filter(group => group.nodes.some(id => subject.has(id)));
     // A compound node earns its cost only when there is another package to
@@ -2223,10 +2232,10 @@ export async function autoLayout(
                 },
                 children: group.nodes
                     .filter(id => subject.has(id))
-                    .map(id => ({ id, ...sizeOf(id), ...appendix(id) }))
+                    .map(id => ({ id, ...layoutSizeOf(id), ...appendix(id) }))
             }))
             .filter(group => (group.children?.length ?? 0) > 0)
-        : nodes.map(node => ({ id: node.id, ...sizeOf(node.id), ...appendix(node.id) }));
+        : nodes.map(node => ({ id: node.id, ...layoutSizeOf(node.id), ...appendix(node.id) }));
 
     const attempt = async (turnedMediations: Set<string>): Promise<{ positions: Positions; routes: Record<string, Point[]> }> => {
     const graph: ElkNode = {
@@ -2333,6 +2342,21 @@ export async function autoLayout(
         });
     }
 
+    const tightened = new Set<string>();
+    for (const id of subject) {
+        const rect = positions[id];
+        const measured = sizeOf(id);
+        if (!rect || rect.width <= measured.width) {
+            continue;
+        }
+        positions[id] = {
+            ...rect,
+            x: Math.round(rect.x + (rect.width - measured.width) / 2),
+            width: measured.width
+        };
+        tightened.add(id);
+    }
+
     const routes: Record<string, Point[]> = {};
     if (routing === 'orthogonal') {
         const edgeById = new Map(view.edges.map(edge => [edge.id, edge]));
@@ -2382,6 +2406,7 @@ export async function autoLayout(
                 const sourceShift = { x: source.x - oldSource.x, y: source.y - oldSource.y };
                 const targetShift = { x: target.x - oldTarget.x, y: target.y - oldTarget.y };
                 routes[edge.id] = !packed
+                    && !tightened.has(definition.source) && !tightened.has(definition.target)
                     && sourceShift.x === targetShift.x && sourceShift.y === targetShift.y
                     ? ordered.map(point => ({
                         x: Math.round(point.x + sourceShift.x),

@@ -15,6 +15,8 @@ describe('view file options', () => {
             },
             display: {
                 routing: 'curved',
+                fontFamily: 'comic-sans',
+                fontSize: 42,
                 showAttributes: 'false',
                 showLegend: 1
             },
@@ -44,7 +46,10 @@ describe('view file options', () => {
                 includedPackages: [],
                 hidden: ['Sample::Person', 'works-for']
             },
-            display: { taxonomyOnly: true, showLegend: true, routing: 'orthogonal' },
+            display: {
+                taxonomyOnly: true, showLegend: true, routing: 'orthogonal',
+                fontFamily: 'monospace', fontSize: 'large'
+            },
             layout: {
                 // Legacy engine choices are ignored in favour of taxonomy layout.
                 algorithm: 'stress', direction: 'RIGHT', nodeSpacing: 0,
@@ -71,7 +76,9 @@ describe('view file options', () => {
             ...defaultDisplayOptions,
             taxonomyOnly: true,
             showLegend: true,
-            routing: 'orthogonal'
+            routing: 'orthogonal',
+            fontFamily: 'monospace',
+            fontSize: 'large'
         });
         expect(view.layout).toEqual({
             direction: 'RIGHT', nodeSpacing: 0,

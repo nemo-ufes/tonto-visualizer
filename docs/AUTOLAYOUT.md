@@ -207,3 +207,9 @@ authority for what those constraints mean.
   wider ports would make routing worse. The quality harness now reports line-
   into-triangle and triangle-overlap collisions separately from zero-width line
   crossings, with `classonly` as the regression benchmark at `Animal`.
+- Tightened automatically sized cards from a 120px minimum and 12px side
+  padding to 108px and 8px. ELK still plans inside the proven 120px envelope
+  and the final boxes contract around their measured text, avoiding the rank-
+  ordering discontinuities that a smaller planning node introduced. Added
+  persisted sans-serif, serif and monospace typefaces with small, medium and
+  large size presets; measurement, labels and exported SVG use the same preset.

@@ -14,7 +14,10 @@ import type { Point, Rect, Side } from './geometry.js';
 import {
     alongPath, boundsOf, centerOf, distanceToPath, segmentHitsRect, segmentsProperlyCross, sideOf
 } from './geometry.js';
-import { attributeLines, FONT, multiplicityLabel, NODE, nodeLabel, stereotypeLabel, textWidth } from './measure.js';
+import {
+    attributeLines, fontMetrics, multiplicityLabel, NODE, nodeLabel, stereotypeLabel, textWidth
+} from './measure.js';
+import type { FontMetrics } from './measure.js';
 import type { Positions } from './place.js';
 import type { TreeStem } from './ports.js';
 import { assignPorts, endKey } from './ports.js';
@@ -174,6 +177,7 @@ function mergedWith(edge: ViewRelation, partner: ViewRelation): ViewRelation {
 
 export function render(input: RenderInput): Rendered {
     const { view, positions, display } = input;
+    const font = fontMetrics(display);
     const theme = input.theme ?? lightTheme;
     const padding = input.padding ?? 16;
     const selected = new Set(input.selection ?? []);
@@ -281,13 +285,13 @@ export function render(input: RenderInput): Rendered {
     const paths = routed.paths;
     // A copy: the placer is told about the bar of each tree as it is drawn,
     // and `paths` is what the canvas hit-tests edges against.
-    const placer = new LabelPlacer(rects, groups.map(group => group.rect), { ...paths });
+    const placer = new LabelPlacer(rects, groups.map(group => group.rect), { ...paths }, font);
     const buses: BusLine[] = [];
     const treeHeads: HeadMarker[] = [];
     const treeHeadStrokes: HeadStroke[] = [];
     const treeMarkup = trees.plans
         .map(plan => drawTree(
-            plan, positions, theme, placer, rects, buses, assigned.stems, treeHeads, treeHeadStrokes
+            plan, positions, theme, placer, font, rects, buses, assigned.stems, treeHeads, treeHeadStrokes
         ))
         .join('');
 
@@ -364,27 +368,27 @@ export function render(input: RenderInput): Rendered {
    and an SVG with no font-family on a text element falls back to a 16px serif.
    Stated once at the top, no layer can lose it again. */
 text {
-    font-family: ${FONT.family};
-    font-size: ${FONT.edge}px;
+    font-family: ${font.family};
+    font-size: ${font.edge}px;
     fill: ${theme.text};
     font-variant-numeric: tabular-nums;
 }
 
 .tv-node rect { stroke: ${theme.line}; stroke-width: 1; }
 .tv-node text { fill: ${theme.onFill}; }
-.tv-name { font-weight: 600; font-size: ${FONT.name}px; letter-spacing: 0.005em; }
-.tv-stereotype { font-size: ${FONT.stereotype}px; fill-opacity: 0.72; letter-spacing: 0.01em; }
-.tv-attribute { font-size: ${FONT.attribute}px; }
+.tv-name { font-weight: 600; font-size: ${font.name}px; letter-spacing: 0.005em; }
+.tv-stereotype { font-size: ${font.stereotype}px; fill-opacity: 0.72; letter-spacing: 0.01em; }
+.tv-attribute { font-size: ${font.attribute}px; }
 .tv-edge path { fill: none; stroke: ${theme.line}; stroke-width: 1.2; }
 .tv-end { fill: ${theme.muted}; }
-.tv-edge-stereotype { font-size: ${FONT.edgeStereotype}px; fill-opacity: 0.78; letter-spacing: 0.01em; }
+.tv-edge-stereotype { font-size: ${font.edgeStereotype}px; fill-opacity: 0.78; letter-spacing: 0.01em; }
 .tv-marker { fill: ${theme.surface}; stroke: ${theme.line}; stroke-width: 1.2; }
 .tv-arrow { fill: none; stroke: ${theme.line}; stroke-width: 1.2; }
 .tv-reading { fill: ${theme.text}; stroke: none; }
 .tv-lock { fill: none; stroke: ${theme.muted}; stroke-width: 1.1; stroke-linecap: round; }
 .tv-lock rect { fill: ${theme.background}; }
 .tv-group rect { fill: none; stroke: ${theme.muted}; stroke-dasharray: 4 3; }
-.tv-group text { font-size: ${FONT.stereotype}px; fill: ${theme.muted}; }
+.tv-group text { font-size: ${font.stereotype}px; fill: ${theme.muted}; }
 .tv-selected rect { stroke: ${theme.accent}; stroke-width: 2.5; }
 .tv-selected path { stroke: ${theme.accent}; stroke-width: 2.2; }
 .tv-unresolved rect { stroke-dasharray: 5 3; }
@@ -552,6 +556,7 @@ function loopIndex(view: ViewModel): Map<string, { index: number; count: number 
 export function drawNode(
     node: ViewNode, rect: Rect, display: DisplayOptions, theme: Theme, isSelected: boolean
 ): string {
+    const font = fontMetrics(display);
     const stereotype = stereotypeLabel(node);
     const lines = attributeLines(node, display);
     const fill = display.showColors && node.kind !== 'unresolved' ? node.color : theme.surface;
@@ -564,22 +569,23 @@ export function drawNode(
     let y = rect.y + NODE.headerGap;
     let text = '';
     if (stereotype) {
-        y += FONT.stereotype;
+        y += font.stereotype;
         text += `<text class="tv-stereotype" x="${rect.x + rect.width / 2}" y="${y}" text-anchor="middle">${escape(stereotype)}</text>`;
-        y += NODE.stereotypeHeight - FONT.stereotype;
+        y += NODE.stereotypeHeight * font.scale - font.stereotype;
     }
-    y += FONT.name;
+    y += font.name;
     text += `<text class="tv-name" x="${rect.x + rect.width / 2}" y="${y}" text-anchor="middle">${escape(nodeLabel(node, display))}</text>`;
-    y = rect.y + (stereotype ? NODE.stereotypeHeight : 0) + NODE.nameHeight + NODE.headerGap * 2;
+    y = rect.y + (stereotype ? NODE.stereotypeHeight * font.scale : 0)
+        + NODE.nameHeight * font.scale + NODE.headerGap * 2;
 
     let compartment = '';
     if (lines.length > 0) {
         compartment += `<line x1="${rect.x}" y1="${y}" x2="${rect.x + rect.width}" y2="${y}" stroke="${theme.line}" stroke-width="1"/>`;
         let lineY = y + NODE.headerGap;
         for (const line of lines) {
-            lineY += FONT.attribute;
+            lineY += font.attribute;
             compartment += `<text class="tv-attribute" x="${rect.x + NODE.padding}" y="${lineY}">${escape(line)}</text>`;
-            lineY += NODE.lineHeight - FONT.attribute;
+            lineY += NODE.lineHeight * font.scale - font.attribute;
         }
     }
 
@@ -607,6 +613,7 @@ export function labelWidth(edge: ViewEdge, display: DisplayOptions): number {
     if (edge.kind !== 'relation') {
         return 0;
     }
+    const font = fontMetrics(display);
     const ends = [edge.sourceEnd, edge.targetEnd].map(end => {
         const parts = [
             display.showRoleNames ? end.role : undefined,
@@ -614,11 +621,12 @@ export function labelWidth(edge: ViewEdge, display: DisplayOptions): number {
             display.showEndDecorations && end.subsets ? `{subsets ${end.subsets}}` : undefined,
             display.showEndDecorations && end.redefines ? `{redefines ${end.redefines}}` : undefined
         ].filter(Boolean).join(' ');
-        return textWidth(parts, FONT.edge);
+        return textWidth(parts, font.edge, false, font.kind);
     });
     const middle = Math.max(
-        display.showRelationNames && edge.name ? textWidth(edge.name, FONT.edge) : 0,
-        display.showRelationStereotypes && edge.stereotype ? textWidth(`«${edge.stereotype}»`, FONT.edgeStereotype) : 0
+        display.showRelationNames && edge.name ? textWidth(edge.name, font.edge, false, font.kind) : 0,
+        display.showRelationStereotypes && edge.stereotype
+            ? textWidth(`«${edge.stereotype}»`, font.edgeStereotype, false, font.kind) : 0
     );
     return Math.max(middle, ...ends);
 }
@@ -631,7 +639,7 @@ function drawEdgeLabels(
         return relationLabels(edge, points, display, theme, placer, partner);
     }
     if (edge.kind === 'instantiation') {
-        return centreLabel(points, [{ stereotype: '«instanceOf»' }], theme, placer, edge.id);
+        return centreLabel(points, [{ stereotype: '«instanceOf»' }], display, theme, placer, edge.id);
     }
     return '';
 }
@@ -683,7 +691,8 @@ class LabelPlacer {
     constructor(
         private readonly nodes: Rect[],
         private readonly groups: Rect[] = [],
-        private readonly lines: Record<string, Point[]> = {}
+        private readonly lines: Record<string, Point[]> = {},
+        private readonly font: FontMetrics = fontMetrics({ fontFamily: 'sans', fontSize: 'medium' })
     ) {}
 
     /**
@@ -703,7 +712,7 @@ class LabelPlacer {
         const home = candidates[0];
         let best: { at: Point; box: Rect; score: number } | undefined;
         for (const candidate of candidates) {
-            const box = boxOf(candidate, text);
+            const box = boxOf(candidate, text, this.font);
             const score = this.penaltyOf(box, owner) + displacementFrom(home, candidate);
             if (!best || score < best.score) {
                 best = { at: candidate, box, score };
@@ -712,7 +721,10 @@ class LabelPlacer {
                 break;
             }
         }
-        const fallback = best ?? { at: candidates[0] ?? { x: 0, y: 0 }, box: boxOf(candidates[0] ?? { x: 0, y: 0 }, text), score: 0 };
+        const fallback = best ?? {
+            at: candidates[0] ?? { x: 0, y: 0 },
+            box: boxOf(candidates[0] ?? { x: 0, y: 0 }, text, this.font), score: 0
+        };
         this.taken.push(fallback.box);
         return fallback.at;
     }
@@ -878,9 +890,9 @@ function overlapArea(one: Rect, other: Rect): number {
     return width > 0 && height > 0 ? width * height : 0;
 }
 
-function boxOf(anchor: Point, text: string): Rect {
-    const width = textWidth(text, FONT.edge) + 6;
-    return { x: anchor.x - width / 2, y: anchor.y - FONT.edge, width, height: FONT.edge + 4 };
+function boxOf(anchor: Point, text: string, font: FontMetrics): Rect {
+    const width = textWidth(text, font.edge, false, font.kind) + 6;
+    return { x: anchor.x - width / 2, y: anchor.y - font.edge, width, height: font.edge + 4 };
 }
 
 /** The whole-part diamond, on the end the language says holds the whole. */
@@ -924,7 +936,7 @@ function relationLabels(
         readings.push(reading(shared ? undefined : stereotypeOf(partner), nameOf(partner), 'backward'));
     }
 
-    let markup = centreLabel(points, readings, theme, placer, edge.id);
+    let markup = centreLabel(points, readings, display, theme, placer, edge.id);
     markup += endLabel(edge, points, true, display, theme, placer);
     markup += endLabel(edge, points, false, display, theme, placer);
     return markup;
@@ -964,6 +976,7 @@ function endLabel(
     edge: ViewRelation, points: Point[], atSource: boolean, display: DisplayOptions, theme: Theme,
     placer: LabelPlacer
 ): string {
+    const font = fontMetrics(display);
     const end = atSource ? edge.sourceEnd : edge.targetEnd;
     const multiplicity = display.showCardinalities ? multiplicityLabel(end.cardinality) : undefined;
 
@@ -996,8 +1009,8 @@ function endLabel(
     // parallel to it for the whole of its first fifty pixels, and every place
     // the group could stand there was inside one class or another.
     const reach = Math.min(total * 0.45, 128);
-    const multiplicityWidth = multiplicity ? textWidth(multiplicity, FONT.edge) : 0;
-    const textOnly = textWidth(roleText, FONT.edge);
+    const multiplicityWidth = multiplicity ? textWidth(multiplicity, font.edge, false, font.kind) : 0;
+    const textOnly = textWidth(roleText, font.edge, false, font.kind);
     const roleWidth = textOnly + (lock ? LOCK.width + LOCK.gap : 0);
 
     interface Candidate { at: number; side: number; multiplicity?: Placed; role?: Placed }
@@ -1009,10 +1022,14 @@ function endLabel(
                 at,
                 side,
                 ...(multiplicity
-                    ? { multiplicity: placedAt(besideLine(forwards, at, multiplicityWidth, [side])[0]!, multiplicityWidth) }
+                    ? { multiplicity: placedAt(
+                        besideLine(forwards, at, multiplicityWidth, [side], font)[0]!, multiplicityWidth, font
+                    ) }
                     : {}),
                 ...(roleWidth > 0
-                    ? { role: placedAt(besideLine(forwards, at, roleWidth, [-side])[0]!, roleWidth) }
+                    ? { role: placedAt(
+                        besideLine(forwards, at, roleWidth, [-side], font)[0]!, roleWidth, font
+                    ) }
                     : {})
             });
         }
@@ -1086,8 +1103,8 @@ interface Placed {
     box: Rect;
 }
 
-function placedAt(at: Point, width: number): Placed {
-    return { at, box: { x: at.x - width / 2, y: at.y - FONT.edge, width, height: FONT.edge + 4 } };
+function placedAt(at: Point, width: number, font: FontMetrics): Placed {
+    return { at, box: { x: at.x - width / 2, y: at.y - font.edge, width, height: font.edge + 4 } };
 }
 
 const LOCK = { width: 11, height: 11, gap: 4 } as const;
@@ -1137,15 +1154,19 @@ interface Reading {
 function centreLabel(
     points: Point[],
     readings: Reading[],
+    display: DisplayOptions,
     theme: Theme,
     placer: LabelPlacer,
     owner?: string
 ): string {
+    const font = fontMetrics(display);
+    const line = { stereotype: 12 * font.scale, name: 14 * font.scale };
     // A margin over the estimate, since the triangle is placed off the end of
     // the text and a mark on the last letter is worse than a small gap. The
     // estimate is weighted per character, so the margin can be small -- and the
     // name is now on its own, without the guillemets the estimate overshoots on.
-    const nameWidth = (one: Reading) => (one.name ? textWidth(one.name, FONT.edge) * 1.02 : 0);
+    const nameWidth = (one: Reading) => one.name
+        ? textWidth(one.name, font.edge, false, font.kind) * 1.02 : 0;
     const markerOf = (one: Reading) => (one.direction && one.name ? MARKER : 0);
     const lines = readings.filter(one => one.stereotype !== undefined || one.name !== undefined);
     if (lines.length === 0) {
@@ -1154,10 +1175,10 @@ function centreLabel(
 
     const width = Math.max(...lines.map(one => Math.max(
         nameWidth(one) + markerOf(one),
-        one.stereotype ? textWidth(one.stereotype, FONT.edgeStereotype) : 0
+        one.stereotype ? textWidth(one.stereotype, font.edgeStereotype, false, font.kind) : 0
     )));
     const height = lines.reduce((total, one) =>
-        total + (one.stereotype ? LINE.stereotype : 0) + (one.name ? LINE.name : 0), 0);
+        total + (one.stereotype ? line.stereotype : 0) + (one.name ? line.name : 0), 0);
 
     // Outwards from the middle, and step-major: a label that cannot sit at the
     // middle of its line belongs a little further along it, not a label's width
@@ -1165,21 +1186,24 @@ function centreLabel(
     const length = pathLength(points);
     const fractions = [0.5, 0.42, 0.58, 0.34, 0.66, 0.26, 0.74];
     const candidates = [0, 1, -1, 2, -2].flatMap(step =>
-        fractions.map(fraction => besideLine(points, length * fraction, { width, height }, [step])[0]!));
+        fractions.map(fraction => besideLine(points, length * fraction, { width, height }, [step], font)[0]!));
     const at = placer.placeBox(candidates, width, height, owner);
 
     let markup = '';
     let top = at.y - height / 2;
     for (const one of lines) {
         if (one.stereotype) {
-            markup += label(at.x, top + LINE.stereotype - 2, one.stereotype, theme, 'middle', 'tv-edge-stereotype', owner);
-            top += LINE.stereotype;
+            markup += label(
+                at.x, top + line.stereotype - 2 * font.scale, one.stereotype,
+                theme, 'middle', 'tv-edge-stereotype', owner
+            );
+            top += line.stereotype;
         }
         if (one.name) {
             // The name keeps the middle and the triangle sits just off the end
             // it points at, which is where a reader expects the arrow of
             // "A has B ▶" to be -- and of "◀ B is had by A" on the way back.
-            const baseline = top + LINE.name - 3;
+            const baseline = top + line.name - 3 * font.scale;
             const marker = markerOf(one);
             const back = one.direction === 'backward' ? -1 : 1;
             const centre = at.x - back * marker / 2;
@@ -1189,14 +1213,12 @@ function centreLabel(
                 const tip = { x: centre + back * (nameWidth(one) / 2 + marker), y: baseline - 3.5 };
                 markup += readingTriangle(tip, { x: along.x * back, y: along.y * back });
             }
-            top += LINE.name;
+            top += line.name;
         }
     }
     return markup;
 }
 
-/** Height of each line of a centre label, and how far the triangle stands off. */
-const LINE = { stereotype: 12, name: 14 } as const;
 const MARKER = 9;
 
 /** The direction the line runs at the point nearest `at`, source to target. */
@@ -1233,7 +1255,9 @@ function readingTriangle(tip: Point, direction: Point): string {
  * taxonomy -- where nearly every edge is vertical -- that was every label
  * landing on its own line or on the box below.
  */
-function besideLine(points: Point[], at: number, size: number | { width: number; height: number }, steps: number[]): Point[] {
+function besideLine(
+    points: Point[], at: number, size: number | { width: number; height: number }, steps: number[], font: FontMetrics
+): Point[] {
     const here = alongPath(points, true, at);
     const ahead = alongPath(points, true, at + 12);
     const dx = ahead.x - here.x;
@@ -1241,7 +1265,7 @@ function besideLine(points: Point[], at: number, size: number | { width: number;
     const length = Math.hypot(dx, dy) || 1;
     const vertical = Math.abs(dy) > Math.abs(dx);
     const width = typeof size === 'number' ? size : size.width;
-    const height = typeof size === 'number' ? FONT.edge + 2 : size.height;
+    const height = typeof size === 'number' ? font.edge + 2 : size.height;
     // Off a vertical line by half the label's width plus a margin, off a
     // horizontal one by half its height: what it takes to clear it either way.
     const reach = vertical ? width / 2 + 9 : height / 2 + 7;
@@ -1414,7 +1438,8 @@ function treeStems(plans: TreePlan[], positions: Positions): TreeStem[] {
 }
 
 function drawTree(
-    plan: TreePlan, positions: Positions, theme: Theme, placer: LabelPlacer, obstacles: Rect[] = [],
+    plan: TreePlan, positions: Positions, theme: Theme, placer: LabelPlacer, font: FontMetrics,
+    obstacles: Rect[] = [],
     buses: BusLine[] = [], stems: ReadonlyMap<string, Point> = new Map(),
     heads: HeadMarker[] = [], headStrokes: HeadStroke[] = []
 ): string {
@@ -1488,7 +1513,7 @@ function drawTree(
 
     if (plan.label) {
         const label = plan.label;
-        const width = textWidth(label, FONT.edge);
+        const width = textWidth(label, font.edge, false, font.kind);
         // The label belongs to the bar, so it is written on the bar: centred
         // along it, on the side the parent is. Beside the stem is where it went
         // before, which on a parent that has a subtype outside the set is on

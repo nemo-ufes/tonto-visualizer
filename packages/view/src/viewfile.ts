@@ -150,6 +150,10 @@ function readDisplayOptions(value: unknown): DisplayOptions {
         taxonomyOnly: booleanOr(source.taxonomyOnly, defaultDisplayOptions.taxonomyOnly),
         routing: oneOf(source.routing, ['straight', 'orthogonal'])
             ? source.routing : defaultDisplayOptions.routing,
+        fontFamily: oneOf(source.fontFamily, ['sans', 'serif', 'monospace'])
+            ? source.fontFamily : defaultDisplayOptions.fontFamily,
+        fontSize: oneOf(source.fontSize, ['small', 'medium', 'large'])
+            ? source.fontSize : defaultDisplayOptions.fontSize,
         showAttributes: booleanOr(source.showAttributes, defaultDisplayOptions.showAttributes),
         showCardinalities: booleanOr(source.showCardinalities, defaultDisplayOptions.showCardinalities),
         showRelationNames: booleanOr(source.showRelationNames, defaultDisplayOptions.showRelationNames),
