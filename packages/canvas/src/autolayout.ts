@@ -292,6 +292,142 @@ function settleRelators(
 }
 
 /**
+ * Moves a class with no supertype and no subtype -- alone, or together with
+ * whichever others like it it associates with -- towards the middle of
+ * everything else it is connected to, where there is room.
+ *
+ * `enforceTaxonomyRanks` only repositions the classes it ranks -- anything
+ * with a generalization edge. A class with neither keeps exactly the
+ * coordinates ELK's whole-graph pass gave it, even after every taxonomy
+ * around it has since been translated onto its own re-derived rank. The
+ * association that put such a class near its neighbours in that first pass is
+ * still real; it is the neighbours that moved out from under it, the same way
+ * a relator is stranded by ranks decided without it.
+ *
+ * Two such classes joined to each other -- `Journal` and its `JournalVolume`,
+ * with no taxonomy of their own -- move as one piece rather than each towards
+ * its own idea of the middle: settling `JournalVolume` towards a taxonomy two
+ * ranks away and leaving `Journal` behind splits a pair that reads as one
+ * thing, which is the same reason a whole taxonomy is re-ranked together
+ * instead of class by class.
+ */
+function settleOrphans(
+    view: ViewModel,
+    positions: Positions,
+    only: ReadonlySet<string>,
+    ranked: ReadonlySet<string>
+): void {
+    const nodeById = new Map(view.nodes.map(node => [node.id, node]));
+    const isOrphan = (id: string): boolean => {
+        const node = nodeById.get(id);
+        return node !== undefined && node.kind === 'class' && node.stereotype !== 'relator'
+            && only.has(id) && !ranked.has(id);
+    };
+    const orphanIds = view.nodes.map(node => node.id).filter(isOrphan);
+    if (orphanIds.length === 0) {
+        return;
+    }
+
+    const neighboursOf = new Map<string, Set<string>>();
+    for (const edge of view.edges) {
+        if (edge.kind !== 'relation' || edge.source === edge.target
+            || !only.has(edge.source) || !only.has(edge.target)) {
+            continue;
+        }
+        neighboursOf.set(edge.source, new Set([...(neighboursOf.get(edge.source) ?? []), edge.target]));
+        neighboursOf.set(edge.target, new Set([...(neighboursOf.get(edge.target) ?? []), edge.source]));
+    }
+
+    // Union-find over orphans only: an association to a ranked class or a
+    // relator never merges two components, only one to another orphan does.
+    const unseen = new Set(orphanIds);
+    const components: string[][] = [];
+    while (unseen.size > 0) {
+        const first = unseen.values().next().value as string;
+        unseen.delete(first);
+        const component = [first];
+        const visit = [first];
+        while (visit.length > 0) {
+            const id = visit.pop()!;
+            for (const neighbour of neighboursOf.get(id) ?? []) {
+                if (isOrphan(neighbour) && unseen.delete(neighbour)) {
+                    component.push(neighbour);
+                    visit.push(neighbour);
+                }
+            }
+        }
+        components.push(component);
+    }
+
+    const centreOf = (rect: Rect) => ({ x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 });
+    const average = (points: Array<{ x: number; y: number }>) => ({
+        x: points.reduce((sum, one) => sum + one.x, 0) / points.length,
+        y: points.reduce((sum, one) => sum + one.y, 0) / points.length
+    });
+
+    for (const component of components) {
+        const members = new Set(component);
+        const rects = component.map(id => positions[id]).filter((one): one is Rect => one !== undefined);
+        if (rects.length !== component.length) {
+            continue;
+        }
+        const outsideIds = new Set<string>();
+        for (const id of component) {
+            for (const neighbour of neighboursOf.get(id) ?? []) {
+                if (!members.has(neighbour)) {
+                    outsideIds.add(neighbour);
+                }
+            }
+        }
+        const anchors = [...outsideIds].map(id => positions[id]).filter((one): one is Rect => one !== undefined);
+        if (anchors.length === 0) {
+            continue;
+        }
+
+        const delta = {
+            x: average(anchors.map(centreOf)).x - average(rects.map(centreOf)).x,
+            y: average(anchors.map(centreOf)).y - average(rects.map(centreOf)).y
+        };
+        const others = Object.entries(positions)
+            .filter(([id]) => !members.has(id))
+            .map(([, one]) => one);
+        const fits = (dx: number, dy: number) => component.every(id => {
+            const rect = positions[id]!;
+            const moved = { ...rect, x: Math.round(rect.x + dx), y: Math.round(rect.y + dy) };
+            return !others.some(one => overlaps(moved, one, 24));
+        });
+
+        // The straight line to the anchors is blocked as often as it is
+        // clear -- `Publisher` or `Article` sitting on it is the ordinary
+        // case, not the exception. A ring search around that target finds
+        // the nearest opening rather than only ever a shorter version of the
+        // same blocked line, the way `placePartialLayout` finds room for a
+        // selection nothing here already occupies.
+        let translation: Point | undefined = fits(delta.x, delta.y) ? delta : undefined;
+        for (let ring = 1; ring < 80 && !translation; ring += 1) {
+            for (const offset of partialRing(ring)) {
+                const candidate = { x: delta.x + offset.x * PARTIAL_STEP, y: delta.y + offset.y * PARTIAL_STEP };
+                if (fits(candidate.x, candidate.y)) {
+                    translation = candidate;
+                    break;
+                }
+            }
+        }
+        if (!translation) {
+            continue;
+        }
+        for (const id of component) {
+            const rect = positions[id]!;
+            positions[id] = {
+                ...rect,
+                x: Math.round(rect.x + translation.x),
+                y: Math.round(rect.y + translation.y)
+            };
+        }
+    }
+}
+
+/**
  * Moves a parthood or constitution pair so the whole reads first.
  *
  * A whole-part diamond and a constitution arrow are both read the way a
@@ -809,6 +945,9 @@ export async function autoLayout(
     if (settings.algorithm === 'layered' && !request.only) {
         ranked = enforceTaxonomyRanks(view, positions, subject, settings);
         settleRelators(view, positions, subject, ranked ? settings.direction : undefined, ranked);
+        if (ranked) {
+            settleOrphans(view, positions, subject, ranked);
+        }
     } else {
         settleRelators(view, positions, subject);
     }
