@@ -8,10 +8,12 @@
  */
 
 import type { EdgeRoute, ViewEdge, ViewModel, ViewNode, ViewRelation, ViewRelationEnd } from 'tonto-view';
-import type { DisplayOptions } from 'tonto-view';
+import type { DisplayOptions, LayoutOptions } from 'tonto-view';
 import { inversePairs } from 'tonto-view/inverses';
 import type { Point, Rect, Side } from './geometry.js';
-import { alongPath, boundsOf, centerOf, distanceToPath, segmentHitsRect, sideOf } from './geometry.js';
+import {
+    alongPath, boundsOf, centerOf, distanceToPath, segmentHitsRect, segmentsProperlyCross, sideOf
+} from './geometry.js';
 import { attributeLines, FONT, multiplicityLabel, NODE, nodeLabel, stereotypeLabel, textWidth } from './measure.js';
 import type { Positions } from './place.js';
 import type { TreeStem } from './ports.js';
@@ -24,6 +26,8 @@ export interface RenderInput {
     view: ViewModel;
     positions: Positions;
     display: DisplayOptions;
+    /** The rank direction whose facing sides generalizations must use. */
+    direction?: LayoutOptions['direction'];
     /** Waypoints the modeller dragged, by edge id. */
     routes?: Record<string, EdgeRoute>;
     theme?: Theme;
@@ -183,35 +187,48 @@ export function render(input: RenderInput): Rendered {
     const inverses = inversePairs(view.edges);
     const drawn = view.edges.filter(edge => !inverses.covered.has(edge.id));
     const portInput = drawn.filter(edge => !trees.covered.has(edge.id));
-    const assigned = assignPorts(portInput, positions, mediationsThrough(view, positions, inverses.covered), stems);
-    const ports = assigned.ends;
     const loops = loopIndex(view);
+    const through = mediationsThrough(view, positions, inverses.covered);
 
-    // Every route is computed before any label is placed. A label belongs to one
-    // line and has to be read against it, so the placer has to know where all of
-    // them run -- including the ones drawn after it.
-    const paths: Record<string, Point[]> = {};
-    const bends: Point[] = [];
-    for (const edge of drawn) {
-        if (trees.covered.has(edge.id)) {
-            continue;
+    // A ray is the honest anchor for an association: it meets the side where
+    // the opposite class actually lies. On a dense graph, however, that local
+    // improvement can occasionally add a global crossing. Route both stable
+    // port candidates and keep the ray version unless its final paths introduce
+    // an extra node intersection or crossing. This makes the anchor decision
+    // part of final routing quality instead of blindly preferring either rule.
+    const routeCandidate = (associationAnchors: 'ray' | 'even') => {
+        const assigned = assignPorts(portInput, positions, through, stems, associationAnchors, input.direction);
+        const paths: Record<string, Point[]> = {};
+        const bends: Point[] = [];
+        for (const edge of drawn) {
+            if (trees.covered.has(edge.id)) {
+                continue;
+            }
+            const source = positions[edge.source];
+            const target = positions[edge.target];
+            if (!source || !target) {
+                continue;
+            }
+            paths[edge.id] = routeEdge(source, target, {
+                avoid: bends,
+                ...(input.routes?.[edge.id]?.points ? { stored: input.routes[edge.id]!.points! } : {}),
+                ...(assigned.ends.get(edge.id) ? { ends: assigned.ends.get(edge.id)! } : {}),
+                ...(loops.get(edge.id) ? { loop: loops.get(edge.id)! } : {}),
+                style: display.routing,
+                obstacles: rects
+            });
+            // Whatever this line bent around, the next one goes round elsewhere.
+            bends.push(...paths[edge.id]!.slice(1, -1));
         }
-        const source = positions[edge.source];
-        const target = positions[edge.target];
-        if (!source || !target) {
-            continue;
-        }
-        paths[edge.id] = routeEdge(source, target, {
-            avoid: bends,
-            ...(input.routes?.[edge.id]?.points ? { stored: input.routes[edge.id]!.points! } : {}),
-            ...(ports.get(edge.id) ? { ends: ports.get(edge.id)! } : {}),
-            ...(loops.get(edge.id) ? { loop: loops.get(edge.id)! } : {}),
-            style: display.routing,
-            obstacles: rects
-        });
-        // Whatever this line bent around, the next one goes round elsewhere.
-        bends.push(...paths[edge.id]!.slice(1, -1));
-    }
+        return { assigned, paths, faults: routeFaults(paths, drawn, positions) };
+    };
+    const ray = routeCandidate('ray');
+    const even = portInput.some(edge => edge.kind !== 'generalization')
+        ? routeCandidate('even')
+        : ray;
+    const routed = saferRoutes(even.faults, ray.faults) ? even : ray;
+    const assigned = routed.assigned;
+    const paths = routed.paths;
     // A copy: the placer is told about the bar of each tree as it is drawn,
     // and `paths` is what the canvas hit-tests edges against.
     const placer = new LabelPlacer(rects, groups.map(group => group.rect), { ...paths });
@@ -313,6 +330,51 @@ text {
 ${groups.map(group => drawGroup(group)).join('')}${edgeMarkup}${treeMarkup}${nodeMarkup}<g class="tv-labels">${labelMarkup}</g></svg>`;
 
     return { svg, bounds: { x: origin.x, y: origin.y, width, height }, paths };
+}
+
+interface RouteFaults {
+    intersections: number;
+    crossings: number;
+}
+
+/** High-priority faults in paths after ports, spreading and detours are final. */
+function routeFaults(
+    paths: Record<string, Point[]>,
+    edges: readonly ViewEdge[],
+    positions: Positions
+): RouteFaults {
+    const edgeById = new Map(edges.map(edge => [edge.id, edge]));
+    const routed = Object.entries(paths);
+    let intersections = 0;
+    for (const [id, points] of routed) {
+        const edge = edgeById.get(id);
+        for (const [node, rect] of Object.entries(positions)) {
+            if (node === edge?.source || node === edge?.target) {
+                continue;
+            }
+            if (points.slice(1).some((to, index) => segmentHitsRect(points[index]!, to, rect, 2))) {
+                intersections += 1;
+            }
+        }
+    }
+    let crossings = 0;
+    for (let one = 0; one < routed.length; one += 1) {
+        for (let two = one + 1; two < routed.length; two += 1) {
+            const first = routed[one]![1];
+            const second = routed[two]![1];
+            if (first.slice(1).some((to, index) => second.slice(1).some((otherTo, otherIndex) =>
+                segmentsProperlyCross(first[index]!, to, second[otherIndex]!, otherTo)))) {
+                crossings += 1;
+            }
+        }
+    }
+    return { intersections, crossings };
+}
+
+/** Whether a candidate is strictly safer than the preferred ray-anchored one. */
+function saferRoutes(candidate: RouteFaults, preferred: RouteFaults): boolean {
+    return candidate.intersections < preferred.intersections
+        || (candidate.intersections === preferred.intersections && candidate.crossings < preferred.crossings);
 }
 
 /** Which of a class's loops each self-relation is, so no two are drawn alike. */
