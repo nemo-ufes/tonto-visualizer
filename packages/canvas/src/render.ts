@@ -10,8 +10,8 @@
 import type { EdgeRoute, ViewEdge, ViewModel, ViewNode, ViewRelation, ViewRelationEnd } from 'tonto-view';
 import type { DisplayOptions } from 'tonto-view';
 import { inversePairs } from 'tonto-view/inverses';
-import type { Point, Rect } from './geometry.js';
-import { alongPath, boundsOf, centerOf, distanceToPath, segmentHitsRect } from './geometry.js';
+import type { Point, Rect, Side } from './geometry.js';
+import { alongPath, boundsOf, centerOf, distanceToPath, segmentHitsRect, sideOf } from './geometry.js';
 import { attributeLines, FONT, multiplicityLabel, NODE, nodeLabel, stereotypeLabel, textWidth } from './measure.js';
 import type { Positions } from './place.js';
 import type { TreeStem } from './ports.js';
@@ -159,7 +159,7 @@ function mergedWith(edge: ViewRelation, partner: ViewRelation): ViewRelation {
 export function render(input: RenderInput): Rendered {
     const { view, positions, display } = input;
     const theme = input.theme ?? lightTheme;
-    const padding = input.padding ?? 40;
+    const padding = input.padding ?? 16;
     const selected = new Set(input.selection ?? []);
     const rects = view.nodes
         .map(node => positions[node.id])
@@ -1080,9 +1080,94 @@ function label(
  * a set that the model never declared.
  */
 interface BusLine {
-    y: number;
-    left: number;
-    right: number;
+    /** Which axis the bus runs across: true for a horizontal bus (a vertical tree), false for a vertical one. */
+    vertical: boolean;
+    /** The bus's depth along the tree's primary axis -- a y for a vertical tree, an x for a horizontal one. */
+    at: number;
+    from: number;
+    to: number;
+}
+
+/**
+ * Which side of the general a tree reads from, and the arithmetic for that
+ * side -- shared by the stem `assignPorts` reserves and the tree actually
+ * drawn there, since the two must agree on where the triangle goes.
+ */
+function treeSide(general: Rect, children: readonly Rect[]): Side {
+    const votes: Record<Side, number> = { top: 0, right: 0, bottom: 0, left: 0 };
+    for (const child of children) {
+        votes[sideOf(general, centerOf(child))] += 1;
+    }
+    return votes.top + votes.bottom >= votes.left + votes.right
+        ? (votes.bottom >= votes.top ? 'bottom' : 'top')
+        : (votes.right >= votes.left ? 'right' : 'left');
+}
+
+/**
+ * The geometry of one side, as the direction a tree grows in rather than a
+ * name: the axis the triangle points along (primary) and the one its bus
+ * spans (cross), and back again into the `{x, y}` a path is actually drawn
+ * with. A vertical tree -- general above, subtypes below or above it -- and a
+ * horizontal one -- subtypes to one side -- read the same from here on.
+ */
+interface TreeAxis {
+    vertical: boolean;
+    direction: 1 | -1;
+    /** A point's coordinate along the primary axis. */
+    primary(point: Point): number;
+    /** A box's far edge along the primary axis. */
+    primaryEnd(rect: Rect): number;
+    /** A box's near edge along the primary axis -- the same field as `primary`, spelled for a box. */
+    primaryStart(rect: Rect): number;
+    /** A box's centre along the cross axis. */
+    cross(rect: Rect): number;
+    /** A point's coordinate along the cross axis. */
+    crossOfPoint(point: Point): number;
+    crossStart(rect: Rect): number;
+    crossEnd(rect: Rect): number;
+    point(primary: number, cross: number): Point;
+}
+
+function treeAxis(side: Side): TreeAxis {
+    const vertical = side === 'top' || side === 'bottom';
+    const direction = side === 'bottom' || side === 'right' ? 1 : -1;
+    return vertical
+        ? {
+            vertical, direction,
+            primary: point => point.y,
+            primaryEnd: rect => rect.y + rect.height,
+            primaryStart: rect => rect.y,
+            cross: rect => centerOf(rect).x,
+            crossOfPoint: point => point.x,
+            crossStart: rect => rect.x,
+            crossEnd: rect => rect.x + rect.width,
+            point: (primary, cross) => ({ x: cross, y: primary })
+        }
+        : {
+            vertical, direction,
+            primary: point => point.x,
+            primaryEnd: rect => rect.x + rect.width,
+            primaryStart: rect => rect.x,
+            cross: rect => centerOf(rect).y,
+            crossOfPoint: point => point.y,
+            crossStart: rect => rect.y,
+            crossEnd: rect => rect.y + rect.height,
+            point: (primary, cross) => ({ x: primary, y: cross })
+        };
+}
+
+/**
+ * The subtypes that are actually between the general and the bus -- a
+ * subtype dragged onto the general's own side of the tree, or level with it,
+ * has no say in how deep the bus runs, since it is not between the general
+ * and anything there. Falls back to every subtype where none of them is, so
+ * a gap still gets measured rather than divided by zero.
+ */
+function onTreeSide(general: Rect, children: readonly Rect[], axis: TreeAxis): readonly Rect[] {
+    const onSide = children.filter(rect => axis.direction > 0
+        ? axis.primaryStart(rect) >= axis.primaryEnd(general)
+        : axis.primaryEnd(rect) <= axis.primaryStart(general));
+    return onSide.length > 0 ? onSide : children;
 }
 
 /** The key `assignPorts` was given the tree's stem under, and this looks it back up by. */
@@ -1104,16 +1189,17 @@ function treeStems(plans: TreePlan[], positions: Positions): TreeStem[] {
         if (!general || children.length < 2) {
             continue;
         }
-        const below = children.every(rect => rect.y >= general.y + general.height);
+        const axis = treeAxis(treeSide(general, children));
+        const reach = onTreeSide(general, children, axis);
         stems.push({
             id: treeStemId(plan),
             node: plan.general,
-            towards: {
-                x: children.reduce((sum, rect) => sum + centerOf(rect).x, 0) / children.length,
-                y: below
-                    ? Math.min(...children.map(rect => rect.y))
-                    : Math.max(...children.map(rect => rect.y + rect.height))
-            }
+            towards: axis.point(
+                axis.direction > 0
+                    ? Math.min(...reach.map(rect => axis.primaryStart(rect)))
+                    : Math.max(...reach.map(rect => axis.primaryEnd(rect))),
+                reach.reduce((sum, rect) => sum + axis.cross(rect), 0) / reach.length
+            )
         });
     }
     return stems;
@@ -1131,9 +1217,18 @@ function drawTree(
         return '';
     }
 
-    const below = children.every(entry => entry.rect.y >= general.y + general.height);
+    // Which side of the general the bus sits on -- a majority vote, not a
+    // unanimous one: a subtype dragged level with its general, or past it, no
+    // longer says which side the *tree* belongs on, but its siblings still do,
+    // and a set does not lose its bar because one member is having its rank
+    // rearranged. Reads a horizontal arrangement as readily as the vertical one
+    // a taxonomy usually is, so a set whose subtypes were dragged beside their
+    // general anchors there instead of forcing a bus over the top or bottom of
+    // a box none of them are near.
+    const side = treeSide(general, children.map(entry => entry.rect));
+    const axis = treeAxis(side);
+    const direction = axis.direction;
 
-    const direction = below ? 1 : -1;
     // Each of a parent's trees gets its own place along the border, from the
     // same fan `assignPorts` spread the associations along -- reserved there by
     // a stem standing in for the whole tree, so the triangle does not land on
@@ -1141,32 +1236,43 @@ function drawTree(
     // was never told about -- none should exist -- falls back to dividing the
     // border evenly by lane.
     const stem = stems.get(treeStemId(plan));
-    const span = Math.max(general.width - 28, 0);
-    const apex = {
-        x: stem ? Math.round(stem.x) : Math.round(general.x + (general.width - span) / 2
-            + span * (plan.lane.index + 1) / (plan.lane.count + 1)),
-        y: below ? general.y + general.height : general.y
-    };
-    const base = { x: apex.x, y: apex.y + 14 * direction };
-    const nearest = below
-        ? Math.min(...children.map(entry => entry.rect.y))
-        : Math.max(...children.map(entry => entry.rect.y + entry.rect.height));
-    const bus = busDepth(plan, base, nearest, direction, children, obstacles, buses);
+    const crossSize = axis.crossEnd(general) - axis.crossStart(general);
+    const span = Math.max(crossSize - 28, 0);
+    const crossAt = stem ? Math.round(axis.crossOfPoint(stem)) : Math.round(axis.crossStart(general) + (crossSize - span) / 2
+        + span * (plan.lane.index + 1) / (plan.lane.count + 1));
+    const apex = axis.point(direction > 0 ? axis.primaryEnd(general) : axis.primaryStart(general), crossAt);
+    const base = axis.point(axis.primary(apex) + 14 * direction, crossAt);
+    // The gap the bus has room to sit in, measured only against the subtypes
+    // that are actually on the tree's own side -- a subtype dragged onto the
+    // wrong side of the general has no say in how deep the bus runs, since it
+    // is not between the general and anything there.
+    const onSide = onTreeSide(general, children.map(entry => entry.rect), axis);
+    const nearest = direction > 0
+        ? Math.min(...onSide.map(rect => axis.primaryStart(rect)))
+        : Math.max(...onSide.map(rect => axis.primaryEnd(rect)));
+    const bus = busDepth(plan, axis, base, nearest, children, obstacles, buses);
 
-    buses.push({
-        y: bus,
-        left: Math.min(...children.map(entry => centerOf(entry.rect).x), base.x),
-        right: Math.max(...children.map(entry => centerOf(entry.rect).x), base.x)
-    });
+    const crossLow = Math.min(...children.map(entry => axis.cross(entry.rect)), axis.crossOfPoint(base));
+    const crossHigh = Math.max(...children.map(entry => axis.cross(entry.rect)), axis.crossOfPoint(base));
+    buses.push({ vertical: axis.vertical, at: bus, from: crossLow, to: crossHigh });
 
     let markup = `<g class="tv-edge tv-tree"${plan.marker ? ` data-genset="${escape(plan.marker)}"` : ''}>`;
-    markup += `<polygon class="tv-marker" points="${apex.x},${apex.y} ${base.x - 9},${base.y} ${base.x + 9},${base.y}"/>`;
-    markup += `<path d="M ${base.x} ${base.y} L ${base.x} ${bus}"/>`;
-    const left = Math.min(...children.map(entry => centerOf(entry.rect).x), base.x);
-    const right = Math.max(...children.map(entry => centerOf(entry.rect).x), base.x);
-    markup += `<path d="M ${round(left)} ${bus} L ${round(right)} ${bus}"/>`;
+    // The triangle's two base corners sit either side of `base` along the
+    // cross axis -- the same nine pixels a vertical tree always used, now
+    // measured across whichever axis the bus actually runs on.
+    const cornerLeft = axis.point(axis.primary(base), crossAt - 9);
+    const cornerRight = axis.point(axis.primary(base), crossAt + 9);
+    markup += `<polygon class="tv-marker" points="${round(apex.x)},${round(apex.y)} `
+        + `${round(cornerLeft.x)},${round(cornerLeft.y)} ${round(cornerRight.x)},${round(cornerRight.y)}"/>`;
+    const busStart = axis.point(bus, crossAt);
+    markup += `<path d="M ${round(base.x)} ${round(base.y)} L ${round(busStart.x)} ${round(busStart.y)}"/>`;
+    const left = crossLow;
+    const right = crossHigh;
+    const busLeft = axis.point(bus, left);
+    const busRight = axis.point(bus, right);
+    markup += `<path d="M ${round(busLeft.x)} ${round(busLeft.y)} L ${round(busRight.x)} ${round(busRight.y)}"/>`;
     for (const entry of children) {
-        markup += `<path d="${legPath(entry.rect, bus, direction, obstacles)}"/>`;
+        markup += `<path d="${legPath(entry.rect, bus, obstacles, axis)}"/>`;
     }
 
     if (plan.label) {
@@ -1179,19 +1285,20 @@ function drawTree(
         // printed across the generalization to `Employee`, a class the set does
         // not hold. A label is read against whatever line is nearest it, so the
         // bar is registered as a line and the label pays for leaving it.
-        placer.carry(plan.marker ?? plan.general, [{ x: left, y: bus }, { x: right, y: bus }]);
+        placer.carry(plan.marker ?? plan.general, [axis.point(bus, left), axis.point(bus, right)]);
         const middle = (left + right) / 2;
-        // Clear of the bar either way: a baseline six above it puts the text
-        // wholly above, and sixteen below puts it wholly below.
+        // Clear of the bar either way: six one way puts the text wholly on the
+        // near side of it, sixteen the other puts it wholly on the far one.
         const above = bus - 6;
         const below = bus + 16;
         const near = direction > 0 ? above : below;
         const far = direction > 0 ? below : above;
+        const baseCross = axis.crossOfPoint(base);
         const at = placer.place([
-            { x: middle, y: near },
-            { x: middle, y: far },
-            { x: base.x + width / 2 + 14, y: near },
-            { x: base.x - width / 2 - 14, y: near }
+            axis.point(near, middle),
+            axis.point(far, middle),
+            axis.point(near, baseCross + width / 2 + 14),
+            axis.point(near, baseCross - width / 2 - 14)
         ], label, plan.marker ?? plan.general);
         markup += `<text x="${round(at.x)}" y="${round(at.y)}" fill="${theme.muted}" text-anchor="middle" `
             + `paint-order="stroke" stroke="${theme.background}" stroke-width="3" stroke-linejoin="round">`
@@ -1259,6 +1366,27 @@ function planTrees(view: ViewModel, positions: Positions): { plans: TreePlan[]; 
 }
 
 /**
+ * Which edge of a subtype's box the bus actually reaches it from.
+ *
+ * Every leg in a tree faces the same way while the drag that put it there
+ * agreed with the rest -- but one dragged past the bus, onto its general's own
+ * side of it, faces the opposite edge. A leg that kept aiming at the far one
+ * regardless would run through the box on its way to the border it used to
+ * meet, which is worse than the tree it was drawn to save.
+ */
+function legEdge(child: Rect, bus: number, axis: TreeAxis): number {
+    const near = axis.primaryStart(child);
+    const far = axis.primaryEnd(child);
+    if (bus <= near) {
+        return near;
+    }
+    if (bus >= far) {
+        return far;
+    }
+    return Math.abs(bus - near) <= Math.abs(bus - far) ? near : far;
+}
+
+/**
  * A leg from the bus down to one subtype, round anything in the way.
  *
  * A subtype further from the parent than its siblings has a long leg, and on a
@@ -1267,29 +1395,35 @@ function planTrees(view: ViewModel, positions: Positions): { plans: TreePlan[]; 
  * nothing to do with is read as ending there -- so it steps aside, comes down
  * beside the obstacle and turns back in just above the subtype.
  */
-function legPath(child: Rect, bus: number, direction: number, obstacles: Rect[]): string {
-    const centre = centerOf(child).x;
-    const edge = direction > 0 ? child.y : child.y + child.height;
-    const blocking = obstacles.filter(rect => rect !== child
-        && segmentHitsRect({ x: centre, y: bus }, { x: centre, y: edge }, rect, 2));
+function legPath(child: Rect, bus: number, obstacles: Rect[], axis: TreeAxis): string {
+    const centre = axis.cross(child);
+    const edge = legEdge(child, bus, axis);
+    const direction = edge >= bus ? 1 : -1;
+    const from = axis.point(bus, centre);
+    const to = axis.point(edge, centre);
+    const blocking = obstacles.filter(rect => rect !== child && segmentHitsRect(from, to, rect, 2));
     if (blocking.length === 0) {
-        return `M ${round(centre)} ${bus} L ${round(centre)} ${round(edge)}`;
+        return `M ${round(from.x)} ${round(from.y)} L ${round(to.x)} ${round(to.y)}`;
     }
 
     const turn = edge - direction * 22;
     for (const rect of blocking) {
-        for (const aside of [rect.x - 20, rect.x + rect.width + 20]) {
+        for (const aside of [axis.crossStart(rect) - 20, axis.crossEnd(rect) + 20]) {
+            const viaBus = axis.point(bus, aside);
+            const viaTurn = axis.point(turn, aside);
+            const backIn = axis.point(turn, centre);
             const clear = !obstacles.some(other => other !== child
-                && (segmentHitsRect({ x: centre, y: bus }, { x: aside, y: bus }, other, 2)
-                    || segmentHitsRect({ x: aside, y: bus }, { x: aside, y: turn }, other, 2)
-                    || segmentHitsRect({ x: aside, y: turn }, { x: centre, y: turn }, other, 2)));
+                && (segmentHitsRect(from, viaBus, other, 2)
+                    || segmentHitsRect(viaBus, viaTurn, other, 2)
+                    || segmentHitsRect(viaTurn, backIn, other, 2)));
             if (clear) {
-                return `M ${round(centre)} ${bus} L ${round(aside)} ${bus} L ${round(aside)} ${round(turn)} `
-                    + `L ${round(centre)} ${round(turn)} L ${round(centre)} ${round(edge)}`;
+                return `M ${round(from.x)} ${round(from.y)} L ${round(viaBus.x)} ${round(viaBus.y)} `
+                    + `L ${round(viaTurn.x)} ${round(viaTurn.y)} L ${round(backIn.x)} ${round(backIn.y)} `
+                    + `L ${round(to.x)} ${round(to.y)}`;
             }
         }
     }
-    return `M ${round(centre)} ${bus} L ${round(centre)} ${round(edge)}`;
+    return `M ${round(from.x)} ${round(from.y)} L ${round(to.x)} ${round(to.y)}`;
 }
 
 /**
@@ -1304,41 +1438,45 @@ function legPath(child: Rect, bus: number, direction: number, obstacles: Rect[])
  */
 function busDepth(
     plan: TreePlan,
+    axis: TreeAxis,
     base: Point,
     nearest: number,
-    direction: number,
     children: Array<{ rect: Rect }>,
     obstacles: Rect[],
     buses: BusLine[]
 ): number {
-    const gap = Math.abs(nearest - base.y);
+    const direction = axis.direction;
+    const basePrimary = axis.primary(base);
+    const gap = Math.abs(nearest - basePrimary);
     const lane = plan.lane.count > 1 ? (plan.lane.index - (plan.lane.count - 1) / 2) * 20 : 0;
     const candidates = [0.5, 0.35, 0.65, 0.25, 0.75, 0.85]
-        .map(fraction => Math.round(base.y + direction * (gap * fraction + lane)))
-        .filter(depth => Math.abs(depth - base.y) > 6 && Math.abs(depth - nearest) > 6);
+        .map(fraction => Math.round(basePrimary + direction * (gap * fraction + lane)))
+        .filter(depth => Math.abs(depth - basePrimary) > 6 && Math.abs(depth - nearest) > 6);
     if (candidates.length === 0) {
-        return Math.round((base.y + nearest) / 2);
+        return Math.round((basePrimary + nearest) / 2);
     }
 
-    const left = Math.min(...children.map(entry => centerOf(entry.rect).x), base.x);
-    const right = Math.max(...children.map(entry => centerOf(entry.rect).x), base.x);
+    const left = Math.min(...children.map(entry => axis.cross(entry.rect)), axis.crossOfPoint(base));
+    const right = Math.max(...children.map(entry => axis.cross(entry.rect)), axis.crossOfPoint(base));
     let best = { depth: candidates[0]!, crossings: Infinity };
     for (const depth of candidates) {
         // Another tree's bus at the same depth is worth as much as a class in
         // the way: several parents at one rank all put their bus halfway to the
         // next, and four of them lay on top of one another for hundreds of
-        // pixels, reading as one long line with legs going everywhere.
-        let crossings = buses.filter(other => Math.abs(other.y - depth) < 12
-            && other.left < right && left < other.right).length * 2;
+        // pixels, reading as one long line with legs going everywhere. Only a
+        // bus on the same axis competes for it -- a vertical tree's depth is a
+        // y, and has nothing to say about a horizontal one's x.
+        let crossings = buses.filter(other => other.vertical === axis.vertical && Math.abs(other.at - depth) < 12
+            && other.from < right && left < other.to).length * 2;
         for (const rect of obstacles) {
-            if (segmentHitsRect({ x: left, y: depth }, { x: right, y: depth }, rect, 2)) {
+            if (segmentHitsRect(axis.point(depth, left), axis.point(depth, right), rect, 2)) {
                 crossings += 1;
             }
             for (const entry of children) {
-                const centre = centerOf(entry.rect).x;
-                const edge = direction > 0 ? entry.rect.y : entry.rect.y + entry.rect.height;
+                const centre = axis.cross(entry.rect);
+                const edge = legEdge(entry.rect, depth, axis);
                 if (rect !== entry.rect
-                    && segmentHitsRect({ x: centre, y: depth }, { x: centre, y: edge }, rect, 2)) {
+                    && segmentHitsRect(axis.point(depth, centre), axis.point(edge, centre), rect, 2)) {
                     crossings += 1;
                 }
             }
@@ -1354,25 +1492,22 @@ function busDepth(
 }
 
 /**
- * A tree reads as one only where every subtype is on the same side.
+ * A tree needs a general and at least two subtypes to share -- and nothing
+ * about where any of them currently sit.
  *
- * Not to the pixel, though: a class dragged a little short of clearing the
- * general's edge is still being read as "below" by whoever dropped it there,
- * and the shared triangle disappearing along with the `{disjoint, complete}`
- * it carries over a few missed pixels is a worse surprise than the bus
- * tolerating them. The slack is not there for a subtype actually moved beside
- * its general -- a real rearrangement -- which still falls back to each
- * specialization drawing its own line, exactly as an ungathered one always has.
+ * It used to ask for every subtype strictly on one side of the general, which
+ * read a drag that put one of them level with it, or past it, as the set
+ * coming apart: the whole shared triangle and the `{disjoint, complete}` it
+ * carries disappeared over what is, to whoever dropped it there, one member
+ * having its rank rearranged. `drawTree` now decides the bus's side by a
+ * majority of the subtypes rather than all of them, and routes each leg to
+ * whichever edge of its box actually faces the bus, so there is no longer a
+ * geometry this can get wrong -- only one it draws a longer leg for.
  */
 function canDrawTree(generalId: string, childIds: string[], positions: Positions): boolean {
     const general = positions[generalId];
     const children = childIds.map(id => positions[id]).filter((rect): rect is Rect => rect !== undefined);
-    if (!general || children.length < 2) {
-        return false;
-    }
-    const slack = 24;
-    return children.every(rect => rect.y + slack >= general.y + general.height)
-        || children.every(rect => rect.y + rect.height <= general.y + slack);
+    return general !== undefined && children.length >= 2;
 }
 
 /**
