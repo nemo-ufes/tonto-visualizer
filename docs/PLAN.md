@@ -168,8 +168,9 @@ joined by lines, not as a circuit board: a direct line says *these two* at a
 glance, where a right-angled one has to be followed round two corners, and on a
 model with many associations the corridors start to read as the diagram. Two
 things make straight lines work — parallel edges between the same pair are
-spread apart, and a line that would cross an unrelated class takes one bend
-round it, since a straight line through a class is worse than no line at all.
+spread into a shallow fan with distinct midpoint bends, and a line that would
+cross an unrelated class takes one bend round it, since a straight line through
+a class is worse than no line at all.
 The curved style only smooths associations for which the straight router needed
 a bend; a direct association remains a direct line. Smoothed detours stay close
 to their guide and are checked against the same obstacles and crossings as their

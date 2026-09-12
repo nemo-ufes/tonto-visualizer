@@ -36,6 +36,8 @@ export interface RenderInput {
     theme?: Theme;
     selection?: string[];
     padding?: number;
+    /** Internal layout scoring uses direct guides so drawing style cannot move cards. */
+    repeatedAssociationFans?: boolean;
 }
 
 export interface Rendered {
@@ -205,6 +207,7 @@ export function render(input: RenderInput): Rendered {
     const inverses = inversePairs(view.edges);
     const drawn = view.edges.filter(edge => !inverses.covered.has(edge.id)
         && (!display.taxonomyOnly || edge.kind === 'generalization'));
+    const spreads = input.repeatedAssociationFans === false ? new Map() : relationSpreads(drawn);
     const portInput = drawn.filter(edge => !trees.covered.has(edge.id));
     const loops = loopIndex(view);
     const through = mediationsThrough(view, positions, inverses.covered);
@@ -223,6 +226,7 @@ export function render(input: RenderInput): Rendered {
         const guides: Record<string, Point[]> = {};
         const squareApproaches = new Map<string, Point[]>();
         const approachGroups = new Map<string, string[]>();
+        const fanCandidates = new Map<string, Point[][]>();
         const bends: Point[] = [];
         for (const edge of drawn) {
             if (trees.covered.has(edge.id)) {
@@ -234,21 +238,27 @@ export function render(input: RenderInput): Rendered {
                 continue;
             }
             const stored = input.routes?.[edge.id]?.points;
-            const route = routeEdge(source, target, {
+            const request = {
                 avoid: bends,
                 ...(stored ? { stored } : {}),
                 ...(assigned.ends.get(edge.id) ? { ends: assigned.ends.get(edge.id)! } : {}),
                 ...(loops.get(edge.id) ? { loop: loops.get(edge.id)! } : {}),
                 style: display.routing,
                 obstacles: rects
-            });
+            };
+            const route = routeEdge(source, target, request);
             guides[edge.id] = route;
+            const spread = spreads.get(edge.id);
+            if (spread && !stored) {
+                fanCandidates.set(edge.id, [16, 12, 8, 4].map(reach =>
+                    routeEdge(source, target, { ...request, spread: { ...spread, reach } })));
+            }
             if (crowdedHeads.has(edge.id) && !stored && display.routing === 'straight') {
                 squareApproaches.set(edge.id, withRankFacingHead(route, target, input.direction));
                 approachGroups.set(edge.target, [...(approachGroups.get(edge.target) ?? []), edge.id]);
             }
             // Whatever this line bent around, the next one goes round elsewhere.
-            bends.push(...guides[edge.id]!.slice(1, -1));
+            bends.push(...(fanCandidates.get(edge.id)?.[0] ?? guides[edge.id]!).slice(1, -1));
         }
         // A square approach solves a decorator collision only if it does not
         // purchase that local fix with a new centre-line crossing elsewhere.
@@ -256,6 +266,33 @@ export function render(input: RenderInput): Rendered {
         // first stub cross a neighbor that has not received its own stub yet.
         let drawable = drawableRoutes(guides, drawn, positions, rects, display.routing === 'curved');
         let faults = routeFaults(drawable.paths, drawn, positions);
+        for (const ids of relationSpreadGroups(drawn)) {
+            const previous = new Map(ids.map(id => [id, guides[id]!]).filter((entry): entry is [string, Point[]] =>
+                entry[1] !== undefined));
+            let accepted = false;
+            for (let candidateIndex = 0; candidateIndex < 4; candidateIndex += 1) {
+                for (const id of ids) {
+                    const candidate = fanCandidates.get(id)?.[candidateIndex];
+                    if (candidate) {
+                        guides[id] = candidate;
+                    }
+                }
+                const candidate = drawableRoutes(guides, drawn, positions, rects, display.routing === 'curved');
+                const candidateFaults = routeFaults(candidate.paths, drawn, positions);
+                if (candidateFaults.intersections <= faults.intersections
+                    && candidateFaults.crossings <= faults.crossings) {
+                    drawable = candidate;
+                    faults = candidateFaults;
+                    accepted = true;
+                    break;
+                }
+            }
+            if (!accepted) {
+                for (const [id, points] of previous) {
+                    guides[id] = points;
+                }
+            }
+        }
         for (const ids of approachGroups.values()) {
             const previous = new Map(ids.map(id => [id, guides[id]!]));
             for (const id of ids) {
@@ -620,6 +657,31 @@ function loopIndex(view: ViewModel): Map<string, { index: number; count: number 
             .forEach((id, index) => loops.set(id, { index, count: ids.length }));
     }
     return loops;
+}
+
+/** Stable positions within each set of associations joining the same classes. */
+export function relationSpreads(edges: readonly ViewEdge[]): Map<string, { index: number; count: number }> {
+    const spreads = new Map<string, { index: number; count: number }>();
+    for (const ids of relationSpreadGroups(edges)) {
+        ids
+            .forEach((id, index) => spreads.set(id, { index, count: ids.length }));
+    }
+    return spreads;
+}
+
+/** Association ids grouped by their unordered pair of classes. */
+function relationSpreadGroups(edges: readonly ViewEdge[]): string[][] {
+    const byPair = new Map<string, string[]>();
+    for (const edge of edges) {
+        if (edge.kind !== 'relation' || edge.source === edge.target) {
+            continue;
+        }
+        const pair = JSON.stringify([edge.source, edge.target].sort());
+        byPair.set(pair, [...(byPair.get(pair) ?? []), edge.id]);
+    }
+    return [...byPair.values()]
+        .filter(ids => ids.length > 1)
+        .map(ids => [...ids].sort((one, other) => one.localeCompare(other)));
 }
 
 /**
