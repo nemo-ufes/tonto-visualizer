@@ -406,6 +406,12 @@ drawn from one does not taint the canvas, so the pixels can be read back. At
 twice the size: a diagram exported to be looked at is read on a screen denser
 than the one it was drawn on.
 
+Association distance is the toolbar's layout-density control. It is a percentage
+over the tuned node and rank gaps rather than a scale transform after layout:
+changing it runs Arrange again, so routing, labels, package boxes and semantic
+placement all see the same denser or roomier geometry. The bounded 60–180% range
+keeps the compact end legible and the spacious end finite.
+
 No label is drawn where a class hides it. That was the worst of what the placer
 did on a dense model, and the two reasons for it were both about having nowhere
 to go: every place it looked was within fifty pixels of the end of the line, so

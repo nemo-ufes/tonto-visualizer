@@ -86,6 +86,7 @@ describe('the panel chrome', () => {
         const controls = [...toolbar![1]!.matchAll(/<(?:button|span)\b[^>]*id="([^"]+)"/g)]
             .map(match => match[1]);
         expect(controls.slice(0, 3)).toEqual(['fit', 'arrange', 'newWindow']);
+        expect(controls.slice(3, 6)).toEqual(['distanceDown', 'distance', 'distanceUp']);
         expect(controls).not.toContain('title');
         expect(toolbar![1]).toContain('id="fit" title="Fit to view" aria-pressed="false"');
     });

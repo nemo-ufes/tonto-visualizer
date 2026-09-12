@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'vitest';
-import { contentAfter, defaultContentOptions, packagesInScope } from '../src/options.js';
+import {
+    clampAssociationDistance, contentAfter, defaultContentOptions, packagesInScope
+} from '../src/options.js';
 
 const workspace = { file: ['Employment'], workspace: ['Employment', 'Parties'] };
 
@@ -40,5 +42,13 @@ describe('a change to the content options', () => {
         expect(contentAfter(picked, { scope: picked.scope })).toEqual(picked);
         expect(contentAfter(picked, { includedPackages: ['Parties', 'Employment'] }).includedPackages)
             .toEqual(['Parties', 'Employment']);
+    });
+});
+
+describe('association distance', () => {
+    test('stays inside the toolbar range', () => {
+        expect(clampAssociationDistance(20)).toBe(60);
+        expect(clampAssociationDistance(120)).toBe(120);
+        expect(clampAssociationDistance(400)).toBe(180);
     });
 });

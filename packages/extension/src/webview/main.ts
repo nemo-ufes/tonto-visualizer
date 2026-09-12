@@ -12,6 +12,7 @@ import type {
     ContentOptions, DisplayOptions, EdgeRoute, LayoutOptions, ViewConstraints, ViewModel
 } from 'tonto-view';
 import { natureLegend } from 'tonto-view/palette';
+import { ASSOCIATION_DISTANCE, clampAssociationDistance, defaultLayoutOptions } from 'tonto-view/options';
 import type { Corner, Handle, Point, Rect, Size } from 'tonto-canvas/draw';
 import {
     CORNERS, cornerOf, curvedRoute, darkTheme, distanceToPath, drawNode, dropHandle, handlesFor, lightTheme,
@@ -102,6 +103,7 @@ window.addEventListener('message', event => {
             fitMode = true;
         }
         updateFitToggle();
+        updateDistanceControl();
         draw();
         if (selectionChanged) {
             reportSelection();
@@ -845,6 +847,28 @@ function updateArrangeTitle(): void {
     element('hide').toggleAttribute('disabled', hideableSelection().length === 0);
 }
 
+function updateDistanceControl(): void {
+    const distance = layout?.associationDistance ?? defaultLayoutOptions.associationDistance;
+    element('distance').textContent = `Distance ${distance}%`;
+    (element('distanceDown') as HTMLButtonElement).disabled = distance <= ASSOCIATION_DISTANCE.minimum;
+    (element('distanceUp') as HTMLButtonElement).disabled = distance >= ASSOCIATION_DISTANCE.maximum;
+}
+
+function changeDistance(amount: number): void {
+    if (!layout) {
+        return;
+    }
+    const associationDistance = clampAssociationDistance(layout.associationDistance + amount);
+    if (associationDistance === layout.associationDistance) {
+        return;
+    }
+    // Optimistic so repeated clicks accumulate while Arrange is still running;
+    // the next model message confirms the saved value or restores it on failure.
+    layout = { ...layout, associationDistance };
+    updateDistanceControl();
+    host.postMessage({ type: 'layout', layout: { associationDistance } });
+}
+
 element('zoomIn').addEventListener('click', () => zoomAt(scale * 1.2, centreX(), centreY()));
 element('zoomOut').addEventListener('click', () => zoomAt(scale / 1.2, centreX(), centreY()));
 element('fit').addEventListener('click', () => setFitMode(!fitMode));
@@ -858,6 +882,8 @@ element('arrange').addEventListener('click', () => {
         ? { type: 'autoLayout', only: selectedNodes }
         : { type: 'autoLayout' });
 });
+element('distanceDown').addEventListener('click', () => changeDistance(-ASSOCIATION_DISTANCE.step));
+element('distanceUp').addEventListener('click', () => changeDistance(ASSOCIATION_DISTANCE.step));
 element('hide').addEventListener('click', hideSelection);
 // No format: the name the modeller gives the file in the dialog decides.
 element('exportButton').addEventListener('click', () => host.postMessage({ type: 'export' }));

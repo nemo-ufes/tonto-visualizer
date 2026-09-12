@@ -851,6 +851,11 @@ export class DiagramPanel {
                 <path d="M 9.5 2.5 H 13.5 V 6.5 M 13.5 2.5 L 7 9 M 11.5 8.5 V 13.5 H 2.5 V 4.5 H 7.5"></path>
             </svg>
         </button>
+        <span class="distance-control" role="group" aria-label="Association distance">
+            <button id="distanceDown" title="Reduce association distance">−</button>
+            <span id="distance" class="distance" title="Association distance used by Arrange">Distance 100%</span>
+            <button id="distanceUp" title="Increase association distance">+</button>
+        </span>
         <button id="zoomOut" title="Zoom out">−</button>
         <span id="scale" class="scale">100%</span>
         <button id="zoomIn" title="Zoom in">+</button>

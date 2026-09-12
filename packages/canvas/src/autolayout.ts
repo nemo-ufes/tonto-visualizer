@@ -30,7 +30,7 @@
 
 import * as elkModule from 'elkjs/lib/elk.bundled.js';
 import type { LayoutOptions, ViewConstraints, ViewModel } from 'tonto-view';
-import { defaultDisplayOptions, defaultLayoutOptions, inversePairs } from 'tonto-view';
+import { clampAssociationDistance, defaultDisplayOptions, defaultLayoutOptions, inversePairs } from 'tonto-view';
 import type { Point, Rect, Size } from './geometry.js';
 import {
     borderPoint, boundsOf, centerOf, overlaps, segmentHitsRect, segmentsProperlyCross
@@ -2376,7 +2376,15 @@ export async function autoLayout(
     if (request.taxonomyOnly) {
         view = { ...view, edges: view.edges.filter(edge => edge.kind === 'generalization') };
     }
-    const settings: LayoutOptions = { ...defaultLayoutOptions, ...request };
+    const requestedSettings: LayoutOptions = { ...defaultLayoutOptions, ...request };
+    const associationDistance = clampAssociationDistance(requestedSettings.associationDistance);
+    const distanceScale = associationDistance / defaultLayoutOptions.associationDistance;
+    const settings: LayoutOptions = {
+        ...requestedSettings,
+        associationDistance,
+        nodeSpacing: Math.round(requestedSettings.nodeSpacing * distanceScale),
+        rankSpacing: Math.round(requestedSettings.rankSpacing * distanceScale)
+    };
     const routing = request.routing ?? 'straight';
     const requested = new Set(request.only ?? view.nodes.map(node => node.id));
     const pinned = new Set(request.constraints?.pinned.filter(id => current[id] !== undefined) ?? []);
