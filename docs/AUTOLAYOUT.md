@@ -172,3 +172,9 @@ authority for what those constraints mean.
   crossings. Visible package boxes still use ELK compound nodes, but taxonomy
   component discovery now crosses those package boundaries so inheritance
   levels remain shared.
+- Added a shared semantic cost to the bounded cross-axis optimizer. Candidate
+  ordering and compaction now use explicit relative weights for inheritance,
+  mediation, whole-part/constitution, characterization and ordinary relations,
+  plus penalties for a relator outside its relata, reversed whole-before-part
+  reading and fragmented package runs. Rendered intersections, crossings and
+  established edge-length ceilings remain stronger acceptance criteria.
