@@ -115,6 +115,7 @@ export async function run(argv: string[]): Promise<number> {
         positions: laid.positions,
         routes: Object.fromEntries(Object.entries(laid.routes).map(([id, points]) => [id, { points }])),
         display,
+        direction,
         ...(dark ? { theme: darkTheme } : {})
     });
     process.stdout.write(drawn.svg + '\n');

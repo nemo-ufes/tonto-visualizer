@@ -332,6 +332,7 @@ export class DiagramPanel {
             positions: this.positions,
             routes: store.state.edges,
             display: store.state.display,
+            direction: store.state.layout.direction,
             theme: isDark(vscode.window.activeColorTheme) ? darkTheme : lightTheme
         });
         const wanted = format ?? (target.path.toLowerCase().endsWith('.png') ? 'png' : 'svg');

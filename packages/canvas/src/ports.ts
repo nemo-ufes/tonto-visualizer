@@ -9,9 +9,11 @@
  * and the multiplicities of both sit in the same place with nothing to say which
  * belongs to which.
  *
- * So the ends that arrive at one side of a box are spread along it, in the order
- * of the angle each line leaves at -- which keeps them from crossing each other
- * on the way in, and gives every line a corridor of its own to be labelled in.
+ * So each end first asks for the point where its own line of sight crosses the
+ * border. Ends that arrive too close together are spread only far enough to be
+ * distinguishable, in the order of the angle each line leaves at. This keeps
+ * them from crossing one another without making a lone diagonal association
+ * leave from the unrelated middle of a side.
  *
  * A relation from a class to itself is placed here too. It goes nowhere, so it
  * has no angle to be ordered by: it takes the end of its side, at the corner it
@@ -45,6 +47,8 @@ interface Arrival {
     through: boolean;
     /** What that ray points at: the far end, once it is known, else its centre. */
     aim: Point;
+    /** A taxonomy side fixed by the view's layout direction. */
+    side?: Side;
     /**
      * A loop's end: the side it leaves by, and the neighbouring side it turns
      * towards. It belongs at that end of its side rather than anywhere in the
@@ -141,13 +145,19 @@ export interface TreeStem {
     towards: Point;
 }
 
+export type AssociationAnchors = 'ray' | 'even';
+
 export function assignPorts(
     edges: Array<{ id: string; source: string; target: string; kind?: string }>,
     positions: Record<string, Rect>,
     /** The ends to aim through the centre of the box, by `endKey`. */
     through: ReadonlySet<string> = new Set(),
     /** Generalization-set stems, sharing the fan on the general's side of the border. */
-    stems: readonly TreeStem[] = []
+    stems: readonly TreeStem[] = [],
+    /** Candidate policy for ordinary associations; taxonomy always follows its ray. */
+    associationAnchors: AssociationAnchors = 'ray',
+    /** Rank direction, when known, so generalizations meet rank-facing sides. */
+    direction?: 'DOWN' | 'RIGHT'
 ): { ends: Map<string, EdgeEnds>; stems: Map<string, Point> } {
     // The direction everything that goes somewhere leaves in, by class, so that
     // a loop can turn at the corner with the most room around it.
@@ -194,11 +204,17 @@ export function assignPorts(
         // top of one of them regardless of what their fan already claimed.
         push(arrivals, edge.source, {
             edge: edge.id, isSource: true, from: centerOf(target), aim: centerOf(target),
-            through: edge.kind === 'generalization' || through.has(endKey(edge.id, edge.source))
+            through: edge.kind === 'generalization' || through.has(endKey(edge.id, edge.source)),
+            ...(edge.kind === 'generalization' && direction
+                ? { side: direction === 'DOWN' ? 'top' as const : 'left' as const }
+                : {})
         });
         push(arrivals, edge.target, {
             edge: edge.id, isSource: false, from: centerOf(source), aim: centerOf(source),
-            through: edge.kind === 'generalization' || through.has(endKey(edge.id, edge.target))
+            through: edge.kind === 'generalization' || through.has(endKey(edge.id, edge.target)),
+            ...(edge.kind === 'generalization' && direction
+                ? { side: direction === 'DOWN' ? 'bottom' as const : 'right' as const }
+                : {})
         });
     }
     for (const stem of stems) {
@@ -217,7 +233,7 @@ export function assignPorts(
     // where the line will actually be drawn to. Without it a mediation to a tall
     // class was anchored for a line steeper than the one drawn, and missed the
     // relator's centre by half its height.
-    let ends = place(arrivals, positions);
+    let ends = place(arrivals, positions, associationAnchors);
     const hasThrough = stems.length > 0 || through.size > 0
         || edges.some(edge => edge.kind === 'generalization');
     if (hasThrough) {
@@ -230,7 +246,7 @@ export function assignPorts(
                 }
             }
         }
-        ends = place(arrivals, positions);
+        ends = place(arrivals, positions, associationAnchors);
     }
 
     const complete = new Map<string, EdgeEnds>();
@@ -252,14 +268,15 @@ export function assignPorts(
 /** One pass: every arrival given its point on the border of the box it meets. */
 function place(
     arrivals: Map<string, Arrival[]>,
-    positions: Record<string, Rect>
+    positions: Record<string, Rect>,
+    associationAnchors: AssociationAnchors
 ): Map<string, Partial<EdgeEnds>> {
     const ends = new Map<string, Partial<EdgeEnds>>();
     for (const [nodeId, incoming] of arrivals) {
         const rect = positions[nodeId]!;
         const bySide = new Map<Side, Arrival[]>();
         for (const arrival of incoming) {
-            const side = arrival.corner?.side ?? sideOf(rect, arrival.from);
+            const side = arrival.corner?.side ?? arrival.side ?? sideOf(rect, arrival.from);
             bySide.set(side, [...(bySide.get(side) ?? []), arrival]);
         }
         for (const [side, group] of bySide) {
@@ -282,17 +299,20 @@ function place(
                 }
                 return order(one) - order(other) || one.edge.localeCompare(other.edge);
             });
-            // A line to be read through the box asks for the point its own ray
-            // crosses; the rest take their share of the side, as they always
-            // have. Both are then held apart, so that aiming a line through the
-            // centre cannot drop it onto the line beside it.
+            // Every line asks for the point its own ray crosses. Before this,
+            // only a generalization or mediation through a relator did so; an
+            // ordinary association was divided evenly across the whole side.
+            // A single diagonal association therefore left from the middle of
+            // an unrelated edge, and several associations were displaced much
+            // farther than the small separation needed to tell them apart.
+            // Loops still take their ordered even share because their ray goes
+            // nowhere: the corner, not a far endpoint, says where they belong.
             const even = ordered.map((_, index) => alongAt(rect, side, (index + 1) / (ordered.length + 1)));
-            const wanted = ordered.map((arrival, index) => (arrival.through
-                ? alongThrough(rect, side, arrival.aim)
-                : even[index]!));
-            // Nothing moves on a side that has no line to read through it: the
-            // even share is what every other box has always been given.
-            const spaced = ordered.some(arrival => arrival.through)
+            const wanted = ordered.map((arrival, index) => (arrival.corner
+                || (!arrival.through && associationAnchors === 'even')
+                ? even[index]!
+                : alongThrough(rect, side, arrival.aim)));
+            const spaced = ordered.some(arrival => arrival.through || associationAnchors === 'ray')
                 ? separate(wanted, even, lengthOf(rect, side))
                 : even;
             ordered.forEach((arrival, index) => {

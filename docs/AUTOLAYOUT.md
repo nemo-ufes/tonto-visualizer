@@ -139,3 +139,17 @@ authority for what those constraints mean.
   `genealogy` this removes three of the four genuine remaining label collisions;
   the final benchmark is 1813 x 1059, 6 crossings, 1 label collision and 6981
   total edge length.
+- Made anchoring part of final routing quality. Ordinary associations now ask
+  for their true line-of-sight intersection with a class border and are moved
+  only enough to separate a crowded fan. The renderer also evaluates the former
+  even-fan candidate and retains it when the completed routes have fewer node
+  intersections or crossings, so a better local anchor cannot spend global
+  readability.
+- Made ordinary generalizations meet the sides facing their taxonomy ranks:
+  top and bottom for a downward layout, left and right for a rightward one.
+  The saved layout direction is now used consistently by the panel, exports,
+  CLI and optimizer's rendered safety checks.
+- Extended final label-corridor reservation to ranked endpoints, which may move
+  only along their cross axis and only under the same rendered safety gate. On
+  `genealogy` this retains 1 label collision and 6 crossings with the clearer
+  rank-facing anchors; bounds are 1818 x 1059 and total edge length is 7150.

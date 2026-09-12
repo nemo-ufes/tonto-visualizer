@@ -162,6 +162,7 @@ function draw(): void {
         positions,
         routes,
         display,
+        direction: layout?.direction,
         theme: dark ? darkTheme : lightTheme,
         selection: [...selection]
     });

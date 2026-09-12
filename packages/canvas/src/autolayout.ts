@@ -482,6 +482,8 @@ function settleRelators(
 }
 
 interface Corridor {
+    source: string;
+    target: string;
     from: Point;
     to: Point;
 }
@@ -507,6 +509,8 @@ function taxonomyCorridors(
         const source = positions[edge.source];
         const target = positions[edge.target];
         return source && target ? [{
+            source: edge.source,
+            target: edge.target,
             from: borderPoint(source, centerOf(target)),
             to: borderPoint(target, centerOf(source))
         }] : [];
@@ -537,7 +541,7 @@ function layoutLabelWidth(edge: ViewModel['edges'][number]): number {
 }
 
 /** A rendering safe for skeletal relations in layout-only unit fixtures. */
-function renderForLayoutScore(view: ViewModel, positions: Positions) {
+function renderForLayoutScore(view: ViewModel, positions: Positions, direction: LayoutOptions['direction']) {
     // A few layout unit tests intentionally use skeletal relation ends. They
     // carry enough information for layout but not for label rendering, so fill
     // only the two flags the renderer expects before asking it to score labels.
@@ -552,6 +556,7 @@ function renderForLayoutScore(view: ViewModel, positions: Positions) {
     return render({
         view: drawable,
         positions,
+        direction,
         display: { ...defaultDisplayOptions, routing: 'straight', showPackageGroups: false }
     });
 }
@@ -594,9 +599,10 @@ function renderedSafety(
     view: ViewModel,
     positions: Positions,
     ids: string[],
-    edgeIds: ReadonlySet<string>
+    edgeIds: ReadonlySet<string>,
+    direction: LayoutOptions['direction']
 ): RenderedSafety {
-    const output = renderForLayoutScore(view, positions);
+    const output = renderForLayoutScore(view, positions, direction);
     const edgeById = new Map(view.edges.map(edge => [edge.id, edge]));
     const paths = Object.entries(output.paths).filter(([id]) => edgeIds.has(id));
     let intersections = 0;
@@ -711,7 +717,7 @@ function optimizeRankCrossAxis(
             // call a swap an improvement while adding crossings at the box
             // borders. Tree buses are scored through their member edges here;
             // the final benchmark remains the authority for the rendered tree.
-            const ports = assignPorts(edges, candidate).ends;
+            const ports = assignPorts(edges, candidate, new Set(), [], 'ray', settings.direction).ends;
             const obstacles = ids.map(id => candidate[id]).filter((rect): rect is Rect => rect !== undefined);
             const bends: Point[] = [];
             const paths: Array<[string, Point[]]> = [];
@@ -787,7 +793,7 @@ function optimizeRankCrossAxis(
         const acceptCandidates = (candidates: Positions[], movable: ReadonlySet<string>): boolean => {
             let bestScore = score(positions);
             const edgeIds = new Set(edges.map(edge => edge.id));
-            let bestSafety = renderedSafety(view, positions, ids, edgeIds);
+            let bestSafety = renderedSafety(view, positions, ids, edgeIds, settings.direction);
             const labelCeiling = bestSafety.labelOcclusions;
             let best: Positions | undefined;
             for (const candidate of candidates) {
@@ -798,7 +804,7 @@ function optimizeRankCrossAxis(
                 if (!betterCrossAxisScore(candidateScore, bestScore)) {
                     continue;
                 }
-                const candidateSafety = renderedSafety(view, candidate, ids, edgeIds);
+                const candidateSafety = renderedSafety(view, candidate, ids, edgeIds, settings.direction);
                 if (candidateSafety.intersections <= bestSafety.intersections
                     && candidateSafety.crossings <= bestSafety.crossings
                     && candidateSafety.labelOcclusions <= labelCeiling) {
@@ -955,15 +961,15 @@ function optimizeRankCrossAxis(
                     continue;
                 }
                 const movable = [edge.source, edge.target]
-                    .filter(id => !ranked.has(id) && !protectedNodes.has(id)
+                    .filter(id => !protectedNodes.has(id)
                         && nodeById.get(id)?.stereotype !== 'relator'
-                        && (incident.get(id)?.length ?? 0) <= 2)
+                        && (incident.get(id)?.length ?? 0) <= (ranked.has(id) ? 4 : 2))
                     .sort((one, other) => (incident.get(one)?.length ?? 0) - (incident.get(other)?.length ?? 0)
                         || one.localeCompare(other));
                 if (movable.length === 0) {
                     continue;
                 }
-                const before = renderedSafety(view, positions, ids, edgeIds);
+                const before = renderedSafety(view, positions, ids, edgeIds, settings.direction);
                 let best: { positions: Positions; safety: RenderedSafety; distance: number; id: string } | undefined;
                 for (const id of movable) {
                     const rect = positions[id]!;
@@ -974,13 +980,17 @@ function optimizeRankCrossAxis(
                     const dy = rectCentre.y - fixedCentre.y;
                     const length = Math.hypot(dx, dy) || 1;
                     const distance = Math.min(required - available, 180);
-                    const directions = [
-                        { x: dx / length, y: dy / length },
-                        { x: Math.sign(dx) || 1, y: 0 },
-                        { x: -(Math.sign(dx) || 1), y: 0 },
-                        { x: 0, y: Math.sign(dy) || 1 },
-                        { x: 0, y: -(Math.sign(dy) || 1) }
-                    ];
+                    const directions = ranked.has(id)
+                        ? settings.direction === 'DOWN'
+                            ? [{ x: Math.sign(dx) || 1, y: 0 }, { x: -(Math.sign(dx) || 1), y: 0 }]
+                            : [{ x: 0, y: Math.sign(dy) || 1 }, { x: 0, y: -(Math.sign(dy) || 1) }]
+                        : [
+                            { x: dx / length, y: dy / length },
+                            { x: Math.sign(dx) || 1, y: 0 },
+                            { x: -(Math.sign(dx) || 1), y: 0 },
+                            { x: 0, y: Math.sign(dy) || 1 },
+                            { x: 0, y: -(Math.sign(dy) || 1) }
+                        ];
                     for (const direction of directions) {
                         for (const share of [1, 1.25, 1.5]) {
                             const shift = distance * share;
@@ -992,10 +1002,11 @@ function optimizeRankCrossAxis(
                             };
                             const moved = candidate[id]!;
                             if (!clear(candidate, new Set([id])) || corridors.some(corridor =>
-                                segmentHitsRect(corridor.from, corridor.to, moved, TAXONOMY_CORRIDOR))) {
+                                corridor.source !== id && corridor.target !== id
+                                && segmentHitsRect(corridor.from, corridor.to, moved, TAXONOMY_CORRIDOR))) {
                                 continue;
                             }
-                            const safety = renderedSafety(view, candidate, ids, edgeIds);
+                            const safety = renderedSafety(view, candidate, ids, edgeIds, settings.direction);
                             if (safety.intersections > before.intersections || safety.crossings > before.crossings
                                 || safety.labelOcclusions >= before.labelOcclusions) {
                                 continue;
