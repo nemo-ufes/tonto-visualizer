@@ -844,7 +844,7 @@ export class DiagramPanel {
 <body>
 <div id="shell">
     <div id="toolbar">
-        <button id="fit" title="Fit to view">Fit</button>
+        <button id="fit" title="Fit to view" aria-pressed="false">Fit</button>
         <button id="arrange" title="Arrange the whole diagram automatically">Arrange</button>
         <button id="newWindow" class="icon-button" title="Move into a New Window" aria-label="Move into a New Window">
             <svg viewBox="0 0 16 16" aria-hidden="true">

@@ -74,6 +74,15 @@ button:hover {
     background: var(--vscode-button-secondaryHoverBackground, rgba(128, 128, 128, 0.3));
 }
 
+button[aria-pressed="true"] {
+    background: var(--vscode-button-background, #0e639c);
+    color: var(--vscode-button-foreground, #fff);
+}
+
+button[aria-pressed="true"]:hover {
+    background: var(--vscode-button-hoverBackground, #1177bb);
+}
+
 button:disabled {
     cursor: default;
     opacity: 0.45;
