@@ -110,6 +110,37 @@ describe('arranging a model', () => {
         }
     });
 
+    test('stacks small components in the gap beside a tall component', async () => {
+        const view = taxonomy(0);
+        for (const name of ['SmallA', 'SmallB', 'SmallC']) {
+            view.nodes.push({
+                id: `Sample::${name}`, kind: 'class', name, package: 'Sample',
+                stereotype: 'kind', color: '#FF99A3', isExternal: false, attributes: []
+            });
+            view.groups[0]!.nodes.push(`Sample::${name}`);
+        }
+        const sizes = {
+            'Sample::Root': { width: 500, height: 600 },
+            'Sample::SmallA': { width: 220, height: 150 },
+            'Sample::SmallB': { width: 220, height: 150 },
+            'Sample::SmallC': { width: 220, height: 150 }
+        };
+
+        const { positions } = await autoLayout(view, sizes, {}, {
+            ...defaultLayoutOptions, groupByPackage: false
+        });
+        const bounds = boundsOf(Object.values(positions));
+
+        // Shelf packing reserves the tall card's full 600px for its row and
+        // pushes the third small card below it. Gap packing makes one compact
+        // column of the three beside the tall component.
+        expect(bounds.width).toBeLessThanOrEqual(780);
+        expect(bounds.height).toBeLessThanOrEqual(600);
+        for (const [index, rect] of Object.values(positions).entries()) {
+            expect(Object.values(positions).slice(index + 1).some(other => overlaps(rect, other))).toBe(false);
+        }
+    });
+
     test('puts a supertype above its subtypes', async () => {
         const view = taxonomy(3);
         const positions = await arrange(view, false);

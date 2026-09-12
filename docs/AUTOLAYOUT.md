@@ -110,6 +110,15 @@ authority for what those constraints mean.
 
 ### 2026-09-12
 
+- Made specializations declared by a generalization set first-class view
+  edges. The layout now recognizes the set as real coupling, so component
+  packing cannot scatter its general and specifics among unrelated clusters;
+  turning off generalization-set notation still retains the taxonomy. The
+  supplied `pets.tontoview` is the qualitative target: its central pet graph,
+  legal-object chain, meeting family and car family remain visibly distinct.
+- Replaced one-dimensional component shelves with deterministic rectangular
+  gap packing. Short independent taxonomies can now stack beside a tall cluster
+  instead of each inheriting the height of the tallest item in its row.
 - Used the modeller's saved `error.tontoview` arrangement as a qualitative
   target. A whole with several leaf parts is now placed as a compact fan instead
   of applying the pairwise whole-before-part rule repeatedly and producing a

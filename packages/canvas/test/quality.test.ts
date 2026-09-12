@@ -39,6 +39,31 @@ describe('layout quality benchmarks', () => {
         expect(quality.edgeNodeIntersections).toBe(0);
     });
 
+    test('keeps families declared by generalization sets coupled in pets', async () => {
+        const target = resolve(repository, 'vendor/tontoredesign/examples/pets.tonto');
+        const { view, laid } = await benchmark(target);
+
+        const family = (name: string) => {
+            const set = view.gensets.find(candidate => candidate.name === name);
+            expect(set?.general).toBeDefined();
+            return [set!.general!, ...set!.specifics].map(id => laid.positions[id]!);
+        };
+        const centres = (rects: ReturnType<typeof family>) => rects.map(rect => ({
+            x: rect.x + rect.width / 2,
+            y: rect.y + rect.height / 2
+        }));
+
+        for (const name of ['__', 'Name']) {
+            const members = family(name);
+            const points = centres(members);
+            expect(Math.max(...points.map(point => point.x)) - Math.min(...points.map(point => point.x)))
+                .toBeLessThan(500);
+            expect(Math.max(...points.map(point => point.y)) - Math.min(...points.map(point => point.y)))
+                .toBeLessThan(350);
+            expect(members.slice(1).every(rect => rect.y > members[0]!.y)).toBe(true);
+        }
+    });
+
     test('keeps association pressure out of taxonomy corridors', async () => {
         const { laid, rendered, quality } = await benchmark();
         expect(Object.keys(laid.positions)).toHaveLength(12);
@@ -82,7 +107,9 @@ describe('layout quality benchmarks', () => {
 
     test.each([
         ['boats', resolve(repository, 'vendor/tontoredesign/examples/boats.tonto'),
-            { width: 2200, height: 1750, crossings: 6, labels: 37, total: 12100, longest: 700 }],
+            // Genset-declared specializations are now present as real edges;
+            // the former ceiling counted a diagram that omitted those lines.
+            { width: 2200, height: 1750, crossings: 17, labels: 37, total: 13500, longest: 1000 }],
         ['pets', resolve(repository, 'vendor/tontoredesign/examples/pets.tonto'),
             { width: 1600, height: 1050, crossings: 2, labels: 3, total: 3000, longest: 450 }],
         ['gufo', resolve(repository, 'vendor/tontoredesign/examples/gufo.tonto'),
