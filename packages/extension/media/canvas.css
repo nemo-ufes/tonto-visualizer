@@ -43,14 +43,6 @@ body {
     background: var(--vscode-editorWidget-background, transparent);
 }
 
-.title {
-    font-weight: 600;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 40%;
-}
-
 .stale {
     color: var(--vscode-editorWarning-foreground, #cca700);
     white-space: nowrap;

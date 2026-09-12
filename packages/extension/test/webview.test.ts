@@ -38,10 +38,10 @@ const view: ViewModel = {
 function panelHtml(): string {
     return `<div id="shell">
         <div id="toolbar">
-            <span id="title"></span><span id="stale" hidden></span>
+            <button id="fit"></button><button id="arrange"></button><button id="newWindow"></button>
             <button id="zoomOut"></button><span id="scale"></span><button id="zoomIn"></button>
-            <button id="fit"></button><button id="newWindow"></button><button id="arrange"></button>
             <button id="hide" disabled></button><button id="optionsButton"></button><button id="exportButton"></button>
+            <span id="stale" hidden></span>
         </div>
         <div id="options" hidden></div>
         <div id="viewport"><div id="canvas"></div></div>
@@ -74,7 +74,6 @@ function sendModel(hidden: string[] = [], stale?: string, fit = false): void {
             { kind: 'association', ids: ['works-for'], label: 'Sample::Person — worksFor — Sample::Organization' },
             { kind: 'association', ids: ['employs'], label: 'Sample::Organization — employs — Sample::Person' }
         ],
-        title: 'sample.tonto',
         ...(fit ? { fit: true } : {}),
         ...(stale ? { stale } : {})
     } }));
@@ -209,7 +208,7 @@ describe('the webview and its host protocol', () => {
             content: { ...defaultContentOptions, includedPackages: ['Sample'] },
             layout: defaultLayoutOptions,
             packages: ['Other', 'Sample'],
-            filters: [], title: 'sample.tonto'
+            filters: []
         } }));
         openOptions();
 
@@ -244,7 +243,7 @@ describe('the webview and its host protocol', () => {
                 'Sample::Organization': { x: 0, y: 0, width: 160, height: 60 }
             },
             routes: {}, display: defaultDisplayOptions, content: defaultContentOptions,
-            layout: defaultLayoutOptions, packages: ['Sample'], filters: [], title: 'sample.tonto'
+            layout: defaultLayoutOptions, packages: ['Sample'], filters: []
         } }));
         window.dispatchEvent(new MessageEvent('message', {
             data: { type: 'select', ids: ['generalization:person-organization'] }
@@ -287,7 +286,7 @@ describe('the webview and its host protocol', () => {
                 'Sample::Woman': { x: 200, y: 200, width: 120, height: 42 }
             },
             routes: {}, display: defaultDisplayOptions, content: defaultContentOptions,
-            layout: defaultLayoutOptions, packages: ['Sample'], filters: [], title: 'sample.tonto'
+            layout: defaultLayoutOptions, packages: ['Sample'], filters: []
         } }));
 
         const before = document.querySelector('.tv-tree')!.outerHTML;

@@ -80,6 +80,15 @@ describe('the panel chrome', () => {
         expect(button![2]!.replace(/<[^>]+>/g, '').trim()).toBe('');
     });
 
+    test('starts with fit, arrange and new window without repeating the file name', () => {
+        const toolbar = /<div id="toolbar">([\s\S]*?)<\/div>/.exec(panel);
+        expect(toolbar).not.toBeNull();
+        const controls = [...toolbar![1]!.matchAll(/<(?:button|span)\b[^>]*id="([^"]+)"/g)]
+            .map(match => match[1]);
+        expect(controls.slice(0, 3)).toEqual(['fit', 'arrange', 'newWindow']);
+        expect(controls).not.toContain('title');
+    });
+
     test('falls back to the font the diagram is drawn in', () => {
         // Chrome and drawing should agree when neither is being told what to
         // use; the stack is the one in packages/canvas/src/measure.ts.
