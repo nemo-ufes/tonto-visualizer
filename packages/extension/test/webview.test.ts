@@ -67,6 +67,7 @@ function sendModel(hidden: string[] = [], stale?: string, fit = false): void {
         display: defaultDisplayOptions,
         content: { ...defaultContentOptions, hidden },
         layout: defaultLayoutOptions,
+        constraints: { pinned: [] },
         packages: ['Sample'],
         filters: [
             { kind: 'class', ids: ['Sample::Person'], label: 'Sample::Person' },
@@ -134,6 +135,22 @@ describe('the webview and its host protocol', () => {
         expect(checkbox('Cluster packages').checked).toBe(true);
         expect([...document.querySelectorAll('label.choice')]
             .some(candidate => candidate.querySelector('span')?.textContent === 'Arrangement')).toBe(false);
+    });
+
+    test('offers to pin the selected classifiers', () => {
+        sendModel();
+        window.dispatchEvent(new MessageEvent('message', {
+            data: { type: 'select', ids: ['Sample::Person'] }
+        }));
+        openOptions();
+        const button = [...document.querySelectorAll('button')]
+            .find(candidate => candidate.textContent === 'Pin selected') as HTMLButtonElement | undefined;
+
+        expect(button?.disabled).toBe(false);
+        button?.click();
+        expect(posted('pin').at(-1)).toEqual({
+            type: 'pin', ids: ['Sample::Person'], pinned: true
+        });
     });
 
     test('fits a newly opened view once and preserves later viewport changes', () => {

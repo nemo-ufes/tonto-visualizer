@@ -31,6 +31,7 @@ describe('view file options', () => {
         expect(view.content).toEqual(defaultContentOptions);
         expect(view.display).toEqual(defaultDisplayOptions);
         expect(view.layout).toEqual(defaultLayoutOptions);
+        expect(view.constraints).toEqual({ pinned: [] });
     });
 
     test('retains valid optional arrays and explicit false values', () => {
@@ -48,7 +49,8 @@ describe('view file options', () => {
                 // Legacy engine choices are ignored in favour of taxonomy layout.
                 algorithm: 'stress', direction: 'RIGHT', nodeSpacing: 0,
                 rankSpacing: 120, groupByPackage: false
-            }
+            },
+            constraints: { pinned: ['Sample::Person'] }
         });
 
         expect(view.content).toEqual({
@@ -69,5 +71,6 @@ describe('view file options', () => {
             direction: 'RIGHT', nodeSpacing: 0,
             rankSpacing: 120, groupByPackage: false
         });
+        expect(view.constraints).toEqual({ pinned: ['Sample::Person'] });
     });
 });
