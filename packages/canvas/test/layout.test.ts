@@ -551,6 +551,31 @@ describe('packages and the layout', () => {
         expect(overlaps(laid.positions.A!, laid.positions.B!)).toBe(false);
     });
 
+    test('places a partial layout in the halo of its fixed neighbours', async () => {
+        const clazz = (id: string) => ({
+            id, kind: 'class' as const, name: id, package: 'Sample', stereotype: 'kind',
+            color: '#FF99A3', isExternal: false, attributes: []
+        });
+        const view: ViewModel = {
+            groups: [],
+            nodes: [clazz('Selected'), clazz('Fixed')],
+            edges: [{ kind: 'relation', id: 'connection', source: 'Selected', target: 'Fixed' }],
+            gensets: []
+        };
+        const sizes = { Selected: { width: 100, height: 60 }, Fixed: { width: 100, height: 60 } };
+        const current = {
+            Selected: { x: 0, y: 0, ...sizes.Selected },
+            Fixed: { x: 1000, y: 0, ...sizes.Fixed }
+        };
+        const laid = await autoLayout(view, sizes, current, {
+            ...defaultLayoutOptions, groupByPackage: false, only: ['Selected']
+        });
+
+        expect(laid.positions.Fixed).toEqual(current.Fixed);
+        expect(laid.positions.Selected!.x).toBeGreaterThan(500);
+        expect(overlaps(laid.positions.Selected!, laid.positions.Fixed!, 24)).toBe(false);
+    });
+
     test('returns orthogonal routes attached source to target after settling relators', async () => {
         const clazz = (id: string, stereotype = 'kind') => ({
             id, kind: 'class' as const, name: id, package: 'Sample', stereotype,

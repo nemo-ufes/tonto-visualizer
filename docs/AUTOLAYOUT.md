@@ -62,7 +62,7 @@ exact ELK coordinates.
 - [ ] Treat package cohesion as a soft preference unless a view explicitly asks
   for package containers. Taxonomies crossing package boundaries must retain
   shared ranks.
-- [ ] Give partial layout a fixed-neighbour halo, so relations to unselected
+- [x] Give partial layout a fixed-neighbour halo, so relations to unselected
   nodes influence placement while those nodes remain immovable.
 - [x] Make association labels part of the final-layout quality score, then
   validate their corridors and routes after semantic movement. Passing centre,
@@ -162,3 +162,8 @@ authority for what those constraints mean.
   and puts classifiers with no inheritance into a compact appendix after the
   taxonomy. Toggling the mode preserves manual placement; an explicit Arrange
   applies its hierarchy-specific layout.
+- Made partial Arrange aware of relations crossing the selection boundary. It
+  keeps the selected arrangement rigid and every unselected classifier fixed,
+  then chooses a collision-free translation that shortens those boundary
+  relations while retaining a smaller preference for the selection's previous
+  location.
