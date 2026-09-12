@@ -32,12 +32,12 @@ Working end to end, and rough in places.
   box. Multiple associations between the same classes fan apart through a real
   bend instead of running as parallel rails. Curved detours and right angles are
   available as alternatives; a direct association remains straight, while a
-  necessary bend is smoothed and retains sampled geometry for labels, selection
-  and collision checks. Automatic layout (ELK, layered) places only what has not
-  been placed by hand, seats a relator between the classes it mediates -- it is
-  a reified relationship, and that is where a
-  reader looks for it -- and can be told to ignore the packages and lay the
-  model out as one graph.
+  necessary bend is fitted with a Graphviz-style cubic spline and retains
+  sampled geometry for labels, selection and collision checks. Automatic layout
+  (ELK, layered) places only what has not been placed by hand, seats a relator
+  between the classes it mediates -- it is a reified relationship, and that is
+  where a reader looks for it -- and can be told to ignore the packages and lay
+  the model out as one graph.
 - `packages/cli` — `tonto-view <file-or-directory> [--svg]`.
 - `packages/extension` — the panel: live redraw as the model is typed, the last
   good picture kept while it does not parse, drag to arrange, double-click to

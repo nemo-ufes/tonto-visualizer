@@ -172,8 +172,10 @@ spread into a shallow fan with distinct midpoint bends, and a line that would
 cross an unrelated class takes one bend round it, since a straight line through
 a class is worse than no line at all.
 The curved style only smooths associations for which the straight router needed
-a bend; a direct association remains a direct line. Smoothed detours stay close
-to their guide and are checked against the same obstacles and crossings as their
+a bend; a direct association remains a direct line. Its Graphviz-style fitter
+fits one chord-parameterized cubic over as much of the guide as its obstacle
+corridor permits, splitting at the worst-fitting bend only when necessary.
+Smoothed detours are checked against the same obstacles and crossings as their
 sampled geometry. Generalizations stay straight so taxonomy ranks and shared
 heads keep their visual grammar.
 Right angles remain, as a choice, for the taxonomies they do suit.

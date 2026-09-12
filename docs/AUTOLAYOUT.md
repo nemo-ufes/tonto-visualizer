@@ -136,10 +136,12 @@ authority for what those constraints mean.
   cross-axis compaction and each higher-order family has its own safety decision,
   so a bad route in one family cannot roll back a valid placement in another.
 - Added curved association routing as a third line style. Direct routes remain
-  straight; only obstacle or manually bent guides are smoothed. Cubic detours
-  are flattened adaptively for obstacle, crossing, label and hit-test geometry;
-  unsafe curves fall back towards their guide, while taxonomy edges and shared
-  generalization trees remain straight.
+  straight; only obstacle or manually bent guides are smoothed. The fitter uses
+  Graphviz's Spline-o-matic shape: chord-length least-squares cubic handles over
+  the longest safe part of a guide, recursively split only where one cubic cannot
+  stay in its corridor. Cubic detours are flattened adaptively for obstacle,
+  crossing, label and hit-test geometry; unsafe curves fall back to their guide,
+  while taxonomy edges and shared generalization trees remain straight.
 - Changed repeated associations from parallel offset lines into a symmetric
   fan. Their distinct border ports now open farther apart at a real midpoint
   bend, which Curved mode can smooth without curving lone direct associations.
