@@ -180,6 +180,65 @@ describe('telling one line from another', () => {
         expect(svg.match(/class="tv-edge tv-tree"/g)).toHaveLength(1);
     });
 
+    test('keeps the tree when a drag puts one subtype level with the general', () => {
+        // Not a near miss this time -- Child dragged to Person's own row, well
+        // past any slack. The set still has a majority on one side (Adult,
+        // still below), so the bus still runs there; Child's leg just meets it
+        // from whichever edge actually faces the bus instead of the one every
+        // other leg happens to use.
+        const genset = 'set:Sample::PersonAges';
+        const view: ViewModel = {
+            groups: [],
+            nodes: ['Person', 'Child', 'Adult'].map(classNode),
+            edges: [generalization('Child', 'Person', genset), generalization('Adult', 'Person', genset)],
+            gensets: [{
+                id: genset, name: 'PersonAges', disjoint: true, complete: true,
+                general: 'Sample::Person', specifics: ['Sample::Child', 'Sample::Adult'], categorizers: []
+            }]
+        };
+        const positions = {
+            'Sample::Person': { x: 100, y: 0, width: 120, height: 60 },
+            'Sample::Child': { x: 400, y: 0, width: 120, height: 42 },
+            'Sample::Adult': { x: 100, y: 200, width: 120, height: 42 }
+        };
+        const svg = render({ view, positions, display }).svg;
+
+        expect(svg.match(/class="tv-edge tv-tree"/g)).toHaveLength(1);
+        expect(svg).toContain(`data-genset="${genset}"`);
+    });
+
+    test('anchors a tree to the side of the general when its subtypes are beside it', () => {
+        // Both subtypes to the right this time, one above the general's row and
+        // one below it -- a horizontal arrangement, not a vertical one with a
+        // sideways outlier. The triangle should point right, off the general's
+        // own edge, with a vertical bus between the two rather than a
+        // horizontal one squeezed above or below a box neither subtype is near.
+        const genset = 'set:Sample::PersonAges';
+        const view: ViewModel = {
+            groups: [],
+            nodes: ['Person', 'Child', 'Adult'].map(classNode),
+            edges: [generalization('Child', 'Person', genset), generalization('Adult', 'Person', genset)],
+            gensets: [{
+                id: genset, name: 'PersonAges', disjoint: true, complete: true,
+                general: 'Sample::Person', specifics: ['Sample::Child', 'Sample::Adult'], categorizers: []
+            }]
+        };
+        const positions = {
+            'Sample::Person': { x: 0, y: 100, width: 120, height: 60 },
+            'Sample::Child': { x: 300, y: 40, width: 120, height: 42 },
+            'Sample::Adult': { x: 300, y: 180, width: 120, height: 42 }
+        };
+        const svg = render({ view, positions, display }).svg;
+
+        expect(svg.match(/class="tv-edge tv-tree"/g)).toHaveLength(1);
+        const apex = /class="tv-marker" points="([-\d.]+),([-\d.]+)/.exec(svg);
+        expect(apex).not.toBeNull();
+        // The apex sits on Person's right edge (x = 120), not above or below it.
+        expect(Number(apex![1])).toBeCloseTo(120, 0);
+        expect(Number(apex![2])).toBeGreaterThan(100);
+        expect(Number(apex![2])).toBeLessThan(160);
+    });
+
     test('anchors lines to one class in the order they leave in', () => {
         // Three classes on one rank, as a layered layout leaves them, reached
         // from the right side of one class. Every far centre has the same y, so
