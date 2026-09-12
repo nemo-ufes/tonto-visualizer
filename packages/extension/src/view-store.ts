@@ -133,7 +133,7 @@ export class ViewStore {
         }
     }
 
-    update(patch: Partial<Pick<ViewFile, 'content' | 'display' | 'layout'>>): void {
+    update(patch: Partial<Pick<ViewFile, 'content' | 'display' | 'layout' | 'constraints'>>): void {
         const userChanged = this.record();
         this.file = { ...this.file, ...patch };
         if (userChanged || this.dirty) {

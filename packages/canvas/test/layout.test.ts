@@ -609,6 +609,23 @@ describe('packages and the layout', () => {
         expect(overlaps(laid.positions.Selected!, laid.positions.Fixed!, 24)).toBe(false);
     });
 
+    test('keeps pinned nodes fixed during a full arrangement', async () => {
+        const view = taxonomy(2);
+        const sizes = Object.fromEntries(view.nodes.map(node => [node.id, sizeOf(node, display)]));
+        const current = {
+            'Sample::Root': { x: 900, y: 40, ...sizes['Sample::Root']! }
+        };
+        const laid = await autoLayout(view, sizes, current, {
+            ...defaultLayoutOptions,
+            groupByPackage: false,
+            constraints: { pinned: ['Sample::Root'] }
+        });
+
+        expect(laid.positions['Sample::Root']).toEqual(current['Sample::Root']);
+        expect(laid.positions['Sample::Sub0']).toBeDefined();
+        expect(laid.positions['Sample::Sub1']).toBeDefined();
+    });
+
     test('returns orthogonal routes attached source to target after settling relators', async () => {
         const clazz = (id: string, stereotype = 'kind') => ({
             id, kind: 'class' as const, name: id, package: 'Sample', stereotype,

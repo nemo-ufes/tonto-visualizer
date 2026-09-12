@@ -252,6 +252,7 @@ export class DiagramPanel {
                 routing: store.state.display.routing,
                 taxonomyOnly: store.state.display.taxonomyOnly,
                 packageContainers: store.state.display.showPackageGroups,
+                constraints: store.state.constraints,
                 ...(only ? { only } : {})
             });
         } catch (error) {
@@ -562,6 +563,7 @@ export class DiagramPanel {
             display: store.state.display,
             content: this.effectiveContent(store.state.content),
             layout: store.state.layout,
+            constraints: store.state.constraints,
             packages: this.availablePackages,
             filters: this.filters,
             ...(this.fitNextView ? { fit: true } : {}),
@@ -706,6 +708,21 @@ export class DiagramPanel {
             case 'autoLayout':
                 store?.begin(message.only ? 'Arrange selection' : 'Arrange');
                 await this.autoLayoutNow(message.only);
+                return;
+            case 'pin':
+                if (store) {
+                    store.begin(message.pinned ? 'Pin' : 'Unpin');
+                    const pinned = new Set(store.state.constraints.pinned);
+                    for (const id of message.ids) {
+                        if (message.pinned) {
+                            pinned.add(id);
+                        } else {
+                            pinned.delete(id);
+                        }
+                    }
+                    store.update({ constraints: { ...store.state.constraints, pinned: [...pinned].sort() } });
+                    this.send();
+                }
                 return;
             case 'undo':
                 await this.stepBack(true);

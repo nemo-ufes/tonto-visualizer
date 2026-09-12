@@ -178,3 +178,7 @@ authority for what those constraints mean.
   plus penalties for a relator outside its relata, reversed whole-before-part
   reading and fragmented package runs. Rendered intersections, crossings and
   established edge-length ceilings remain stronger acceptance criteria.
+- Added the first persistent modeller constraint: selected classifiers can be
+  pinned or unpinned from the options panel. Pins are stored by stable element
+  id in the `.tontoview`; full and partial Arrange leave their current boxes
+  untouched and place the movable subgraph using the same fixed-neighbour halo.

@@ -8,7 +8,9 @@
  * anything is being typed.
  */
 
-import type { ContentOptions, DisplayOptions, EdgeRoute, LayoutOptions, ViewModel } from 'tonto-view';
+import type {
+    ContentOptions, DisplayOptions, EdgeRoute, LayoutOptions, ViewConstraints, ViewModel
+} from 'tonto-view';
 import { natureLegend } from 'tonto-view/palette';
 import type { Corner, Handle, Point, Rect, Size } from 'tonto-canvas/draw';
 import {
@@ -39,6 +41,7 @@ let routes: Record<string, EdgeRoute> = {};
 let display: DisplayOptions | undefined;
 let content: ContentOptions | undefined;
 let layout: LayoutOptions | undefined;
+let constraints: ViewConstraints = { pinned: [] };
 let packages: string[] = [];
 let filters: FilterItem[] = [];
 let dark = false;
@@ -87,6 +90,7 @@ window.addEventListener('message', event => {
         display = message.display;
         content = message.content;
         layout = message.layout;
+        constraints = message.constraints ?? { pinned: [] };
         packages = message.packages;
         filters = message.filters;
         staleLabel.hidden = !message.stale;
@@ -108,6 +112,9 @@ window.addEventListener('message', event => {
         selection = new Set(message.ids);
         applySelection();
         updateArrangeTitle();
+        if (!optionsPanel.hidden) {
+            fillOptions();
+        }
     } else if (message.type === 'rasterise') {
         void rasterise(message.id, message.svg, message.scale);
     } else if (message.type === 'theme') {
@@ -778,6 +785,9 @@ function applySelection(): void {
 function reportSelection(): void {
     host.postMessage({ type: 'selected', ids: [...selection] });
     updateArrangeTitle();
+    if (!optionsPanel.hidden) {
+        fillOptions();
+    }
 }
 
 function updateArrangeTitle(): void {
@@ -856,6 +866,14 @@ function fillOptions(): void {
             value => host.postMessage({ type: 'layout', layout: { groupByPackage: value } }))
     ];
     optionsPanel.append(section('Shape', arrangement));
+    const selectedNodes = [...selection].filter(id => positions[id] !== undefined);
+    const pinned = new Set(constraints.pinned);
+    const unpins = selectedNodes.length > 0 && selectedNodes.every(id => pinned.has(id));
+    optionsPanel.append(section('Constraints', [actionButton(
+        unpins ? 'Unpin selected' : 'Pin selected',
+        selectedNodes.length === 0,
+        () => host.postMessage({ type: 'pin', ids: selectedNodes, pinned: !unpins })
+    )]));
     optionsPanel.append(section('Drawn', displayRows.map(([key, label]) =>
         toggle(label, Boolean(display?.[key]), value => host.postMessage({ type: 'display', display: { [key]: value } })))));
     optionsPanel.append(section('Included', contentRows.map(([key, label]) =>
@@ -984,6 +1002,14 @@ function toggle(label: string, value: boolean, onChange: (value: boolean) => voi
     text.textContent = label;
     row.append(input, text);
     return row;
+}
+
+function actionButton(label: string, disabled: boolean, onClick: () => void): HTMLElement {
+    const button = document.createElement('button');
+    button.textContent = label;
+    button.disabled = disabled;
+    button.addEventListener('click', onClick);
+    return button;
 }
 
 function element(id: string): HTMLElement {

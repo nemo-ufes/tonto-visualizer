@@ -44,6 +44,11 @@ export interface EdgeRoute {
     labelOffset?: Point;
 }
 
+export interface ViewConstraints {
+    /** Stable element ids whose current placements automatic layout must retain. */
+    pinned: string[];
+}
+
 export interface ViewFile {
     version: number;
     /** The package the view is centred on, when it follows one. */
@@ -51,6 +56,7 @@ export interface ViewFile {
     content: ContentOptions;
     display: DisplayOptions;
     layout: LayoutOptions;
+    constraints: ViewConstraints;
     nodes: Record<string, Placement>;
     edges: Record<string, EdgeRoute>;
 }
@@ -62,6 +68,7 @@ export function emptyViewFile(focus?: string): ViewFile {
         content: { ...defaultContentOptions },
         display: { ...defaultDisplayOptions },
         layout: { ...defaultLayoutOptions },
+        constraints: { pinned: [] },
         nodes: {},
         edges: {}
     };
@@ -98,9 +105,15 @@ export function readViewFile(raw: unknown): ViewFile {
         content: readContentOptions(source.content),
         display: readDisplayOptions(source.display),
         layout: readLayoutOptions(source.layout),
+        constraints: readConstraints(source.constraints),
         nodes,
         edges
     };
+}
+
+function readConstraints(value: unknown): ViewConstraints {
+    const source = recordOf(value);
+    return { pinned: stringArray(source.pinned) ?? [] };
 }
 
 function readContentOptions(value: unknown): ContentOptions {

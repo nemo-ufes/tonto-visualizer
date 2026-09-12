@@ -29,7 +29,7 @@
  */
 
 import * as elkModule from 'elkjs/lib/elk.bundled.js';
-import type { LayoutOptions, ViewModel } from 'tonto-view';
+import type { LayoutOptions, ViewConstraints, ViewModel } from 'tonto-view';
 import { defaultDisplayOptions, defaultLayoutOptions, inversePairs } from 'tonto-view';
 import type { Point, Rect, Size } from './geometry.js';
 import {
@@ -100,6 +100,8 @@ export interface AutoLayoutRequest extends Partial<LayoutOptions> {
     taxonomyOnly?: boolean;
     /** Keep package members inside compound package nodes, not merely nearby. */
     packageContainers?: boolean;
+    /** User-owned constraints retained by an explicit Arrange. */
+    constraints?: ViewConstraints;
 }
 
 export interface AutoLayoutResult {
@@ -2003,7 +2005,9 @@ export async function autoLayout(
     }
     const settings: LayoutOptions = { ...defaultLayoutOptions, ...request };
     const routing = request.routing ?? 'straight';
-    const subject = new Set(request.only ?? view.nodes.map(node => node.id));
+    const requested = new Set(request.only ?? view.nodes.map(node => node.id));
+    const pinned = new Set(request.constraints?.pinned.filter(id => current[id] !== undefined) ?? []);
+    const subject = new Set([...requested].filter(id => !pinned.has(id)));
     const inverses = inversePairs(view.edges);
     const hasTaxonomy = view.edges.some(edge => edge.kind === 'generalization'
         && subject.has(edge.source) && subject.has(edge.target));
@@ -2164,7 +2168,7 @@ export async function autoLayout(
     if (!request.only && !grouped) {
         placeAppendixAfter(positions, appendixIds, subject, settings);
     }
-    if (request.only) {
+    if (request.only || pinned.size > 0) {
         placePartialLayout(view, positions, current, subject);
     }
 
