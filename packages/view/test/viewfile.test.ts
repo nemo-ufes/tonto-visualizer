@@ -92,4 +92,10 @@ describe('view file options', () => {
             }]
         });
     });
+
+    test('retains the expanded diagram typeface choices', () => {
+        for (const fontFamily of ['condensed', 'humanist', 'geometric', 'book'] as const) {
+            expect(readViewFile({ display: { fontFamily } }).display.fontFamily).toBe(fontFamily);
+        }
+    });
 });

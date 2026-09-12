@@ -12,31 +12,33 @@ import { measureLayout } from './layout-quality.js';
 const fixture = resolve(import.meta.dirname, 'fixtures/layout-pressure.tonto');
 const repository = resolve(import.meta.dirname, '../../..');
 
-async function benchmark(target = fixture) {
+async function benchmark(target = fixture, display = defaultDisplayOptions) {
     const folder = statSync(target).isDirectory() ? target : dirname(target);
     const session = new ViewSession({ workspace: [folder] });
     const models = statSync(target).isDirectory()
         ? await session.models()
         : await session.modelsOf(pathToFileURL(target).toString());
     const view = derive({ models, documentation: session.documentation() });
-    const sizes = Object.fromEntries(view.nodes.map(node => [node.id, sizeOf(node, defaultDisplayOptions)]));
+    const sizes = Object.fromEntries(view.nodes.map(node => [node.id, sizeOf(node, display)]));
     const laid = await autoLayout(view, sizes, {}, {
         ...defaultLayoutOptions,
         routing: 'straight'
     });
-    const rendered = render({ view, positions: laid.positions, display: defaultDisplayOptions, direction: 'DOWN' });
+    const rendered = render({ view, positions: laid.positions, display, direction: 'DOWN' });
     return { view, laid, rendered, quality: measureLayout(view, laid.positions, rendered, 'DOWN') };
 }
 
 describe('layout quality benchmarks', () => {
     test('keeps the class-only taxonomy clear at a crowded generalization head', async () => {
         const target = resolve(repository, 'vendor/tontoredesign/examples/classonly.tonto');
-        const { rendered, quality } = await benchmark(target);
+        for (const fontFamily of ['sans', 'condensed'] as const) {
+            const { rendered, quality } = await benchmark(target, { ...defaultDisplayOptions, fontFamily });
 
-        expect(rendered.headCollisions).toBe(0);
-        expect(quality.generalizationHeadCollisions).toBe(0);
-        expect(quality.edgeCrossings).toBe(0);
-        expect(quality.edgeNodeIntersections).toBe(0);
+            expect(rendered.headCollisions).toBe(0);
+            expect(quality.generalizationHeadCollisions).toBe(0);
+            expect(quality.edgeCrossings).toBe(0);
+            expect(quality.edgeNodeIntersections).toBe(0);
+        }
     });
 
     test('keeps families declared by generalization sets coupled in pets', async () => {

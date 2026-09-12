@@ -6,18 +6,14 @@
  * renderer: a diagram whose boxes are one size in CI and another on screen has
  * two layouts, and the saved one would be wrong in both.
  *
- * Which is also why the font is chosen the way it is. Helvetica, Arial and
- * Liberation Sans are metrically compatible -- the same string occupies the same
- * width in all three -- and between them they cover macOS, Windows and Linux, so
- * one set of estimates is right everywhere and an exported SVG opens the same
- * width it was drawn. A `system-ui` stack resolves to a different face on every
- * platform: measured here, the widest of them ran 18% wider than the narrowest,
- * which is a name over the border of its box on one machine and a lot of empty
- * card on another.
+ * Each preset therefore names a deliberate platform fallback stack rather than
+ * `system-ui`, which resolves to unrelated faces whose measured width varied by
+ * 18%. The condensed choice also asks the SVG renderer for a condensed face, so
+ * its narrower estimate remains meaningful when the first named font is absent.
  *
- * The ratios below are the widest measured over a page of real class names,
- * attribute lines and edge labels, plus a few per cent. Erring wide shows as a
- * slightly roomy card and never as text spilling out of one.
+ * The ratios below are conservative over real class names, attribute lines and
+ * edge labels. Erring wide shows as a slightly roomy card and never as text
+ * spilling out of one.
  */
 
 import type { ViewNode } from 'tonto-view';
@@ -27,6 +23,9 @@ import type { Size } from './geometry.js';
 export interface FontMetrics {
     family: string;
     kind: DisplayOptions['fontFamily'];
+    stretch: 'normal' | 'condensed';
+    cardMinWidth: number;
+    cardPadding: number;
     scale: number;
     name: number;
     stereotype: number;
@@ -37,8 +36,23 @@ export interface FontMetrics {
 
 const FONT_FAMILIES: Record<DisplayOptions['fontFamily'], string> = {
     sans: '"Helvetica Neue", Helvetica, Arial, "Liberation Sans", sans-serif',
+    condensed: '"Avenir Next Condensed", "Arial Narrow", "Roboto Condensed", "Liberation Sans Narrow", Arial, sans-serif',
+    humanist: 'Aptos, Calibri, "Segoe UI", Candara, Carlito, sans-serif',
+    geometric: '"Avenir Next", Avenir, Montserrat, Futura, "Century Gothic", sans-serif',
     serif: '"Times New Roman", "Liberation Serif", Times, serif',
+    book: 'Georgia, "Noto Serif", "Liberation Serif", serif',
     monospace: '"SFMono-Regular", Consolas, "Liberation Mono", monospace'
+};
+
+/** Conservative width relative to the Helvetica/Arial measurements below. */
+const FONT_WIDTHS: Record<DisplayOptions['fontFamily'], number> = {
+    sans: 1,
+    condensed: 0.84,
+    humanist: 0.98,
+    geometric: 1.03,
+    serif: 1.04,
+    book: 1.08,
+    monospace: 1
 };
 
 const FONT_SCALES: Record<DisplayOptions['fontSize'], number> = {
@@ -62,6 +76,9 @@ export function fontMetrics(options: Pick<DisplayOptions, 'fontFamily' | 'fontSi
     return {
         family: FONT_FAMILIES[options.fontFamily],
         kind: options.fontFamily,
+        stretch: options.fontFamily === 'condensed' ? 'condensed' : 'normal',
+        cardMinWidth: options.fontFamily === 'condensed' ? 96 : 108,
+        cardPadding: options.fontFamily === 'condensed' ? 6 : 8,
         scale,
         name: scaled(BASE_FONT.name),
         stereotype: scaled(BASE_FONT.stereotype),
@@ -99,8 +116,7 @@ export function textWidth(
     for (const character of text) {
         units += NARROW.has(character) ? NARROW_FACTOR : WIDE.has(character) ? WIDE_FACTOR : 1;
     }
-    const familyFactor = family === 'serif' ? 1.04 : 1;
-    return units * size * (bold ? BOLD_ADVANCE : ADVANCE) * familyFactor;
+    return units * size * (bold ? BOLD_ADVANCE : ADVANCE) * FONT_WIDTHS[family];
 }
 
 export const NODE = {
@@ -182,10 +198,10 @@ export function sizeOf(node: ViewNode, options: DisplayOptions): Size {
     const stereotype = stereotypeLabel(node);
     const lines = attributeLines(node, options);
     const width = Math.max(
-        NODE.minWidth,
-        textWidth(label, font.name, true, font.kind) + NODE.padding * 2,
-        stereotype ? textWidth(stereotype, font.stereotype, false, font.kind) + NODE.padding * 2 : 0,
-        ...lines.map(line => textWidth(line, font.attribute, false, font.kind) + NODE.padding * 2)
+        font.cardMinWidth,
+        textWidth(label, font.name, true, font.kind) + font.cardPadding * 2,
+        stereotype ? textWidth(stereotype, font.stereotype, false, font.kind) + font.cardPadding * 2 : 0,
+        ...lines.map(line => textWidth(line, font.attribute, false, font.kind) + font.cardPadding * 2)
     );
     const header = (stereotype ? NODE.stereotypeHeight * font.scale : 0)
         + NODE.nameHeight * font.scale + NODE.headerGap * 2;

@@ -2202,8 +2202,8 @@ export async function autoLayout(
     // Card widths below the historical 120px baseline are a drawing
     // improvement, not a reason for ELK to choose a different discrete rank
     // order. Plan in the proven envelope, then tighten each box around its
-    // measured content after semantic placement. Centres and topology stay
-    // stable while the visible card loses its unused side padding.
+    // measured content after semantic placement. Condensed text still recovers
+    // width from every content-driven card wider than this floor.
     const layoutSizeOf = (id: string): Size => {
         const size = sizeOf(id);
         return { ...size, width: Math.max(size.width, 120) };
@@ -2369,17 +2369,32 @@ export async function autoLayout(
         });
     }
 
+    // Most classifiers can contract to their text. A crowded generalization
+    // target is different: its border is a finite lane for hollow triangles,
+    // and shrinking that lane makes correctly ordered centre lines overlap as
+    // visible heads. One set contributes one shared head.
+    const headsByGeneral = new Map<string, Set<string>>();
+    for (const edge of view.edges) {
+        if (edge.kind !== 'generalization') {
+            continue;
+        }
+        const heads = headsByGeneral.get(edge.target) ?? new Set<string>();
+        heads.add(edge.genset ?? edge.id);
+        headsByGeneral.set(edge.target, heads);
+    }
     const tightened = new Set<string>();
     for (const id of subject) {
         const rect = positions[id];
         const measured = sizeOf(id);
-        if (!rect || rect.width <= measured.width) {
+        const compactCrowdedGeneral = measured.width < 108 && (headsByGeneral.get(id)?.size ?? 0) >= 5;
+        const width = Math.max(measured.width, compactCrowdedGeneral ? 120 : 0);
+        if (!rect || rect.width <= width) {
             continue;
         }
         positions[id] = {
             ...rect,
-            x: Math.round(rect.x + (rect.width - measured.width) / 2),
-            width: measured.width
+            x: Math.round(rect.x + (rect.width - width) / 2),
+            width
         };
         tightened.add(id);
     }

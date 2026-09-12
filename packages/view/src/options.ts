@@ -41,7 +41,14 @@ export interface ContentOptions {
 
 /** How an edge gets from one box to the other. */
 export type RoutingStyle = 'straight' | 'orthogonal';
-export type DiagramFontFamily = 'sans' | 'serif' | 'monospace';
+export type DiagramFontFamily =
+    | 'sans'
+    | 'condensed'
+    | 'humanist'
+    | 'geometric'
+    | 'serif'
+    | 'book'
+    | 'monospace';
 export type DiagramFontSize = 'small' | 'medium' | 'large';
 
 export interface DisplayOptions {
@@ -54,7 +61,7 @@ export interface DisplayOptions {
      * choice rather than the default.
      */
     routing: RoutingStyle;
-    /** Portable font stack used by cards and relationship labels. */
+    /** Font stack used by every piece of text in the diagram. */
     fontFamily: DiagramFontFamily;
     /** A stable size preset, so saved layouts do not depend on editor zoom. */
     fontSize: DiagramFontSize;

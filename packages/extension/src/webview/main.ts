@@ -919,7 +919,15 @@ function fillOptions(): void {
     ];
     optionsPanel.append(section('Shape', arrangement));
     optionsPanel.append(section('Text', [
-        choice('Typeface', [['sans', 'Sans-serif'], ['serif', 'Serif'], ['monospace', 'Monospace']],
+        choice('Typeface', [
+            ['sans', 'Helvetica / Arial'],
+            ['condensed', 'Condensed sans'],
+            ['humanist', 'Aptos / Calibri'],
+            ['geometric', 'Avenir / geometric'],
+            ['serif', 'Times serif'],
+            ['book', 'Georgia / book serif'],
+            ['monospace', 'Monospace']
+        ],
             display.fontFamily,
             value => host.postMessage({
                 type: 'display', display: { fontFamily: value as DisplayOptions['fontFamily'] }
