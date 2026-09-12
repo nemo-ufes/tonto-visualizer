@@ -114,3 +114,11 @@ authority for what those constraints mean.
 - Refined the right-side aspect preference for two classifiers joined by
   several relations. Such a pair is stacked with a generous vertical corridor,
   leaving separate lanes for its relationship labels and end decorations.
+- Added the first bounded rank-constrained optimizer. For diagrams of up to 32
+  non-appendix nodes it tries barycentric rank ordering and adjacent exchanges,
+  while the taxonomy rank axis stays fixed. Candidates must improve routed
+  intersections, crossings, maximum/total edge length or span, and are rejected
+  if the final port-spread/tree rendering worsens crossings or label occlusion.
+  On `genealogy` this reduces crossings from 9 to 7 and label occlusions from
+  28 to 25. Larger diagrams retain the established layout until the rendered
+  candidate score can be updated incrementally enough to remain interactive.
