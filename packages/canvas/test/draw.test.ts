@@ -5,7 +5,7 @@ import { placeNewNodes } from '../src/place.js';
 import { distanceToPath, segmentHitsRect } from '../src/geometry.js';
 import { labelWidth, render } from '../src/render.js';
 import { routeEdge } from '../src/route.js';
-import { FONT, multiplicityLabel, sizeOf, textWidth } from '../src/measure.js';
+import { FONT, multiplicityLabel, sizeOf, textWidth, wrappedAttributeLines } from '../src/measure.js';
 
 const display = { ...defaultDisplayOptions };
 
@@ -207,11 +207,29 @@ describe('drawing', () => {
         }).svg;
 
         expect(condensedSize.width).toBeLessThan(regularSize.width);
-        expect(sizeOf(model().nodes[1]!, condensed).width).toBe(96);
+        expect(sizeOf(model().nodes[1]!, condensed).width).toBe(72);
         expect(textWidth('«characterization»', FONT.edge, false, 'condensed'))
             .toBeLessThan(textWidth('«characterization»', FONT.edge, false, 'sans'));
         expect(svg).toContain('font-stretch: condensed');
         expect(svg).toContain('"Avenir Next Condensed", "Arial Narrow"');
+    });
+
+    test('wraps a long attribute instead of making a short-named class wide', () => {
+        const condensed = { ...display, fontFamily: 'condensed' as const };
+        const pet = {
+            ...model().nodes[0]!,
+            name: 'Pet',
+            attributes: [{
+                name: 'birthDate', type: 'date', stereotypes: ['begin'], cardinality: '0..1',
+                isOrdered: false, isConst: true, isAddOnly: false, isDerived: false
+            }]
+        };
+        const rows = wrappedAttributeLines(pet, condensed);
+        const size = sizeOf(pet, condensed);
+
+        expect(rows).toEqual(['@begin birthDate: const', 'date [0..1]']);
+        expect(size.width).toBeLessThan(170);
+        expect(size.height).toBe(84);
     });
 
     test('leaves placed elements where they are and finds room for the rest', () => {

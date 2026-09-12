@@ -15,7 +15,7 @@ import {
     alongPath, boundsOf, centerOf, distanceToPath, segmentHitsRect, segmentsProperlyCross, sideOf
 } from './geometry.js';
 import {
-    attributeLines, fontMetrics, multiplicityLabel, NODE, nodeLabel, stereotypeLabel, textWidth
+    fontMetrics, multiplicityLabel, NODE, nodeLabel, stereotypeLabel, textWidth, wrappedAttributeLines
 } from './measure.js';
 import type { FontMetrics } from './measure.js';
 import type { Positions } from './place.js';
@@ -559,7 +559,7 @@ export function drawNode(
 ): string {
     const font = fontMetrics(display);
     const stereotype = stereotypeLabel(node);
-    const lines = attributeLines(node, display);
+    const lines = wrappedAttributeLines(node, display, rect.width - font.cardPadding * 2);
     const fill = display.showColors && node.kind !== 'unresolved' ? node.color : theme.surface;
     const classes = ['tv-node',
         node.kind === 'unresolved' ? 'tv-unresolved' : '',

@@ -120,12 +120,15 @@ authority for what those constraints mean.
   gap packing. Short independent taxonomies can now stack beside a tall cluster
   instead of each inheriting the height of the tallest item in its row.
 - Expanded the typeface setting to seven whole-diagram presets. The condensed
-  sans stack is measured at 84% of the default and uses a 96px card minimum
-  with 6px side padding, versus 108px and 8px for the other families. Making
-  every existing view that small added a genealogy crossing and two label
-  collisions, so compact geometry follows the explicit font choice instead.
-  A compact general with at least five independent heads retains a 120px border
-  for the triangles; `classonly` therefore keeps zero head collisions.
+  sans stack is measured at 84% of the default and uses 6px side padding,
+  versus 8px for the other families. Short classifiers start at 72px in
+  condensed text; automatic layout expands compact cards according to the
+  number of association and generalization anchors they need. In that preset,
+  attribute declarations wrap at word boundaries beyond 132px, trading height
+  for width instead of making a short-named class as wide as its longest
+  attribute. Crowded heads retain up to a 120px border; `classonly` therefore
+  keeps zero head collisions. Existing non-condensed views retain their proven
+  108px minimum and benchmark geometry.
 - Used the modeller's saved `error.tontoview` arrangement as a qualitative
   target. A whole with several leaf parts is now placed as a compact fan instead
   of applying the pairwise whole-before-part rule repeatedly and producing a

@@ -2369,25 +2369,28 @@ export async function autoLayout(
         });
     }
 
-    // Most classifiers can contract to their text. A crowded generalization
-    // target is different: its border is a finite lane for hollow triangles,
-    // and shrinking that lane makes correctly ordered centre lines overlap as
-    // visible heads. One set contributes one shared head.
-    const headsByGeneral = new Map<string, Set<string>>();
+    // Short labels do not need a wide card, but every attached line needs a
+    // distinguishable piece of border. Count visible associations and collapse
+    // a generalization set to the one shared head it actually draws.
+    const attachmentsByNode = new Map<string, Set<string>>();
     for (const edge of view.edges) {
-        if (edge.kind !== 'generalization') {
+        if (inverses.covered.has(edge.id)) {
             continue;
         }
-        const heads = headsByGeneral.get(edge.target) ?? new Set<string>();
-        heads.add(edge.genset ?? edge.id);
-        headsByGeneral.set(edge.target, heads);
+        const key = edge.kind === 'generalization' ? edge.genset ?? edge.id : edge.id;
+        for (const id of new Set([edge.source, edge.target])) {
+            const attachments = attachmentsByNode.get(id) ?? new Set<string>();
+            attachments.add(key);
+            attachmentsByNode.set(id, attachments);
+        }
     }
     const tightened = new Set<string>();
     for (const id of subject) {
         const rect = positions[id];
         const measured = sizeOf(id);
-        const compactCrowdedGeneral = measured.width < 108 && (headsByGeneral.get(id)?.size ?? 0) >= 5;
-        const width = Math.max(measured.width, compactCrowdedGeneral ? 120 : 0);
+        const attachments = attachmentsByNode.get(id)?.size ?? 0;
+        const anchorWidth = measured.width < 108 ? Math.min(120, 72 + attachments * 12) : 0;
+        const width = Math.max(measured.width, anchorWidth);
         if (!rect || rect.width <= width) {
             continue;
         }
