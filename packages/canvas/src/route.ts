@@ -105,59 +105,163 @@ export function curvedRoute(
     }
     const others = obstacles.filter(rect => rect !== source && rect !== target);
     const guideLength = euclideanPathLength(guide);
-    for (const strength of [0.42, 0.34, 0.26, 0.18, 0.1]) {
-        const cubics = cubicSegments(guide, source, target, strength);
+    const first = unit({ x: guide[1]!.x - guide[0]!.x, y: guide[1]!.y - guide[0]!.y });
+    const last = unit({
+        x: guide[guide.length - 1]!.x - guide[guide.length - 2]!.x,
+        y: guide[guide.length - 1]!.y - guide[guide.length - 2]!.y
+    });
+    const cubics = fitRouteSpline(guide, first, last, others, 0);
+    if (cubics) {
         const points = flattenCubics(cubics);
-        const clear = points.slice(1).every((point, index) =>
-            others.every(rect => !segmentHitsRect(points[index]!, point, rect, 4)));
         // A curve is for tracing a direct relationship, not ornament. Long
         // handles may look fluid while quietly adding a large visual journey.
-        if (clear && euclideanPathLength(points) <= guideLength * 1.15 + 4) {
+        if (euclideanPathLength(points) <= guideLength * 1.15 + 4) {
             return { points, data: cubicPathData(cubics) };
         }
     }
     return { points: guide, data: pathData(guide) };
 }
 
-function cubicSegments(
-    guide: Point[], source: Rect, target: Rect, strength: number
-): Cubic[] {
-    const tangents = guide.map((point, index) => {
-        if (index === 0) {
-            return outward(source, point);
+/**
+ * Graphviz's route fitter: fit one cubic to the whole guide and split only
+ * when that cubic cannot remain in the safe corridor around the polyline.
+ * Unlike interpolation, an ordinary guide bend is not a point the curve must
+ * pass through, which is the direct, relaxed shape PlantUML inherits from dot.
+ */
+function fitRouteSpline(
+    guide: Point[], startSlope: Point, endSlope: Point, obstacles: readonly Rect[], depth: number
+): Cubic[] | undefined {
+    const fit = fittedCubic(guide, startSlope, endSlope);
+    for (const multiplier of [4, 2, 1, 0.5, 0.25, 0.125]) {
+        const cubic = scaledCubic(fit, multiplier);
+        if (cubicFits(cubic, guide, obstacles)) {
+            return [cubic];
         }
-        if (index === guide.length - 1) {
-            const away = outward(target, point);
-            return { x: -away.x, y: -away.y };
+    }
+    if (guide.length <= 2 || depth >= 8) {
+        return undefined;
+    }
+    const reference = scaledCubic(fit, 1);
+    const parameters = chordParameters(guide);
+    let split = 1;
+    let error = -1;
+    for (let index = 1; index < guide.length - 1; index += 1) {
+        const at = cubicAt(reference, parameters[index]!);
+        const distance = Math.hypot(at.x - guide[index]!.x, at.y - guide[index]!.y);
+        if (distance > error) {
+            error = distance;
+            split = index;
         }
-        return unit({
-            x: guide[index + 1]!.x - guide[index - 1]!.x,
-            y: guide[index + 1]!.y - guide[index - 1]!.y
-        });
+    }
+    const before = unit({
+        x: guide[split]!.x - guide[split - 1]!.x,
+        y: guide[split]!.y - guide[split - 1]!.y
     });
-    return guide.slice(1).map((to, index) => {
-        const from = guide[index]!;
-        const length = Math.hypot(to.x - from.x, to.y - from.y);
-        const handle = Math.min(length * strength, 96);
-        return {
-            from,
-            one: { x: from.x + tangents[index]!.x * handle, y: from.y + tangents[index]!.y * handle },
-            two: {
-                x: to.x - tangents[index + 1]!.x * handle,
-                y: to.y - tangents[index + 1]!.y * handle
-            },
-            to
-        };
+    const after = unit({
+        x: guide[split + 1]!.x - guide[split]!.x,
+        y: guide[split + 1]!.y - guide[split]!.y
     });
+    const splitSlope = unit({ x: before.x + after.x, y: before.y + after.y });
+    const left = fitRouteSpline(guide.slice(0, split + 1), startSlope, splitSlope, obstacles, depth + 1);
+    const right = fitRouteSpline(guide.slice(split), splitSlope, endSlope, obstacles, depth + 1);
+    return left && right ? [...left, ...right] : undefined;
 }
 
-function outward(rect: Rect, at: Point): Point {
-    switch (sideOf(rect, at)) {
-        case 'top': return { x: 0, y: -1 };
-        case 'bottom': return { x: 0, y: 1 };
-        case 'left': return { x: -1, y: 0 };
-        case 'right': return { x: 1, y: 0 };
+interface CubicFit {
+    from: Point;
+    to: Point;
+    startSlope: Point;
+    endSlope: Point;
+    startScale: number;
+    endScale: number;
+}
+
+/** Chord-length least-squares handle lengths used by Graphviz's fitter. */
+function fittedCubic(guide: Point[], startSlope: Point, endSlope: Point): CubicFit {
+    const parameters = chordParameters(guide);
+    const from = guide[0]!;
+    const to = guide[guide.length - 1]!;
+    let c00 = 0;
+    let c01 = 0;
+    let c11 = 0;
+    let x0 = 0;
+    let x1 = 0;
+    for (let index = 0; index < guide.length; index += 1) {
+        const t = parameters[index]!;
+        const one = 3 * t * (1 - t) * (1 - t);
+        const two = 3 * t * t * (1 - t);
+        const a0 = { x: startSlope.x * one, y: startSlope.y * one };
+        const a1 = { x: endSlope.x * two, y: endSlope.y * two };
+        c00 += dot(a0, a0);
+        c01 += dot(a0, a1);
+        c11 += dot(a1, a1);
+        const baseFrom = (1 - t) ** 3 + one;
+        const baseTo = two + t ** 3;
+        const residual = {
+            x: guide[index]!.x - from.x * baseFrom - to.x * baseTo,
+            y: guide[index]!.y - from.y * baseFrom - to.y * baseTo
+        };
+        x0 += dot(a0, residual);
+        x1 += dot(a1, residual);
     }
+    const determinant = c00 * c11 - c01 * c01;
+    let startScale = determinant === 0 ? 0 : (x0 * c11 - x1 * c01) / determinant;
+    let endScale = determinant === 0 ? 0 : (c00 * x1 - c01 * x0) / determinant;
+    if (Math.abs(determinant) < 1e-6 || startScale <= 0 || endScale <= 0) {
+        startScale = endScale = Math.hypot(to.x - from.x, to.y - from.y) / 3;
+    }
+    return { from, to, startSlope, endSlope, startScale, endScale };
+}
+
+function scaledCubic(fit: CubicFit, multiplier: number): Cubic {
+    return {
+        from: fit.from,
+        one: {
+            x: fit.from.x + fit.startSlope.x * fit.startScale * multiplier / 3,
+            y: fit.from.y + fit.startSlope.y * fit.startScale * multiplier / 3
+        },
+        two: {
+            x: fit.to.x - fit.endSlope.x * fit.endScale * multiplier / 3,
+            y: fit.to.y - fit.endSlope.y * fit.endScale * multiplier / 3
+        },
+        to: fit.to
+    };
+}
+
+function cubicFits(cubic: Cubic, guide: Point[], obstacles: readonly Rect[]): boolean {
+    const samples: Point[] = [{ ...cubic.from }];
+    flattenCubic(cubic, samples, 0);
+    const clear = samples.slice(1).every((point, index) =>
+        obstacles.every(rect => !segmentHitsRect(samples[index]!, point, rect, 4)));
+    const corridor = samples.every(point => guide.slice(1).some((to, index) =>
+        distanceToSegment(point, guide[index]!, to) <= 20));
+    const followsBends = guide.slice(1, -1).every(point => samples.slice(1).some((to, index) =>
+        distanceToSegment(point, samples[index]!, to) <= 20));
+    return clear && corridor && followsBends;
+}
+
+function chordParameters(guide: Point[]): number[] {
+    const parameters = [0];
+    for (let index = 1; index < guide.length; index += 1) {
+        parameters.push(parameters[index - 1]!
+            + Math.hypot(guide[index]!.x - guide[index - 1]!.x, guide[index]!.y - guide[index - 1]!.y));
+    }
+    const total = parameters[parameters.length - 1] || 1;
+    return parameters.map(value => value / total);
+}
+
+function cubicAt(cubic: Cubic, t: number): Point {
+    const one = 1 - t;
+    return {
+        x: one ** 3 * cubic.from.x + 3 * one * one * t * cubic.one.x
+            + 3 * one * t * t * cubic.two.x + t ** 3 * cubic.to.x,
+        y: one ** 3 * cubic.from.y + 3 * one * one * t * cubic.one.y
+            + 3 * one * t * t * cubic.two.y + t ** 3 * cubic.to.y
+    };
+}
+
+function dot(one: Point, other: Point): number {
+    return one.x * other.x + one.y * other.y;
 }
 
 function unit(vector: Point): Point {

@@ -193,8 +193,11 @@ describe('drawing', () => {
         expect(output.guides[edge.id]).toEqual(guide);
         expect(output.paths[edge.id]!.length).toBeGreaterThan(guide.length);
         expect(handlesFor(output.guides[edge.id]!)).toHaveLength(3);
-        expect(output.svg.match(/<g class="tv-edge[^"]*" data-edge="[^"]+"><path d="([^"]+)"/)?.[1])
-            .toContain(' C ');
+        const data = output.svg.match(/<g class="tv-edge[^"]*" data-edge="[^"]+"><path d="([^"]+)"/)?.[1];
+        expect(data).toContain(' C ');
+        // The Graphviz fitter spans an ordinary bend with one relaxed cubic;
+        // interpolation used to force two cubics through the guide midpoint.
+        expect(data?.match(/ C /g)).toHaveLength(1);
     });
 
     test('keeps a card the modeller made roomier, and still grows it for content', () => {
