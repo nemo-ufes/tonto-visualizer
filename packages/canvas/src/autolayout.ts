@@ -36,9 +36,11 @@ import {
     borderPoint, boundsOf, centerOf, overlaps, segmentHitsRect, segmentsProperlyCross
 } from './geometry.js';
 import type { Positions } from './place.js';
+import { assignPorts } from './ports.js';
 import type { RoutingStyle } from './route.js';
 import { routeEdge } from './route.js';
-import { labelWidth } from './render.js';
+import { FONT, textWidth } from './measure.js';
+import { labelWidth, render } from './render.js';
 
 const GROUP_PADDING = 18;
 const GROUP_HEADER = 20;
@@ -47,6 +49,7 @@ const PARTIAL_STEP = 40;
 const TARGET_ASPECT_RATIO = 1.6;
 const TAXONOMY_CORRIDOR = 12;
 const PREFERRED_SIDE_STEPS = 12;
+const MAX_CROSS_AXIS_NODES = 32;
 
 /**
  * ELK ships one bundle for CommonJS and for the browser, so the constructor
@@ -483,6 +486,14 @@ interface Corridor {
     to: Point;
 }
 
+interface CrossAxisScore {
+    intersections: number;
+    crossings: number;
+    maximumLength: number;
+    totalLength: number;
+    span: number;
+}
+
 /** The direct inheritance lanes established by semantic re-ranking. */
 function taxonomyCorridors(
     view: ViewModel,
@@ -500,6 +511,323 @@ function taxonomyCorridors(
             to: borderPoint(target, centerOf(source))
         }] : [];
     });
+}
+
+/** Lexicographic form of the quality priorities in the layout plan. */
+function betterCrossAxisScore(one: CrossAxisScore, other: CrossAxisScore): boolean {
+    return one.intersections < other.intersections
+        || (one.intersections === other.intersections && (one.crossings < other.crossings
+            || (one.crossings === other.crossings && (one.maximumLength < other.maximumLength
+                || (one.maximumLength === other.maximumLength && (one.totalLength < other.totalLength
+                    || (one.totalLength === other.totalLength && one.span < other.span)))))));
+}
+
+function overlapArea(one: Rect, other: Rect): number {
+    return Math.max(0, Math.min(one.x + one.width, other.x + other.width) - Math.max(one.x, other.x))
+        * Math.max(0, Math.min(one.y + one.height, other.y + other.height) - Math.max(one.y, other.y));
+}
+
+/** A rendering safe for skeletal relations in layout-only unit fixtures. */
+function renderForLayoutScore(view: ViewModel, positions: Positions) {
+    // A few layout unit tests intentionally use skeletal relation ends. They
+    // carry enough information for layout but not for label rendering, so fill
+    // only the two flags the renderer expects before asking it to score labels.
+    const drawable: ViewModel = {
+        ...view,
+        edges: view.edges.map(edge => edge.kind === 'relation' ? {
+            ...edge,
+            sourceEnd: edge.sourceEnd ?? { isConst: false, isAddOnly: false },
+            targetEnd: edge.targetEnd ?? { isConst: false, isAddOnly: false }
+        } : edge)
+    };
+    return render({
+        view: drawable,
+        positions,
+        display: { ...defaultDisplayOptions, routing: 'straight', showPackageGroups: false }
+    });
+}
+
+/** Label collisions in the same form used by the benchmark harness. */
+function renderedLabelOcclusions(svg: string, positions: Positions): number {
+    const layer = /<g class="tv-labels">([\s\S]*?)<\/svg>/.exec(svg)?.[1] ?? '';
+    const labels = [...layer.matchAll(/<text([^>]*)>([^<]*)<\/text>/g)].flatMap(match => {
+        const attributes = match[1]!;
+        const text = match[2]!;
+        const x = Number(/ x="([-\d.]+)"/.exec(attributes)?.[1]);
+        const y = Number(/ y="([-\d.]+)"/.exec(attributes)?.[1]);
+        if (!text.trim() || !isFinite(x) || !isFinite(y)) {
+            return [];
+        }
+        const size = /tv-edge-stereotype/.test(attributes) ? FONT.edgeStereotype : FONT.edge;
+        const width = textWidth(text, size) + 6;
+        const anchor = /text-anchor="(\w+)"/.exec(attributes)?.[1] ?? 'start';
+        const left = anchor === 'middle' ? x - width / 2 : anchor === 'end' ? x - width : x;
+        return [{ x: left, y: y - size, width, height: size + 4 }];
+    });
+    const nodes = Object.values(positions);
+    let occlusions = labels.filter(label => nodes.some(node => overlapArea(label, node) > 0)).length;
+    for (let one = 0; one < labels.length; one += 1) {
+        occlusions += labels.slice(one + 1).filter(other => overlapArea(labels[one]!, other) > 0).length;
+    }
+    return occlusions;
+}
+
+interface RenderedSafety {
+    intersections: number;
+    crossings: number;
+    labelOcclusions: number;
+}
+
+/** The high-priority faults of the actual port-spread, tree-aware rendering. */
+function renderedSafety(
+    view: ViewModel,
+    positions: Positions,
+    ids: string[],
+    edgeIds: ReadonlySet<string>
+): RenderedSafety {
+    const output = renderForLayoutScore(view, positions);
+    const edgeById = new Map(view.edges.map(edge => [edge.id, edge]));
+    const paths = Object.entries(output.paths).filter(([id]) => edgeIds.has(id));
+    let intersections = 0;
+    for (const [id, points] of paths) {
+        const edge = edgeById.get(id);
+        for (const nodeId of ids) {
+            if (nodeId === edge?.source || nodeId === edge?.target) {
+                continue;
+            }
+            const rect = positions[nodeId];
+            if (rect && points.slice(1).some((to, index) =>
+                segmentHitsRect(points[index]!, to, rect, 2))) {
+                intersections += 1;
+            }
+        }
+    }
+    let crossings = 0;
+    for (let one = 0; one < paths.length; one += 1) {
+        for (let two = one + 1; two < paths.length; two += 1) {
+            const first = paths[one]![1];
+            const second = paths[two]![1];
+            if (first.slice(1).some((to, index) => second.slice(1).some((otherTo, otherIndex) =>
+                segmentsProperlyCross(first[index]!, to, second[otherIndex]!, otherTo)))) {
+                crossings += 1;
+            }
+        }
+    }
+    return {
+        intersections,
+        crossings,
+        labelOcclusions: renderedLabelOcclusions(output.svg, positions)
+    };
+}
+
+/**
+ * Improves the order across taxonomy ranks without changing their rank axis.
+ *
+ * ELK supplies a useful initial order, but `enforceTaxonomyRanks` and the later
+ * semantic repairs move its neighbours after that order was chosen. This
+ * bounded local search tries the full-graph barycentric order and every adjacent
+ * exchange on each populated rank, retaining a candidate only when the shared
+ * quality score improves. Four passes let a change in one rank inform the next
+ * one without turning arrangement into an unbounded optimization job.
+ */
+function optimizeRankCrossAxis(
+    view: ViewModel,
+    positions: Positions,
+    subject: ReadonlySet<string>,
+    ranked: ReadonlySet<string>,
+    excluded: ReadonlySet<string>,
+    settings: LayoutOptions
+): void {
+    // This first slice deliberately excludes large models. Re-rendering every
+    // promising candidate is the correctness gate for ports, trees and labels;
+    // on a large ontology that is seconds of work and no longer interactive.
+    // The incremental scorer planned next can lift the bound without changing
+    // the optimizer's contract.
+    if ([...subject].filter(id => !excluded.has(id)).length > MAX_CROSS_AXIS_NODES) {
+        return;
+    }
+    const primary = settings.direction === 'DOWN' ? 'y' as const : 'x' as const;
+    const cross = settings.direction === 'DOWN' ? 'x' as const : 'y' as const;
+    const crossSize = settings.direction === 'DOWN' ? 'width' as const : 'height' as const;
+    const covered = inversePairs(view.edges).covered;
+    const visibleEdges = view.edges.filter(edge => !covered.has(edge.id)
+        && subject.has(edge.source) && subject.has(edge.target));
+    const incident = new Map<string, typeof visibleEdges>();
+    for (const edge of visibleEdges) {
+        incident.set(edge.source, [...(incident.get(edge.source) ?? []), edge]);
+        incident.set(edge.target, [...(incident.get(edge.target) ?? []), edge]);
+    }
+
+    for (const ids of weakComponents(view, subject, excluded)) {
+        const members = new Set(ids);
+        const edges = visibleEdges.filter(edge => members.has(edge.source) && members.has(edge.target));
+        const rows = new Map<number, string[]>();
+        for (const id of ids) {
+            const rect = positions[id];
+            if (!ranked.has(id) || !rect) {
+                continue;
+            }
+            rows.set(rect[primary], [...(rows.get(rect[primary]) ?? []), id]);
+        }
+        const rankedRows = [...rows.entries()]
+            .filter(([, row]) => row.length > 1)
+            .sort(([one], [other]) => one - other);
+        if (rankedRows.length === 0 || edges.length === 0) {
+            continue;
+        }
+
+        const score = (candidate: Positions): CrossAxisScore => {
+            // Port spreading, generalization trees and obstacle detours all
+            // change the lines the reader actually sees. Score those rendered
+            // routes rather than centre-to-centre approximations, which can
+            // call a swap an improvement while adding crossings at the box
+            // borders. Tree buses are scored through their member edges here;
+            // the final benchmark remains the authority for the rendered tree.
+            const ports = assignPorts(edges, candidate).ends;
+            const obstacles = ids.map(id => candidate[id]).filter((rect): rect is Rect => rect !== undefined);
+            const bends: Point[] = [];
+            const paths: Array<[string, Point[]]> = [];
+            for (const edge of edges) {
+                const source = candidate[edge.source];
+                const target = candidate[edge.target];
+                if (!source || !target) {
+                    continue;
+                }
+                const points = routeEdge(source, target, {
+                    ...(ports.get(edge.id) ? { ends: ports.get(edge.id)! } : {}),
+                    style: 'straight', obstacles, avoid: bends
+                });
+                paths.push([edge.id, points]);
+                bends.push(...points.slice(1, -1));
+            }
+            const edgeById = new Map(edges.map(edge => [edge.id, edge]));
+            const pathLength = (points: Point[]): number => points.slice(1).reduce((sum, point, index) =>
+                sum + Math.hypot(point.x - points[index]!.x, point.y - points[index]!.y), 0);
+            let intersections = 0;
+            for (const [id, points] of paths) {
+                const edge = edgeById.get(id);
+                for (const id of ids) {
+                    if (id === edge?.source || id === edge?.target) {
+                        continue;
+                    }
+                    const rect = candidate[id];
+                    if (rect && points.slice(1).some((to, index) =>
+                        segmentHitsRect(points[index]!, to, rect, 2))) {
+                        intersections += 1;
+                    }
+                }
+            }
+            let crossings = 0;
+            for (let one = 0; one < paths.length; one += 1) {
+                for (let two = one + 1; two < paths.length; two += 1) {
+                    const first = paths[one]![1];
+                    const second = paths[two]![1];
+                    if (first.slice(1).some((to, index) => second.slice(1).some((otherTo, otherIndex) =>
+                        segmentsProperlyCross(first[index]!, to, second[otherIndex]!, otherTo)))) {
+                        crossings += 1;
+                    }
+                }
+            }
+            const lengths = paths.map(([, points]) => pathLength(points));
+            const bounds = boundsOf(ids.map(id => candidate[id]).filter((rect): rect is Rect => rect !== undefined));
+            return {
+                intersections,
+                crossings,
+                maximumLength: Math.round(Math.max(0, ...lengths)),
+                totalLength: Math.round(lengths.reduce((sum, length) => sum + length, 0)),
+                span: Math.round(bounds[crossSize])
+            };
+        };
+
+        const rowCandidate = (order: string[]): Positions => {
+            const original = boundsOf(order.map(id => positions[id]!));
+            const length = order.reduce((sum, id) => sum + positions[id]![crossSize], 0)
+                + settings.nodeSpacing * (order.length - 1);
+            let along = original[cross] + (original[crossSize] - length) / 2;
+            const candidate = { ...positions };
+            for (const id of order) {
+                candidate[id] = { ...positions[id]!, [cross]: Math.round(along) };
+                along += positions[id]![crossSize] + settings.nodeSpacing;
+            }
+            return candidate;
+        };
+        const clear = (candidate: Positions, row: ReadonlySet<string>): boolean => [...row].every(id => {
+            const rect = candidate[id]!;
+            return Object.entries(candidate).every(([otherId, other]) => row.has(otherId)
+                || !subject.has(otherId) || !overlaps(rect, other, Math.min(settings.nodeSpacing / 3, 20)));
+        });
+        const acceptBest = (orders: string[][], row: ReadonlySet<string>): boolean => {
+            let bestScore = score(positions);
+            const edgeIds = new Set(edges.map(edge => edge.id));
+            let bestSafety = renderedSafety(view, positions, ids, edgeIds);
+            const labelCeiling = bestSafety.labelOcclusions;
+            let best: Positions | undefined;
+            for (const order of orders) {
+                const candidate = rowCandidate(order);
+                if (!clear(candidate, row)) {
+                    continue;
+                }
+                const candidateScore = score(candidate);
+                if (!betterCrossAxisScore(candidateScore, bestScore)) {
+                    continue;
+                }
+                const candidateSafety = renderedSafety(view, candidate, ids, edgeIds);
+                if (candidateSafety.intersections <= bestSafety.intersections
+                    && candidateSafety.crossings <= bestSafety.crossings
+                    && candidateSafety.labelOcclusions <= labelCeiling) {
+                    best = candidate;
+                    bestScore = candidateScore;
+                    bestSafety = candidateSafety;
+                }
+            }
+            if (!best) {
+                return false;
+            }
+            for (const id of row) {
+                positions[id] = best[id]!;
+            }
+            return true;
+        };
+
+        for (let pass = 0; pass < 4; pass += 1) {
+            let changed = false;
+            for (const [, rowIds] of rankedRows) {
+                const current = [...rowIds].sort((one, other) =>
+                    positions[one]![cross] - positions[other]![cross] || one.localeCompare(other));
+                const barycentre = (id: string): number => {
+                    let total = 0;
+                    let weight = 0;
+                    for (const edge of incident.get(id) ?? []) {
+                        const neighbour = edge.source === id ? edge.target : edge.source;
+                        const rect = positions[neighbour];
+                        if (!rect || members.has(neighbour) === false) {
+                            continue;
+                        }
+                        const edgeWeight = edge.kind === 'generalization' ? 3 : 1;
+                        total += (rect[cross] + rect[crossSize] / 2) * edgeWeight;
+                        weight += edgeWeight;
+                    }
+                    const rect = positions[id]!;
+                    return weight > 0 ? total / weight : rect[cross] + rect[crossSize] / 2;
+                };
+                const barycentric = [...current].sort((one, other) =>
+                    barycentre(one) - barycentre(other) || current.indexOf(one) - current.indexOf(other));
+                const orders = [current, barycentric];
+                for (const base of [current, barycentric]) {
+                    for (let index = 0; index + 1 < base.length; index += 1) {
+                        const swapped = [...base];
+                        [swapped[index], swapped[index + 1]] = [swapped[index + 1]!, swapped[index]!];
+                        orders.push(swapped);
+                    }
+                }
+                const distinctOrders = [...new Map(orders.map(order => [order.join('\0'), order])).values()];
+                changed = acceptBest(distinctOrders, new Set(rowIds)) || changed;
+            }
+            if (!changed) {
+                break;
+            }
+        }
+    }
 }
 
 /**
@@ -1445,6 +1773,9 @@ export async function autoLayout(
     }
     const wholeFans = orientWholeFans(view, positions, subject, ranked, settings);
     orientWholes(view, positions, subject, ranked, settings.direction, wholeFans);
+    if (!request.only && ranked) {
+        optimizeRankCrossAxis(view, positions, subject, ranked, appendixIds, settings);
+    }
     const packed = !request.only && !grouped
         ? packComponents(view, positions, subject, appendixIds, settings)
         : false;
