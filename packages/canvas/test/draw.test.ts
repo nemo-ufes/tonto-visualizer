@@ -320,6 +320,23 @@ describe('drawing', () => {
         expect(Object.keys(drawn.paths)).toEqual(['gen:Sample::Employee->Sample::Person']);
     });
 
+    test('draws names and inheritance only in a taxonomy-only view', () => {
+        const view = model();
+        view.edges.push({
+            kind: 'relation', id: 'employment', source: 'Sample::Employee', target: 'Sample::Person',
+            name: 'worksFor', stereotype: 'material',
+            sourceEnd: { role: 'employee', isConst: true, isAddOnly: false },
+            targetEnd: { role: 'employer', isConst: true, isAddOnly: false }
+        });
+        const output = drawn(view, { ...display, taxonomyOnly: true });
+
+        expect(Object.keys(output.paths)).toEqual(['gen:Sample::Employee->Sample::Person']);
+        expect(output.svg).not.toContain('data-edge="employment"');
+        expect(output.svg).not.toContain('name: string');
+        expect(output.svg).toContain('>Person<');
+        expect(output.svg).toContain('>Employee<');
+    });
+
     test('measures how much room an edge wants by its longest label', () => {
         // Labels are placed widest first, since each takes the best place left
         // and the one with the least choice of where to go should not be the

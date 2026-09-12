@@ -23,6 +23,7 @@ diagram of the model would hold.
   --dark             the dark theme, with --svg
   --routing <name>   straight (default) or orthogonal
   --direction <dir>  DOWN (default) or RIGHT
+  --taxonomy-only    draw names and inheritance, without attributes or associations
   --loose            lay the model out as one graph, ignoring its packages
   --package <name>   restrict the view to this package; repeatable
   --no-external      leave out elements from packages outside the view
@@ -40,6 +41,7 @@ export async function run(argv: string[]): Promise<number> {
     let showDatatypes = true;
     let asSvg = false;
     let dark = false;
+    let taxonomyOnly = false;
     let routing: DisplayOptions['routing'] = defaultDisplayOptions.routing;
     let direction: LayoutOptions['direction'] = defaultLayoutOptions.direction;
     let groupByPackage = defaultLayoutOptions.groupByPackage;
@@ -62,6 +64,8 @@ export async function run(argv: string[]): Promise<number> {
             asSvg = true;
         } else if (argument === '--dark') {
             dark = true;
+        } else if (argument === '--taxonomy-only') {
+            taxonomyOnly = true;
         } else if (argument === '--routing') {
             routing = argv[++index] as DisplayOptions['routing'];
         } else if (argument === '--direction') {
@@ -102,12 +106,13 @@ export async function run(argv: string[]): Promise<number> {
     // Nothing is placed here -- a command line has no saved arrangement -- so
     // this is the picture a view gets the first time it is opened: laid out
     // automatically, and afterwards the modeller's to move.
-    const display: DisplayOptions = { ...defaultDisplayOptions, routing };
+    const display: DisplayOptions = { ...defaultDisplayOptions, routing, taxonomyOnly };
     const sizes = Object.fromEntries(view.nodes.map(node => [node.id, sizeOf(node, display)]));
     const laid = await autoLayout(view, sizes, placeNewNodes(view, sizes, {}), {
         ...defaultLayoutOptions,
         direction,
         routing,
+        taxonomyOnly,
         groupByPackage
     });
     const drawn = render({
