@@ -59,7 +59,7 @@ exact ELK coordinates.
   rank-constrained cross-axis optimizer. Taxonomy rank is hard; generalizations,
   mediations, whole-before-part order and package cohesion receive explicit
   weights during ordering and compaction.
-- [ ] Treat package cohesion as a soft preference unless a view explicitly asks
+- [x] Treat package cohesion as a soft preference unless a view explicitly asks
   for package containers. Taxonomies crossing package boundaries must retain
   shared ranks.
 - [x] Give partial layout a fixed-neighbour halo, so relations to unselected
@@ -167,3 +167,8 @@ authority for what those constraints mean.
   then chooses a collision-free translation that shortens those boundary
   relations while retaining a smaller preference for the selection's previous
   location.
+- Separated package clustering from package containment. With package boxes
+  hidden, package membership is a soft ordering penalty below intersections and
+  crossings. Visible package boxes still use ELK compound nodes, but taxonomy
+  component discovery now crosses those package boundaries so inheritance
+  levels remain shared.

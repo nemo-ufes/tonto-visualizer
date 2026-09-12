@@ -113,7 +113,8 @@ export async function run(argv: string[]): Promise<number> {
         direction,
         routing,
         taxonomyOnly,
-        groupByPackage
+        groupByPackage,
+        packageContainers: display.showPackageGroups
     });
     const drawn = render({
         view,

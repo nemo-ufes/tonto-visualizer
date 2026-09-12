@@ -850,8 +850,8 @@ function fillOptions(): void {
             value => host.postMessage({ type: 'display', display: { routing: value as DisplayOptions['routing'] } })),
         choice('Direction', [['DOWN', 'Top to bottom'], ['RIGHT', 'Left to right']], layout?.direction ?? 'DOWN',
             value => host.postMessage({ type: 'layout', layout: { direction: value as LayoutOptions['direction'] } })),
-        // A package is a neighbourhood preference. Keeping it enabled may
-        // leave a hierarchy across package boundaries staggered.
+        // Package cohesion is a preference; visible package boxes turn it into
+        // a hard container without changing taxonomy ranks.
         toggle('Cluster packages', layout?.groupByPackage ?? true,
             value => host.postMessage({ type: 'layout', layout: { groupByPackage: value } }))
     ];
