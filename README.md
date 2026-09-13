@@ -31,8 +31,8 @@ Working end to end, and rough in places.
   one line passing through the relator rather than as two lines meeting at a
   box. Multiple associations between the same classes fan apart through a real
   bend instead of running as parallel rails. Curved detours and right angles are
-  available as alternatives; a direct association remains straight, while a
-  necessary bend is fitted with a Graphviz-style cubic spline and retains
+  available as alternatives; a direct edge remains straight, while a necessary
+  bend is fitted with a Graphviz-style cubic spline and retains
   sampled geometry for labels, selection and collision checks. Automatic layout
   (ELK, layered) places only what has not been placed by hand, seats a relator
   between the classes it mediates -- it is a reified relationship, and that is
@@ -57,6 +57,11 @@ Working end to end, and rough in places.
   panel and window resizing; moving a diagram into a new window enables it
   automatically. An untouched automatic layout creates no file.
 
+  Selecting an edge reveals its editable guide. Drag a hollow midpoint handle
+  to add a bend or a solid bend handle to move it; with a bend selected, Delete
+  or Backspace removes it. Removing the final bend returns the edge to automatic
+  routing.
+
 The notation covers classes with stereotypes and attributes, datatypes and
 enumerations, generalizations, generalization sets as one shared triangle with
 `{disjoint, complete}`, relations with their stereotype set over their
@@ -70,9 +75,8 @@ all where the multiplicity is `1`, which is what an end means when it says
 nothing. Attributes keep their brackets, where UML puts them and where the
 multiplicity has a type beside it to be told apart from.
 
-Not there yet: dragging a route by hand (the file format holds them; the panel
-does not draw the handles), undo/redo, resizing a card, marquee selection, PNG
-export, and any editing of the model from the diagram.
+Editing the model from the diagram is deliberately out of scope; diagram
+interaction changes only the persisted view.
 
 ## Getting started
 

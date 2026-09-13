@@ -190,6 +190,11 @@ button:disabled {
     opacity: 0.7;
 }
 
+#canvas .tv-handle-selected {
+    fill: var(--vscode-focusBorder, #1f5c5c);
+    opacity: 1;
+}
+
 /*
  * The corner grips of the selected card. Square rather than round, because a
  * corner is what they pull and a circle on a corner reads as a bend in a line
