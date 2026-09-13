@@ -353,6 +353,90 @@ describe('the webview and its host protocol', () => {
         expect(posted('hide')).toHaveLength(before);
     });
 
+    test('moves a sole generalization head live while its target class is dragged', () => {
+        const edge = 'generalization:person-organization';
+        const specialization = {
+            ...view,
+            edges: [{
+                kind: 'generalization' as const,
+                id: edge,
+                source: 'Sample::Person',
+                target: 'Sample::Organization'
+            }]
+        };
+        window.dispatchEvent(new MessageEvent('message', { data: {
+            type: 'model', view: specialization,
+            positions: {
+                'Sample::Person': { x: 0, y: 180, width: 160, height: 60 },
+                'Sample::Organization': { x: 260, y: 0, width: 160, height: 60 }
+            },
+            routes: {}, display: { ...defaultDisplayOptions, routing: 'curved' },
+            content: defaultContentOptions, layout: defaultLayoutOptions,
+            constraints: { pinned: [], alignments: [], distributions: [] },
+            packages: ['Sample'], filters: []
+        } }));
+        window.dispatchEvent(new MessageEvent('message', { data: { type: 'select', ids: [edge] } }));
+
+        const marker = document.querySelector(`[data-edge="${edge}"] .tv-marker`)!;
+        const before = marker.getAttribute('points');
+        document.querySelector('[data-node="Sample::Organization"]')!.dispatchEvent(
+            new PointerEvent('pointerdown', {
+                bubbles: true, pointerId: 1, clientX: 260, clientY: 0
+            }));
+        document.getElementById('viewport')!.dispatchEvent(new PointerEvent('pointermove', {
+            bubbles: true, pointerId: 1, clientX: 300, clientY: 40
+        }));
+
+        expect(marker.getAttribute('points')).not.toBe(before);
+        document.getElementById('viewport')!.dispatchEvent(
+            new PointerEvent('pointerup', { bubbles: true, pointerId: 1 }));
+    });
+
+    test('selects and deletes a bend as soon as it is created', () => {
+        const edge = 'generalization:person-organization';
+        const specialization = {
+            ...view,
+            edges: [{
+                kind: 'generalization' as const,
+                id: edge,
+                source: 'Sample::Person',
+                target: 'Sample::Organization'
+            }]
+        };
+        window.dispatchEvent(new MessageEvent('message', { data: {
+            type: 'model', view: specialization,
+            positions: {
+                'Sample::Person': { x: 0, y: 180, width: 160, height: 60 },
+                'Sample::Organization': { x: 260, y: 0, width: 160, height: 60 }
+            },
+            routes: {}, display: { ...defaultDisplayOptions, routing: 'curved' },
+            content: defaultContentOptions, layout: defaultLayoutOptions,
+            constraints: { pinned: [], alignments: [], distributions: [] },
+            packages: ['Sample'], filters: []
+        } }));
+        window.dispatchEvent(new MessageEvent('message', { data: { type: 'select', ids: [edge] } }));
+
+        const offered = document.querySelector('.tv-handle-new')!;
+        offered.dispatchEvent(new PointerEvent('pointerdown', {
+            bubbles: true, pointerId: 1, clientX: 100, clientY: 100
+        }));
+        document.getElementById('viewport')!.dispatchEvent(new PointerEvent('pointermove', {
+            bubbles: true, pointerId: 1, clientX: 140, clientY: 140
+        }));
+
+        document.getElementById('viewport')!.dispatchEvent(
+            new PointerEvent('pointerup', { bubbles: true, pointerId: 1 }));
+        const bend = document.querySelector('.tv-handle-selected');
+        expect(bend?.getAttribute('aria-label')).toContain('Delete or Backspace');
+
+        const hiddenBefore = posted('hide').length;
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete' }));
+
+        expect(posted('rerouted').at(-1)).toEqual({ type: 'rerouted', edge });
+        expect(posted('hide')).toHaveLength(hiddenBefore);
+        expect(document.querySelector('.tv-handle-selected')).toBeNull();
+    });
+
     test('redraws a generalization set live while one of its classes is dragged', () => {
         // A tree has no path of its own for `redrawIncidentEdges` to nudge --
         // it is drawn once from every child's position together -- so dragging

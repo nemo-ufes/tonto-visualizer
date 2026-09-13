@@ -171,13 +171,14 @@ things make straight lines work — parallel edges between the same pair are
 spread into a shallow fan with distinct midpoint bends, and a line that would
 cross an unrelated class takes one bend round it, since a straight line through
 a class is worse than no line at all.
-The curved style only smooths associations for which the straight router needed
-a bend; a direct association remains a direct line. Its Graphviz-style fitter
-fits one chord-parameterized cubic over as much of the guide as its obstacle
-corridor permits, splitting at the worst-fitting bend only when necessary.
+The curved style only smooths routed edges for which the straight router needed
+a bend; a direct association or generalization remains a direct line. Its
+Graphviz-style fitter fits one chord-parameterized cubic over as much of the
+guide as its obstacle corridor permits, splitting at the worst-fitting bend
+only when necessary.
 Smoothed detours are checked against the same obstacles and crossings as their
-sampled geometry. Generalizations stay straight so taxonomy ranks and shared
-heads keep their visual grammar.
+sampled geometry. Ordinary generalizations are smoothed under the same rules;
+shared taxonomy trees stay orthogonal so their branching grammar remains clear.
 Right angles remain, as a choice, for the taxonomies they do suit.
 
 **(d) The arrangement is a document.** After the modeller changes an automatic
@@ -235,7 +236,7 @@ why its generator can only be exercised through the extension.
 |---|---|
 | select | click, shift-click, drag a band over the background (shift adds) |
 | move | drag, arrow-key nudge, snap to an 8px grid |
-| route | select a line, drag a handle to bend it; double-click a bend to drop it |
+| route | select a line, drag a handle to bend it; select a bend and press Delete/Backspace, or double-click it, to drop it |
 | resize | drag a card's corner; double-click a corner to fit the content |
 | hide | hide an element or a whole package, and a panel to bring it back |
 | layout | auto-layout everything, or just the selection |
@@ -352,8 +353,9 @@ to go. Measured over the four models, lines through unrelated boxes fell from
 
 A route can now be taken hold of. Selecting a line offers a handle on every bend
 it has and a smaller one on every stretch between them; dragging either makes the
-route the modeller's, and double-clicking a bend drops it -- the last one gives
-the line back to the router rather than leaving a two-point route, which would
+route the modeller's. Selecting a solid bend and pressing Delete or Backspace,
+or double-clicking it, drops it -- the last one gives the line back to the router
+rather than leaving a two-point route, which would
 keep the ends it was given and lose the ports and the way round anything in
 between. Two things had to be fixed to make it usable at all, both invisible in
 the markup: every `pointerdown` takes pointer capture, which retargets the click

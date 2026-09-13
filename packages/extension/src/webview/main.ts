@@ -16,7 +16,8 @@ import { ASSOCIATION_DISTANCE, clampAssociationDistance, defaultLayoutOptions } 
 import type { Corner, Handle, Point, Rect, Size } from 'tonto-canvas/draw';
 import {
     CORNERS, cornerOf, curvedRoute, darkTheme, distanceToPath, drawNode, dropHandle, handlesFor, lightTheme,
-    moveHandle, overlaps, pathData, rectBetween, relationSpreads, render, resizeTo, routeEdge, segmentHitsRect, sizeOf
+    moveHandle, overlaps, pathData, rectBetween, relationSpreads, render, resizeTo, routeEdge, segmentHitsRect, sizeOf,
+    trianglePoints
 } from 'tonto-canvas/draw';
 import type { FilterItem } from '../protocol.js';
 
@@ -57,6 +58,8 @@ let fitMode = stored.fit ?? false;
 let bounds: Rect = { x: 0, y: 0, width: 1, height: 1 };
 /** Set while a drag is in flight, so a redraw does not yank the boxes back. */
 let dragging: DragState | undefined;
+/** The solid route handle that Delete or Backspace will remove. */
+let selectedBend: { edge: string; index: number } | undefined;
 /** Sampled geometry of what is visible, used for selection and obstruction. */
 let paths: Record<string, Point[]> = {};
 /** Editable guide polylines; curved paths are rendered and sampled from these. */
@@ -89,6 +92,9 @@ window.addEventListener('message', event => {
         const pruned = new Set([...selection].filter(id => visible.has(id)));
         const selectionChanged = pruned.size !== selection.size;
         selection = pruned;
+        if (selectedBend && !visible.has(selectedBend.edge)) {
+            selectedBend = undefined;
+        }
         positions = message.positions;
         routes = message.routes;
         display = message.display;
@@ -116,6 +122,9 @@ window.addEventListener('message', event => {
         fillLegend();
     } else if (message.type === 'select') {
         selection = new Set(message.ids);
+        if (selectedBend && !selection.has(selectedBend.edge)) {
+            selectedBend = undefined;
+        }
         applySelection();
         updateArrangeTitle();
         if (!optionsPanel.hidden) {
@@ -234,12 +243,21 @@ function drawHandles(): void {
     } else if (points) {
         for (const [index, handle] of handlesFor(points).entries()) {
             const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-            dot.setAttribute('class', `tv-handle${handle.kind === 'new' ? ' tv-handle-new' : ''}`);
+            const selected = handle.kind === 'bend' && selectedBend?.edge === id
+                && selectedBend.index === handle.index;
+            dot.setAttribute('class', `tv-handle${handle.kind === 'new' ? ' tv-handle-new' : ''}`
+                + `${selected ? ' tv-handle-selected' : ''}`);
             dot.setAttribute('data-handle', String(index));
             dot.setAttribute('cx', String(handle.at.x));
             dot.setAttribute('cy', String(handle.at.y));
             dot.setAttribute('r', String(handle.kind === 'new' ? radius * 0.8 : radius));
             dot.setAttribute('stroke-width', String(1.4 / scale));
+            dot.setAttribute('role', 'button');
+            dot.setAttribute('aria-label', handle.kind === 'new'
+                ? 'Drag to add a bend' : 'Drag to move bend; Delete or Backspace to remove');
+            if (handle.kind === 'bend') {
+                dot.setAttribute('aria-selected', String(selected));
+            }
             group.append(dot);
         }
     }
@@ -363,7 +381,8 @@ function repaintNode(id: string): void {
 
 /** Draws one line from its editable guide, without redrawing anything else. */
 function repaint(edge: string, points: Point[]): void {
-    const path = canvas.querySelector(`[data-edge="${cssEscape(edge)}"] path`) as SVGPathElement | null;
+    const group = canvas.querySelector(`[data-edge="${cssEscape(edge)}"]`);
+    const path = group?.querySelector('path');
     const definition = view.edges.find(candidate => candidate.id === edge);
     const source = definition ? positions[definition.source] : undefined;
     const target = definition ? positions[definition.target] : undefined;
@@ -373,6 +392,15 @@ function repaint(edge: string, points: Point[]): void {
     guides[edge] = points;
     paths[edge] = drawn.points;
     path?.setAttribute('d', drawn.data);
+    if (definition?.kind === 'generalization') {
+        const marker = group?.querySelector('.tv-marker');
+        const tip = drawn.points[drawn.points.length - 1];
+        const from = drawn.points[drawn.points.length - 2] ?? drawn.points[0];
+        if (marker && tip && from) {
+            marker.setAttribute('points', trianglePoints(tip, from)
+                .map(point => `${point.x},${point.y}`).join(' '));
+        }
+    }
 }
 
 function applyViewport(): void {
@@ -448,12 +476,17 @@ viewport.addEventListener('pointerdown', event => {
 
     const held = handleAt(target);
     if (held) {
+        selectedBend = held.handle.kind === 'bend'
+            ? { edge: held.edge, index: held.handle.index }
+            : undefined;
         dragging = {
             ids: [], startX: event.clientX, startY: event.clientY, moved: false, origin: {},
             route: { edge: held.edge, handle: held.handle, from: guides[held.edge]! }
         };
         return;
     }
+
+    selectedBend = undefined;
 
     const nodeGroup = target.closest('[data-node]');
     const id = nodeGroup?.getAttribute('data-node') ?? undefined;
@@ -545,6 +578,7 @@ viewport.addEventListener('pointermove', event => {
         // Snapped like a box is, so a bend put level with a border stays level.
         const at = { x: snap(route.handle.at.x + dx), y: snap(route.handle.at.y + dy) };
         const points = moveHandle(route.from, route.handle, at);
+        selectedBend = { edge: route.edge, index: route.handle.index };
         repaint(route.edge, points);
         drawHandles();
         return;
@@ -668,6 +702,9 @@ function keepRoute(edge: string, points: Point[] | undefined): void {
         routes[edge] = { points };
     } else {
         delete routes[edge];
+        if (selectedBend?.edge === edge) {
+            selectedBend = undefined;
+        }
     }
     host.postMessage({ type: 'rerouted', edge, ...(points ? { route: { points } } : {}) });
     draw();
@@ -786,6 +823,14 @@ viewport.addEventListener('wheel', event => {
 
 window.addEventListener('keydown', event => {
     if (event.key === 'Delete' || event.key === 'Backspace') {
+        const bend = selectedBend;
+        const points = bend ? guides[bend.edge] : undefined;
+        if (bend && points && bend.index > 0 && bend.index < points.length - 1) {
+            event.preventDefault();
+            selectedBend = undefined;
+            keepRoute(bend.edge, dropHandle(points, bend.index));
+            return;
+        }
         hideSelection();
         return;
     }

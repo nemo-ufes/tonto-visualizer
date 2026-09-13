@@ -1952,7 +1952,7 @@ function triangleAt(tip: Point, from: Point): string {
         + `${round(left.x)},${round(left.y)} ${round(right.x)},${round(right.y)}"/>`;
 }
 
-function trianglePoints(tip: Point, from: Point): [Point, Point, Point] {
+export function trianglePoints(tip: Point, from: Point): [Point, Point, Point] {
     const { unit, normal } = direction(tip, from);
     const base = { x: tip.x + unit.x * 14, y: tip.y + unit.y * 14 };
     return [
