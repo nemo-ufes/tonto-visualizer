@@ -209,12 +209,12 @@ export function assignPorts(
         // sharing the same side may still fan out beside it, but `separate`
         // now holds them off the triangle instead of the triangle landing on
         // top of one of them regardless of what their fan already claimed.
+        const ranked = edge.kind === 'generalization' && direction
+            && rankedBeyond(source, target, direction);
         push(arrivals, edge.source, {
             edge: edge.id, isSource: true, from: centerOf(target), aim: centerOf(target),
             through: edge.kind === 'generalization' || through.has(endKey(edge.id, edge.source)),
-            ...(edge.kind === 'generalization' && direction
-                ? { side: direction === 'DOWN' ? 'top' as const : 'left' as const }
-                : {})
+            ...(ranked ? { side: direction === 'DOWN' ? 'top' as const : 'left' as const } : {})
         });
         push(arrivals, edge.target, {
             edge: edge.id, isSource: false, from: centerOf(source), aim: centerOf(source),
@@ -222,9 +222,7 @@ export function assignPorts(
             ...(edge.kind === 'generalization' && reserveGeneralizationHeads
                 ? { clearance: GENERALIZATION_CLEARANCE }
                 : {}),
-            ...(edge.kind === 'generalization' && direction
-                ? { side: direction === 'DOWN' ? 'bottom' as const : 'right' as const }
-                : {})
+            ...(ranked ? { side: direction === 'DOWN' ? 'bottom' as const : 'right' as const } : {})
         });
     }
     for (const stem of stems) {
@@ -372,6 +370,19 @@ function fanAngle(rect: Rect, side: Side, towards: Point): number {
         default:
             return Math.atan2(dy, dx);
     }
+}
+
+/**
+ * Whether the specific lies wholly past its general along the rank direction:
+ * the case the rank-facing sides were chosen for, where the line of sight hits
+ * an inner vertical side only because the cross-axis offset is large. Once the
+ * modeller puts the specific beside or above its general, pinning the head to
+ * the general's bottom sent the line round the box to an arbitrary side.
+ */
+function rankedBeyond(specific: Rect, general: Rect, direction: 'DOWN' | 'RIGHT'): boolean {
+    return direction === 'DOWN'
+        ? specific.y >= general.y + general.height
+        : specific.x >= general.x + general.width;
 }
 
 function lengthOf(rect: Rect, side: Side): number {
