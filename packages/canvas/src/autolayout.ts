@@ -40,7 +40,7 @@ import { assignPorts } from './ports.js';
 import type { RoutingStyle } from './route.js';
 import { routeEdge } from './route.js';
 import { FONT, textWidth } from './measure.js';
-import { labelWidth, render } from './render.js';
+import { groupBoxes, labelWidth, render } from './render.js';
 
 const GROUP_PADDING = 18;
 const GROUP_HEADER = 20;
@@ -386,6 +386,146 @@ function placeAppendixAfter(
             y: Math.round(rect.y + translation.y)
         };
     }
+}
+
+/** Grid step, in pixels, of the search for a free seat inside the model. */
+const SEAT_STEP = 8;
+/** Clear space kept between a seated card and a line or label near it. */
+const SEAT_LINE_CLEARANCE = 20;
+const SEAT_LABEL_CLEARANCE = 10;
+
+/**
+ * Seats unconnected datatypes and enumerations in the model's own whitespace.
+ *
+ * `placeAppendixAfter` alone put them in a new rank past the whole model. On
+ * `genealogy` that added a strip 200px deep for two cards while the corner
+ * under the filiation taxonomy stood empty: the canvas grew for cards that
+ * need no particular place, only one that is out of the way. They are still
+ * kept out of the way -- nearest the far end of the rank axis, clear of every
+ * card, line, label and generalization set -- and only a card that fits
+ * nowhere inside the model's bounds is left for the appendix row.
+ *
+ * Orthogonal routes are ELK's own, saved with the layout, and are not the
+ * lines this pass could render and avoid, so that style keeps the appendix.
+ * So do other classifiers with no inheritance in a taxonomy-only view: that
+ * appendix is a list of what the taxonomy leaves out, and reads as one.
+ */
+function seatAppendixInWhitespace(
+    view: ViewModel,
+    positions: Positions,
+    appendix: ReadonlySet<string>,
+    subject: ReadonlySet<string>,
+    settings: LayoutOptions,
+    routing: RoutingStyle,
+    /** Whether package boxes will be drawn around a flat layout. */
+    packageBoxesDrawn: boolean
+): Set<string> {
+    const seated = new Set<string>();
+    const waiting = view.nodes
+        .filter(node => appendix.has(node.id) && subject.has(node.id) && positions[node.id] !== undefined
+            && (node.kind === 'datatype' || node.kind === 'enumeration'))
+        .map(node => node.id);
+    if (waiting.length === 0 || routing === 'orthogonal') {
+        return seated;
+    }
+    const pending = new Set(waiting);
+    const body = view.nodes.filter(node => !pending.has(node.id) && positions[node.id] !== undefined);
+    if (body.length === 0) {
+        return seated;
+    }
+    const bounds = boundsOf(body.map(node => positions[node.id]!));
+
+    // The lines are those of the drawing as it will be, in both styles the
+    // panel can switch between without arranging again.
+    const bodyView: ViewModel = { ...view, nodes: body };
+    const segments: Array<[Point, Point]> = [];
+    const blocked: Rect[] = [];
+    const inflate = (rect: Rect, margin: number): Rect => ({
+        x: rect.x - margin, y: rect.y - margin, width: rect.width + margin * 2, height: rect.height + margin * 2
+    });
+    for (const style of new Set<RoutingStyle>(['straight', routing])) {
+        const output = renderForLayoutScore(bodyView, positions, settings.direction, style);
+        for (const points of Object.values(output.paths)) {
+            for (let index = 1; index < points.length; index += 1) {
+                segments.push([points[index - 1]!, points[index]!]);
+            }
+        }
+        blocked.push(...renderedLabelBoxes(output.svg).map(label => inflate(label, SEAT_LABEL_CLEARANCE)));
+    }
+    const cardClearance = Math.max(24, Math.round(settings.nodeSpacing * 0.6));
+    blocked.push(...body.map(node => inflate(positions[node.id]!, cardClearance)));
+    // A set's bus and stems are drawn by the tree, not reported as paths; the
+    // span from its general to its specifics is the ground they cover.
+    for (const genset of view.gensets) {
+        const members = [genset.general, ...genset.specifics]
+            .flatMap(id => id && !pending.has(id) && positions[id] ? [positions[id]!] : []);
+        if (members.length > 1) {
+            blocked.push(inflate(boundsOf(members), SEAT_LINE_CLEARANCE));
+        }
+    }
+
+    // A card seated among another package's members would read as belonging
+    // to it, and one seated away from its own would stretch that box across
+    // the diagram. Only the boxes the renderer will actually draw have a say:
+    // a package interleaved with others is given no box, and so no bounds.
+    const drawnBoxes = packageBoxesDrawn ? groupBoxes(view, positions) : [];
+    const groupOf = new Map(view.groups.flatMap(group => group.nodes.map(id => [id, group.id] as const)));
+
+    const down = settings.direction === 'DOWN';
+    for (const id of waiting) {
+        const rect = positions[id]!;
+        let area = bounds;
+        const group = groupOf.get(id);
+        const members = view.groups.find(one => one.id === group)?.nodes
+            .filter(member => !pending.has(member) && positions[member] !== undefined) ?? [];
+        // A package holding only datatypes has nothing to seat them among: it
+        // is a box of its own, and moved, it would only take its padding
+        // somewhere else -- whether or not the planning-width cards let it be
+        // drawn yet.
+        if (packageBoxesDrawn && group !== undefined && members.length === 0) {
+            continue;
+        }
+        if (drawnBoxes.some(box => box.id === group)) {
+            // Inside the box its other members already need, so that box does
+            // not grow to reach it.
+            area = boundsOf(members.map(member => positions[member]!));
+        }
+        const others = drawnBoxes.filter(box => box.id !== group).map(box => box.rect);
+        const last = [...seated].map(other => centerOf(positions[other]!)).at(-1);
+        let best: { x: number; y: number; depth: number; distance: number } | undefined;
+        for (let y = area.y; y + rect.height <= area.y + area.height; y += SEAT_STEP) {
+            for (let x = area.x; x + rect.width <= area.x + area.width; x += SEAT_STEP) {
+                const seat = { x, y, width: rect.width, height: rect.height };
+                if (blocked.some(other => overlaps(seat, other))
+                    || others.some(other => overlaps(seat, other))
+                    || segments.some(([from, to]) => segmentHitsRect(from, to, seat, SEAT_LINE_CLEARANCE))) {
+                    continue;
+                }
+                // How far short of the model's far end the seat stops, first:
+                // that is what keeps reference material after what it serves.
+                // Then beside the card seated before it, so a model's
+                // datatypes stay together, or else nearest a corner.
+                const depth = Math.floor((down
+                    ? area.y + area.height - (y + rect.height)
+                    : area.x + area.width - (x + rect.width)) / SEAT_STEP);
+                const centre = centerOf(seat);
+                const distance = last
+                    ? Math.hypot(centre.x - last.x, centre.y - last.y)
+                    : down
+                        ? Math.min(x - area.x, area.x + area.width - x - rect.width)
+                        : Math.min(y - area.y, area.y + area.height - y - rect.height);
+                if (!best || depth < best.depth || (depth === best.depth && distance < best.distance)) {
+                    best = { x, y, depth, distance };
+                }
+            }
+        }
+        if (best) {
+            positions[id] = { ...rect, x: Math.round(best.x), y: Math.round(best.y) };
+            blocked.push(inflate(positions[id]!, cardClearance));
+            seated.add(id);
+        }
+    }
+    return seated;
 }
 
 /**
@@ -1048,7 +1188,12 @@ function layoutLabelWidth(edge: ViewModel['edges'][number]): number {
 }
 
 /** A rendering safe for skeletal relations in layout-only unit fixtures. */
-function renderForLayoutScore(view: ViewModel, positions: Positions, direction: LayoutOptions['direction']) {
+function renderForLayoutScore(
+    view: ViewModel,
+    positions: Positions,
+    direction: LayoutOptions['direction'],
+    routing: RoutingStyle = 'straight'
+) {
     // A few layout unit tests intentionally use skeletal relation ends. They
     // carry enough information for layout but not for label rendering, so fill
     // only the two flags the renderer expects before asking it to score labels.
@@ -1068,14 +1213,14 @@ function renderForLayoutScore(view: ViewModel, positions: Positions, direction: 
         // it must not make the optimizer move whole clusters to accommodate a
         // line-style choice that leaves the association's endpoints unchanged.
         repeatedAssociationFans: false,
-        display: { ...defaultDisplayOptions, routing: 'straight', showPackageGroups: false }
+        display: { ...defaultDisplayOptions, routing, showPackageGroups: false }
     });
 }
 
-/** Label collisions in the same form used by the benchmark harness. */
-function renderedLabelOcclusions(svg: string, positions: Positions): number {
+/** The boxes of a rendering's edge labels, measured as the benchmark harness does. */
+function renderedLabelBoxes(svg: string): Array<Rect & { owner: string | undefined }> {
     const layer = /<g class="tv-labels">([\s\S]*?)<\/svg>/.exec(svg)?.[1] ?? '';
-    const labels = [...layer.matchAll(/<text([^>]*)>([^<]*)<\/text>/g)].flatMap(match => {
+    return [...layer.matchAll(/<text([^>]*)>([^<]*)<\/text>/g)].flatMap(match => {
         const attributes = match[1]!;
         const text = match[2]!;
         const x = Number(/ x="([-\d.]+)"/.exec(attributes)?.[1]);
@@ -1090,6 +1235,11 @@ function renderedLabelOcclusions(svg: string, positions: Positions): number {
         const owner = /data-for="([^"]+)"/.exec(attributes)?.[1];
         return [{ x: left, y: y - size, width, height: size + 4, owner }];
     });
+}
+
+/** Label collisions in the same form used by the benchmark harness. */
+function renderedLabelOcclusions(svg: string, positions: Positions): number {
+    const labels = renderedLabelBoxes(svg);
     const nodes = Object.values(positions);
     let occlusions = labels.filter(label => nodes.some(node => overlapArea(label, node) > 0)).length;
     for (let one = 0; one < labels.length; one += 1) {
@@ -2557,8 +2707,13 @@ export async function autoLayout(
     const packed = !request.only && !grouped
         ? packComponents(view, positions, subject, appendixIds, settings)
         : false;
-    if (!request.only && !grouped) {
-        placeAppendixAfter(positions, appendixIds, subject, settings);
+    if (!request.only) {
+        const seated = seatAppendixInWhitespace(
+            view, positions, appendixIds, subject, settings, routing, request.packageContainers === true
+        );
+        if (!grouped) {
+            placeAppendixAfter(positions, new Set([...appendixIds].filter(id => !seated.has(id))), subject, settings);
+        }
     }
     // Compaction is allowed to shorten ordinary links, but it must not silently
     // undo the reading order of an instantiation. Apply that soft preference to

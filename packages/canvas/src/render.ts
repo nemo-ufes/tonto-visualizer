@@ -1918,7 +1918,7 @@ function canDrawTree(generalId: string, childIds: string[], positions: Positions
  * `Staff` as well. A box that says a class is in a package it is not in is
  * worse than no box: the reader believes it.
  */
-function groupBoxes(view: ViewModel, positions: Positions): Array<{ id: string; name: string; rect: Rect }> {
+export function groupBoxes(view: ViewModel, positions: Positions): Array<{ id: string; name: string; rect: Rect }> {
     return view.groups
         .map(group => {
             const members = new Set(group.nodes);
