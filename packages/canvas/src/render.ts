@@ -518,6 +518,12 @@ function withRankFacingHead(
     }
     const tip = points[points.length - 1]!;
     const before = points[points.length - 2]!;
+    // A specific placed beside or above its general meets another side, and a
+    // stub out of the rank-facing one would hook the line round the corner.
+    if ((direction === 'DOWN' && tip.y !== target.y + target.height)
+        || (direction === 'RIGHT' && tip.x !== target.x + target.width)) {
+        return points;
+    }
     const approach = direction === 'DOWN'
         ? { x: tip.x, y: target.y + target.height + 18 }
         : { x: target.x + target.width + 18, y: tip.y };

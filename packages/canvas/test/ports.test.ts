@@ -63,6 +63,23 @@ describe('edge anchors', () => {
         expect(right?.target.x).toBe(positions.general!.x + positions.general!.width);
     });
 
+    test('anchors a generalization on its line of sight once the specific leaves its rank', () => {
+        const general: Rect = { x: 0, y: 200, width: 120, height: 60 };
+        const edges = [{ id: 'generalization', source: 'specific', target: 'general', kind: 'generalization' }];
+        const anchor = (specific: Rect) =>
+            assignPorts(edges, { general, specific }, new Set(), [], 'ray', 'DOWN').ends.get('generalization');
+
+        // Dragged beside the general, the specific's line meets the general's
+        // facing side; the head used to stay pinned to the bottom border.
+        const beside = anchor({ x: 300, y: 200, width: 120, height: 60 });
+        expect(beside?.target.x).toBe(general.x + general.width);
+        expect(beside?.source.x).toBe(300);
+
+        const above = anchor({ x: 0, y: 0, width: 120, height: 60 });
+        expect(above?.target.y).toBe(general.y);
+        expect(above?.source.y).toBe(60);
+    });
+
     test('reserves the full triangle width where generalization heads share a border', () => {
         const positions: Record<string, Rect> = {
             general: { x: 0, y: 0, width: 120, height: 42 },

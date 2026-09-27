@@ -186,7 +186,9 @@ authority for what those constraints mean.
 - Made ordinary generalizations meet the sides facing their taxonomy ranks:
   top and bottom for a downward layout, left and right for a rightward one.
   The saved layout direction is now used consistently by the panel, exports,
-  CLI and optimizer's rendered safety checks.
+  CLI and optimizer's rendered safety checks. The rule holds only while the
+  specific lies wholly past its general along the rank axis; a specific the
+  modeller places beside or above its general is anchored on the line of sight.
 - Extended final label-corridor reservation to ranked endpoints, which may move
   only along their cross axis and only under the same rendered safety gate. On
   `genealogy` this retains 1 label collision and 6 crossings with the clearer
