@@ -290,11 +290,12 @@ describe('the webview and its host protocol', () => {
             data: { type: 'select', ids: ['Sample::Person', 'works-for'] }
         }));
 
-        sendModel(['Sample::Person'], 'expected declaration');
+        sendModel(['Sample::Person'], 'line 3: expected declaration');
 
         expect(posted('selected').at(-1)).toEqual({ type: 'selected', ids: [] });
         expect((document.getElementById('hide') as HTMLButtonElement).disabled).toBe(true);
         expect(document.getElementById('stale')!.hidden).toBe(false);
+        expect(document.getElementById('stale')!.title).toBe('line 3: expected declaration');
         expect(checkbox('Sample::Person').checked).toBe(false);
     });
 
