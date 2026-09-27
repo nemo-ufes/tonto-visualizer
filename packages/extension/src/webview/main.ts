@@ -105,6 +105,9 @@ window.addEventListener('message', event => {
         filters = message.filters;
         staleLabel.hidden = !message.stale;
         staleLabel.textContent = message.stale ? `does not parse — showing the last good diagram` : '';
+        // The reason, which the label has no room for, so the modeller can see
+        // why the editor and the diagram disagree about the same text.
+        staleLabel.title = message.stale ?? '';
         if (message.fit) {
             fitMode = true;
         }

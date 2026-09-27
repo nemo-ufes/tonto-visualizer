@@ -141,6 +141,33 @@ kind Animal {
             .toEqual(['Parties::Employee', 'Parties::Organization']);
     });
 
+    test('parses what the language in the editor parses', async () => {
+        // The pin had fallen behind `derivedFrom`: the editor accepted the
+        // clause and the panel said the model did not parse, holding the last
+        // good picture however much was typed after it.
+        const session = new ViewSession();
+        const uri = pathToFileURL(resolve(parties, 'draft.tonto')).toString();
+        await session.update(uri, [
+            'package Draft',
+            'kind Person',
+            'kind Organization',
+            'relator Employment {',
+            '    @mediation [1..*] -- [1] Person',
+            '    @mediation [1..*] -- [1] Organization',
+            '}',
+            '@material relation Person [1..*] -- worksFor -- [1..*] Organization derivedFrom Employment'
+        ].join('\n'));
+        expect(await session.parseErrors(uri)).toEqual([]);
+    });
+
+    test('says on which line a model stops parsing', async () => {
+        const session = new ViewSession();
+        const uri = pathToFileURL(resolve(parties, 'draft.tonto')).toString();
+        await session.update(uri, 'package Draft\nkind Person\nkind kind\n');
+        const errors = await session.parseErrors(uri);
+        expect(errors[0]).toMatch(/^line 3: /);
+    });
+
     test('centres a file view on its packages and keeps imports external', async () => {
         const session = new ViewSession({ workspace: [parties] });
         const uri = pathToFileURL(resolve(parties, 'employment.tonto')).toString();

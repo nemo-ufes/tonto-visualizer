@@ -1,7 +1,7 @@
 {
     "name": "tonto-visualizer",
     "displayName": "Tonto Visualizer",
-    "version": "0.1.47+20260927150333",
+    "version": "0.1.48+20260927182825",
     "private": true,
     "description": "An OntoUML diagram beside the text: a Tonto model drawn as it is typed, and arranged by hand.",
     "license": "MIT",

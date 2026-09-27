@@ -111,11 +111,22 @@ export class ViewSession {
         return all.filter(model => documentUri(model) === parsed);
     }
 
-    /** Parse errors in a document, which is what a stale picture is explained by. */
+    /**
+     * Parse errors in a document, which is what a stale picture is explained by.
+     *
+     * With the line, because the one place the reason is shown is a tooltip on
+     * the panel, and "Expecting token of type ..." alone does not say where. A
+     * keyword the pinned language does not know yet -- `derivedFrom`, added
+     * upstream while the pin stayed behind -- parses in the editor and fails
+     * here, and that is the case where knowing which line matters.
+     */
     async parseErrors(uri: string): Promise<string[]> {
         await this.open();
         const document = this.documentOf(uri);
-        return document?.parseResult.parserErrors.map(error => error.message) ?? [];
+        return document?.parseResult.parserErrors.map(error => {
+            const line = error.token.startLine;
+            return line !== undefined && Number.isFinite(line) ? `line ${line}: ${error.message}` : error.message;
+        }) ?? [];
     }
 
     /** `///` documentation, read the way the hover reads it. */
