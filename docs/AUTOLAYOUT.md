@@ -258,3 +258,11 @@ authority for what those constraints mean.
   ordering discontinuities that a smaller planning node introduced. Added
   persisted sans-serif, serif and monospace typefaces with small, medium and
   large size presets; measurement, labels and exported SVG use the same preset.
+- Seated unconnected datatypes and enumerations in the model's own whitespace
+  before falling back to the appendix row. Each takes the free seat nearest the
+  far end of the rank axis that clears every card, rendered line (straight and
+  curved), edge label and generalization-set span, beside the previous one.
+  Where package boxes are drawn it stays inside its own package's box, and a
+  package holding only datatypes stays as it is. Orthogonal routing and the
+  taxonomy-only appendix keep the row. `genealogy` drops from 1147 to 929px
+  high, `parties` from 680 x 735 to 540 x 687, `showcase` from 710 to 668px.

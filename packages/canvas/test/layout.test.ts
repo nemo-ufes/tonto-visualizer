@@ -316,6 +316,38 @@ describe('arranging a model', () => {
         expect(positions['Sample::Address']!.y).toBeGreaterThanOrEqual(lowest);
     });
 
+    /**
+     * After the model, but not in a rank of its own when the last one has
+     * room: in `genealogy` the appendix row added 200px of canvas below two
+     * cards while the corner beside the deepest taxonomy stood empty.
+     */
+    test('seats an unconnected datatype in whitespace the model leaves free', async () => {
+        const view = taxonomy(3);
+        view.nodes.push({
+            id: 'Sample::Deep', kind: 'class', name: 'Deep', package: 'Sample',
+            stereotype: 'subkind', color: '#FF99A3', isExternal: false, attributes: []
+        }, {
+            id: 'Sample::Address', kind: 'datatype', name: 'Address', package: 'Sample',
+            stereotype: 'datatype', color: '#FFFFFF', isExternal: false, attributes: []
+        });
+        view.groups[0]!.nodes.push('Sample::Deep', 'Sample::Address');
+        view.edges.push({
+            kind: 'generalization', id: 'gen:Sample::Deep->Sample::Sub0',
+            source: 'Sample::Deep', target: 'Sample::Sub0'
+        });
+
+        const positions = await arrange(view, false);
+        const classes = boundsOf(view.nodes.filter(node => node.kind === 'class').map(node => positions[node.id]!));
+        const address = positions['Sample::Address']!;
+        const deep = positions['Sample::Deep']!;
+        expect(address.y + address.height).toBeLessThanOrEqual(classes.y + classes.height);
+        expect(address.y).toBeGreaterThan(positions['Sample::Sub1']!.y);
+        for (const node of view.nodes.filter(one => one.kind === 'class')) {
+            expect(overlaps(address, positions[node.id]!, 24)).toBe(false);
+        }
+        expect(Math.abs(address.y + address.height - (deep.y + deep.height))).toBeLessThan(40);
+    });
+
     /** A datatype something does point at is drawn where it is pointed at from. */
     test('leaves a datatype that is joined to something in its rank', async () => {
         const view = taxonomy(1);
