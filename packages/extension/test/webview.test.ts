@@ -354,6 +354,48 @@ describe('the webview and its host protocol', () => {
         expect(posted('hide')).toHaveLength(before);
     });
 
+    test('moves a derivation live while its relator is dragged', () => {
+        const relation = 'works-for-derived';
+        const derived = {
+            ...view,
+            nodes: [...view.nodes, {
+                id: 'Sample::Employment', kind: 'class' as const, name: 'Employment', package: 'Sample',
+                stereotype: 'relator', color: '#99FF99', isExternal: false, attributes: []
+            }],
+            edges: [{
+                kind: 'relation' as const, id: relation, stereotype: 'material', name: 'worksFor',
+                source: 'Sample::Person', target: 'Sample::Organization',
+                sourceEnd: { isConst: false, isAddOnly: false }, targetEnd: { isConst: false, isAddOnly: false },
+                derivedFrom: ['Sample::Employment']
+            }]
+        };
+        window.dispatchEvent(new MessageEvent('message', { data: {
+            type: 'model', view: derived,
+            positions: {
+                'Sample::Person': { x: 0, y: 0, width: 160, height: 60 },
+                'Sample::Organization': { x: 400, y: 0, width: 160, height: 60 },
+                'Sample::Employment': { x: 200, y: 200, width: 160, height: 60 }
+            },
+            routes: {}, display: defaultDisplayOptions,
+            content: defaultContentOptions, layout: defaultLayoutOptions,
+            constraints: { pinned: [], alignments: [], distributions: [] },
+            packages: ['Sample'], filters: []
+        } }));
+
+        const line = () => document.querySelector(`[data-derivation="${relation}"] path`)!.getAttribute('d');
+        const before = line();
+        document.querySelector('[data-node="Sample::Employment"]')!.dispatchEvent(
+            new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, clientX: 200, clientY: 200 }));
+        document.getElementById('viewport')!.dispatchEvent(new PointerEvent('pointermove', {
+            bubbles: true, pointerId: 1, clientX: 320, clientY: 260
+        }));
+
+        expect(before).toBeTruthy();
+        expect(line()).not.toBe(before);
+        document.getElementById('viewport')!.dispatchEvent(
+            new PointerEvent('pointerup', { bubbles: true, pointerId: 1 }));
+    });
+
     test('moves a sole generalization head live while its target class is dragged', () => {
         const edge = 'generalization:person-organization';
         const specialization = {
