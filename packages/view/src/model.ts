@@ -95,6 +95,14 @@ export interface ViewRelation {
      */
     inverseOf?: string;
     specializes?: string;
+    /**
+     * What the relation is derived from (`derivedFrom Employment`): the
+     * relator a material relation is read off, or the qualities a comparative
+     * one compares, by node id. Only classes already in the view: a
+     * derivation is drawn between things on the page, and does not bring a
+     * relator from another package onto it.
+     */
+    derivedFrom?: string[];
     documentation?: string;
     source_?: SourceLocation;
 }

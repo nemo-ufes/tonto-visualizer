@@ -4,7 +4,7 @@ import { defaultDisplayOptions } from 'tonto-view';
 import { placeNewNodes } from '../src/place.js';
 import { distanceToPath, segmentHitsRect } from '../src/geometry.js';
 import { handlesFor } from '../src/handles.js';
-import { labelWidth, render } from '../src/render.js';
+import { derivationLine, labelWidth, render } from '../src/render.js';
 import { curvedRoute, pathData, roundedRoute, routeEdge } from '../src/route.js';
 import { FONT, multiplicityLabel, sizeOf, textWidth, wrappedAttributeLines } from '../src/measure.js';
 
@@ -148,6 +148,50 @@ function model(): ViewModel {
 }
 
 describe('drawing', () => {
+
+    test('draws a derivation as a dependency from the relation to its relator', () => {
+        const end = { isConst: false, isAddOnly: false };
+        const node = (name: string, stereotype: string) => ({
+            id: `Sample::${name}`, kind: 'class' as const, name, package: 'Sample',
+            stereotype, color: '#FFFFFF', isExternal: false, attributes: []
+        });
+        const view: ViewModel = {
+            groups: [],
+            nodes: [node('Employee', 'role'), node('Organization', 'kind'), node('Employment', 'relator')],
+            edges: [{
+                kind: 'relation', id: 'works-for', stereotype: 'material', name: 'worksFor',
+                source: 'Sample::Employee', target: 'Sample::Organization',
+                sourceEnd: { ...end }, targetEnd: { ...end }, derivedFrom: ['Sample::Employment']
+            }],
+            gensets: []
+        };
+        const positions = {
+            'Sample::Employee': { x: 0, y: 0, width: 120, height: 60 },
+            'Sample::Organization': { x: 400, y: 0, width: 120, height: 60 },
+            'Sample::Employment': { x: 200, y: 200, width: 120, height: 60 }
+        };
+        const drawn = render({ view, positions, display });
+        const group = /<g class="tv-edge tv-derivation" data-derivation="works-for" data-supplier="Sample::Employment">(.*?)<\/g>/
+            .exec(drawn.svg);
+
+        // Dashed, and from the middle of the association to the relator's top,
+        // with UML's open arrowhead at the relator.
+        expect(group?.[1]).toContain('stroke-dasharray="6 4"');
+        expect(group?.[1]).toContain('<path d="M 260 30 L 260 200"');
+        expect(group?.[1]).toContain('class="tv-arrow"');
+    });
+
+    test('starts a derivation where the way to the relator is clear', () => {
+        const relator = { x: 200, y: 200, width: 120, height: 60 };
+        const inTheWay = { x: 220, y: 90, width: 80, height: 60 };
+        const line = derivationLine([{ x: 0, y: 30 }, { x: 520, y: 30 }], relator, [relator, inTheWay])!;
+
+        // The middle of the association is right above a card; the line
+        // leaves a little further along instead of running through it.
+        expect(line[0]!.y).toBe(30);
+        expect(line[0]!.x).not.toBe(260);
+        expect(segmentHitsRect(line[0]!, line[1]!, inTheWay, 0)).toBe(false);
+    });
 
     test('keeps direct associations and generalizations straight in curved mode', () => {
         const relation = related();

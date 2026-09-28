@@ -12,7 +12,8 @@ import type { DisplayOptions, LayoutOptions } from 'tonto-view';
 import { inversePairs } from 'tonto-view/inverses';
 import type { Point, Rect, Side } from './geometry.js';
 import {
-    alongPath, boundsOf, centerOf, distanceToPath, segmentHitsRect, segmentsProperlyCross, sideOf
+    alongPath, borderPoint, boundsOf, centerOf, distanceToPath, midpointOf, segmentHitsRect,
+    segmentsProperlyCross, sideOf
 } from './geometry.js';
 import {
     fontMetrics, multiplicityLabel, NODE, nodeLabel, stereotypeLabel, textWidth, wrappedAttributeLines
@@ -362,6 +363,22 @@ export function render(input: RenderInput): Rendered {
     const edgeMarkup = lines
         .map(one => drawEdge(one.edge, one.points, theme, one.isSelected, one.data))
         .join('');
+    // Drawn from the line that is drawn: an inverse pair shows one line, and
+    // a derivation either half states belongs to that one.
+    const derivations = lines.flatMap(one => {
+        if (one.edge.kind !== 'relation') {
+            return [];
+        }
+        const suppliers = new Set([...one.edge.derivedFrom ?? [], ...one.partner?.derivedFrom ?? []]);
+        return [...suppliers].flatMap(supplier => {
+            const rect = positions[supplier];
+            const line = rect ? derivationLine(one.points, rect, rects) : undefined;
+            return line ? [{ relation: one.edge.id, supplier, line }] : [];
+        });
+    });
+    const derivationMarkup = derivations
+        .map(one => drawDerivation(one.relation, one.supplier, one.line))
+        .join('');
     const ordinaryHeads: HeadMarker[] = lines.flatMap(one => one.edge.kind === 'generalization'
         ? [{ owner: one.edge.id, points: trianglePoints(
             one.points[one.points.length - 1]!, one.points[one.points.length - 2] ?? one.points[0]!
@@ -391,7 +408,7 @@ export function render(input: RenderInput): Rendered {
     // that could not find room near its line ends up some way from it, and a
     // drawing sized to the boxes alone cropped it -- a relation's name half off
     // the left edge, in an export nobody could correct.
-    const pathPoints = Object.values(paths).flat()
+    const pathPoints = [...Object.values(paths).flat(), ...derivations.flatMap(one => one.line)]
         .map(point => ({ ...point, width: 0, height: 0 }));
     const bounds = boundsOf([...rects, ...groups.map(group => group.rect), ...placer.boxes(), ...pathPoints]);
     const origin = { x: bounds.x - padding, y: bounds.y - padding };
@@ -441,7 +458,7 @@ text {
 .tv-external rect { stroke-dasharray: 2 2; }
 </style>
 <rect x="${origin.x}" y="${origin.y}" width="${width}" height="${height}" fill="${theme.background}"/>
-${groups.map(group => drawGroup(group)).join('')}${edgeMarkup}${treeMarkup}${nodeMarkup}<g class="tv-labels">${labelMarkup}</g></svg>`;
+${groups.map(group => drawGroup(group)).join('')}${edgeMarkup}${derivationMarkup}${treeMarkup}${nodeMarkup}<g class="tv-labels">${labelMarkup}</g></svg>`;
 
     return { svg, bounds: { x: origin.x, y: origin.y, width, height }, paths, guides, headCollisions };
 }
@@ -758,6 +775,60 @@ function drawEdge(
             ? arrowAt(points[points.length - 1]!, points[points.length - 2] ?? points[0]!)
             : relationDecoration(edge, points, theme);
     return `<g class="${classes}" data-edge="${escape(edge.id)}">${path}${decoration}</g>`;
+}
+
+/**
+ * Where a derivation runs: from the relation's line to the border of what it
+ * is derived from.
+ *
+ * UML draws a derivation as a dependency whose client is the association
+ * itself, so it leaves the line rather than either end -- from the middle if
+ * the way from there is clear, else from the nearest place along the middle
+ * of the line that is. A relation from a class to itself loops round the
+ * corner of that class, and the straight way from the middle of the loop to
+ * the relator ran through the very card the loop belongs to. Only when every
+ * such place is blocked does the line leave the middle and bend round.
+ */
+export function derivationLine(relation: Point[], supplier: Rect, obstacles: readonly Rect[]): Point[] | undefined {
+    if (relation.length < 2) {
+        return undefined;
+    }
+    const inside = (point: Point) => point.x > supplier.x && point.x < supplier.x + supplier.width
+        && point.y > supplier.y && point.y < supplier.y + supplier.height;
+    const others = obstacles.filter(rect => rect !== supplier
+        && (rect.x !== supplier.x || rect.y !== supplier.y
+            || rect.width !== supplier.width || rect.height !== supplier.height));
+    const length = pathLength(relation);
+    for (const fraction of [0.5, 0.42, 0.58, 0.34, 0.66, 0.26, 0.74]) {
+        const start = alongPath(relation, true, length * fraction);
+        if (inside(start)) {
+            continue;
+        }
+        const tip = borderPoint(supplier, start);
+        if (!others.some(rect => segmentHitsRect(start, tip, rect, 4))) {
+            return [start, tip];
+        }
+    }
+    const start = midpointOf(relation);
+    if (inside(start)) {
+        return undefined;
+    }
+    const client = { x: start.x, y: start.y, width: 0, height: 0 };
+    return routeEdge(client, supplier, {
+        ends: { source: start, target: borderPoint(supplier, start) },
+        obstacles: [...others]
+    });
+}
+
+/**
+ * A UML dependency, dashed with an open arrowhead at the supplier: the same
+ * mark an instantiation uses, since both say one thing depends on another.
+ */
+export function drawDerivation(relation: string, supplier: string, line: Point[]): string {
+    const tip = line[line.length - 1]!;
+    const from = line[line.length - 2] ?? line[0]!;
+    return `<g class="tv-edge tv-derivation" data-derivation="${escape(relation)}" data-supplier="${escape(supplier)}">`
+        + `<path d="${pathData(line)}" stroke-dasharray="6 4"/>${arrowAt(tip, from)}</g>`;
 }
 
 /** How much room an edge's labels want, which is how hard they are to place. */

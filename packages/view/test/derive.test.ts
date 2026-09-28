@@ -160,6 +160,25 @@ kind Animal {
         expect(await session.parseErrors(uri)).toEqual([]);
     });
 
+    test('records what a relation is derived from', async () => {
+        const view = await viewOfText([
+            'package Draft',
+            'kind Person',
+            'kind Organization',
+            '@material relation Person [1..*] -- worksFor -- [1..*] Organization derivedFrom Employment',
+            'relator Employment {',
+            '    @mediation [1..*] -- [1] Person',
+            '    @mediation [1..*] -- [1] Organization',
+            '}'
+        ].join('\n'));
+        const material = view.edges.find(edge => edge.kind === 'relation' && edge.stereotype === 'material');
+
+        // Declared after the relation that names it, and still found.
+        expect(material?.kind === 'relation' ? material.derivedFrom : undefined).toEqual(['Draft::Employment']);
+        const mediation = view.edges.find(edge => edge.kind === 'relation' && edge.stereotype === 'mediation');
+        expect(mediation?.kind === 'relation' ? mediation.derivedFrom : 'unexpected').toBeUndefined();
+    });
+
     test('says on which line a model stops parsing', async () => {
         const session = new ViewSession();
         const uri = pathToFileURL(resolve(parties, 'draft.tonto')).toString();

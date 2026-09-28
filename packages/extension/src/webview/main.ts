@@ -15,8 +15,8 @@ import { natureLegend } from 'tonto-view/palette';
 import { ASSOCIATION_DISTANCE, clampAssociationDistance, defaultLayoutOptions } from 'tonto-view/options';
 import type { Corner, Handle, Point, Rect, Size } from 'tonto-canvas/draw';
 import {
-    CORNERS, cornerOf, curvedRoute, darkTheme, distanceToPath, drawNode, dropHandle, handlesFor, lightTheme,
-    moveHandle, overlaps, pathData, rectBetween, relationSpreads, render, resizeTo, routeEdge, segmentHitsRect, sizeOf,
+    CORNERS, cornerOf, curvedRoute, darkTheme, derivationLine, distanceToPath, drawDerivation, drawNode, dropHandle,
+    handlesFor, lightTheme, moveHandle, overlaps, pathData, rectBetween, relationSpreads, render, resizeTo, routeEdge, segmentHitsRect, sizeOf,
     trianglePoints
 } from 'tonto-canvas/draw';
 import type { FilterItem } from '../protocol.js';
@@ -404,6 +404,30 @@ function repaint(edge: string, points: Point[]): void {
                 .map(point => `${point.x},${point.y}`).join(' '));
         }
     }
+    repaintDerivations(relation => relation === edge);
+}
+
+/**
+ * A derivation leaves the line of its relation and points at its relator, so
+ * it follows either one while it is dragged -- left behind, it pointed from
+ * where the association used to run.
+ */
+function repaintDerivations(affected: (relation: string, supplier: string) => boolean): void {
+    for (const group of Array.from(canvas.querySelectorAll('[data-derivation]'))) {
+        const relation = group.getAttribute('data-derivation')!;
+        const supplier = group.getAttribute('data-supplier')!;
+        const points = paths[relation];
+        const rect = positions[supplier];
+        if (!affected(relation, supplier) || !points || !rect) {
+            continue;
+        }
+        const line = derivationLine(points, rect, Object.values(positions));
+        if (line) {
+            group.outerHTML = drawDerivation(relation, supplier, line);
+        } else {
+            group.innerHTML = '';
+        }
+    }
 }
 
 function applyViewport(): void {
@@ -755,6 +779,7 @@ function redrawIncidentEdges(moved: Set<string>): void {
         });
         repaint(edge.id, points);
     }
+    repaintDerivations((_relation, supplier) => moved.has(supplier));
 }
 
 viewport.addEventListener('dblclick', event => {

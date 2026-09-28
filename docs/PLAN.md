@@ -295,6 +295,10 @@ Parity *and* the notation the redesign can express, in the first release:
   a decoration on the ordinary case is noise on every line, so the exception is
   what gets marked;
 - `instanceOf` and `isPowerType`, as a dashed `«instanceOf»`;
+- a relation's `derivedFrom`, as a UML dependency -- dashed, open arrowhead --
+  from the middle of the relation's line to the relator (or qualities) it is
+  derived from, leaving from further along the line when a card blocks the
+  straight way from the middle;
 - `///` documentation on hover, and optionally as a note;
 - package boxes, external-reference elements, and the nature legend.
 

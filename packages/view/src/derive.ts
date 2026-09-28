@@ -76,6 +76,8 @@ class Derivation {
     private readonly relationIds = new RelationIds();
     /** `inverseOf` as it was written, resolved once every relation has an id. */
     private readonly inverses: Array<{ relation: Relation; inverse: Relation }> = [];
+    /** `derivedFrom` as it was written, resolved once every class has an id. */
+    private readonly derivations: Array<{ relation: ViewRelation; from: Relation['derivedFrom'] }> = [];
     /** Packages inside the view, as AST nodes, so containment is an identity test. */
     private readonly included = new Set<Package>();
 
@@ -108,6 +110,7 @@ class Derivation {
 
         const edges = this.edges.filter(edge => this.nodes.has(edge.source) && this.nodes.has(edge.target));
         this.linkInverses(edges);
+        this.linkDerivations();
 
         return {
             ...(this.input.focus ? { focus: this.input.focus } : {}),
@@ -167,6 +170,23 @@ class Derivation {
             if (claims.get(one.id) === 1 && claims.get(other.id) === 1) {
                 one.inverseOf = other.id;
                 other.inverseOf = one.id;
+            }
+        }
+    }
+
+    /**
+     * Resolves each `derivedFrom` to the classes it names that are in the view.
+     *
+     * Only after the walk, because the relator is often declared after the
+     * relation that is read off it, and before then has no id to point at.
+     */
+    private linkDerivations(): void {
+        for (const { relation, from } of this.derivations) {
+            const ids = [...new Set(from
+                .map(reference => (reference.ref ? this.idOf.get(reference.ref) : undefined))
+                .filter((id): id is string => id !== undefined && this.nodes.has(id)))];
+            if (ids.length > 0) {
+                relation.derivedFrom = ids;
             }
         }
     }
@@ -315,7 +335,7 @@ class Derivation {
             this.inverses.push({ relation, inverse: relation.inverseOf.ref });
         }
         const whole = isParthood(relation) ? wholeEndOf(relation) : undefined;
-        this.addEdge({
+        const edge: ViewRelation = {
             kind: 'relation',
             id,
             source,
@@ -327,7 +347,11 @@ class Derivation {
             ...(whole ? { whole } : {}),
             ...(relation.specializes?.$refText ? { specializes: relation.specializes.$refText } : {}),
             ...this.documentedRelation(relation)
-        });
+        };
+        this.addEdge(edge);
+        if (relation.derivedFrom.length > 0) {
+            this.derivations.push({ relation: edge, from: relation.derivedFrom });
+        }
     }
 
     private addGenset(declaration: GeneralizationSet, owner: Package): void {
