@@ -19,7 +19,7 @@ jobs:
         run: git -C vendor/tontoredesign fetch origin main && git -C vendor/tontoredesign checkout origin/main
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - run: npm run language
       - run: npm install
       - run: npm run build
