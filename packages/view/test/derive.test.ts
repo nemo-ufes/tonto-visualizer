@@ -179,6 +179,29 @@ kind Animal {
         expect(mediation?.kind === 'relation' ? mediation.derivedFrom : 'unexpected').toBeUndefined();
     });
 
+    test('records what a historical role is derived from', async () => {
+        const view = await viewOfText([
+            'package graduates',
+            'kind Person',
+            'role Student specializes Person',
+            'event Graduation',
+            'historicalRole Graduate specializes Person derivedFrom Student.graduatedIn',
+            '@participation relation Student (const) [1..*] -- graduatedIn -- [0..*] (addOnly) Graduation',
+            'event Birth',
+            'subkind BirthInBrazil specializes Birth',
+            '@creation relation Person (const) [1] -- wasBornIn -- [1] (const) Birth',
+            'historicalRole BornInBrazil specializes Person derivedFrom BirthInBrazil'
+        ].join('\n'));
+        const node = (name: string) => view.nodes.find(one => one.name === name);
+
+        // A participation, by the id of its line -- declared after the role
+        // that names it, and still found -- or an event type, by its card's.
+        expect(node('Graduate')?.derivedFrom)
+            .toEqual(['rel:graduates::Student->graduates::Graduation:participation:graduatedIn']);
+        expect(node('BornInBrazil')?.derivedFrom).toEqual(['graduates::BirthInBrazil']);
+        expect(node('Student')?.derivedFrom).toBeUndefined();
+    });
+
     test('says on which line a model stops parsing', async () => {
         const session = new ViewSession();
         const uri = pathToFileURL(resolve(parties, 'draft.tonto')).toString();

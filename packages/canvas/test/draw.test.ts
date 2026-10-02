@@ -181,6 +181,43 @@ describe('drawing', () => {
         expect(group?.[1]).toContain('class="tv-arrow"');
     });
 
+    test('draws a historical role\'s derivation to its participation, or to its event', () => {
+        const end = { isConst: false, isAddOnly: false };
+        const node = (name: string, stereotype: string, derivedFrom?: string[]) => ({
+            id: `Sample::${name}`, kind: 'class' as const, name, package: 'Sample',
+            stereotype, color: '#FFFFFF', isExternal: false, attributes: [], ...(derivedFrom ? { derivedFrom } : {})
+        });
+        const view: ViewModel = {
+            groups: [],
+            nodes: [
+                node('Student', 'role'), node('Graduation', 'event'),
+                node('Graduate', 'historicalRole', ['graduated-in']),
+                node('Alumnus', 'historicalRole', ['Sample::Graduation'])
+            ],
+            edges: [{
+                kind: 'relation', id: 'graduated-in', stereotype: 'participation', name: 'graduatedIn',
+                source: 'Sample::Student', target: 'Sample::Graduation', sourceEnd: { ...end }, targetEnd: { ...end }
+            }],
+            gensets: []
+        };
+        const positions = {
+            'Sample::Student': { x: 0, y: 0, width: 120, height: 60 },
+            'Sample::Graduation': { x: 400, y: 0, width: 120, height: 60 },
+            'Sample::Graduate': { x: 200, y: 200, width: 120, height: 60 },
+            'Sample::Alumnus': { x: 400, y: 200, width: 120, height: 60 }
+        };
+        const drawn = render({ view, positions, display });
+        const group = (client: string, supplier: string) => new RegExp(
+            `<g class="tv-edge tv-derivation" data-derivation="${client}" data-supplier="${supplier}">(.*?)</g>`
+        ).exec(drawn.svg)?.[1];
+
+        // From the role's top to the middle of the participation: the
+        // arrowhead is on the line, since the line is what the role depends on.
+        expect(group('Sample::Graduate', 'graduated-in')).toContain('<path d="M 260 200 L 260 30"');
+        expect(group('Sample::Graduate', 'graduated-in')).toContain('class="tv-arrow"');
+        expect(group('Sample::Alumnus', 'Sample::Graduation')).toContain('<path d="M 460 200 L 460 60"');
+    });
+
     test('starts a derivation where the way to the relator is clear', () => {
         const relator = { x: 200, y: 200, width: 120, height: 60 };
         const inTheWay = { x: 220, y: 90, width: 80, height: 60 };

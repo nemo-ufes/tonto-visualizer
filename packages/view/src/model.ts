@@ -50,6 +50,14 @@ export interface ViewNode {
     attributes: ViewAttribute[];
     /** Enumeration literals, in declaration order. */
     literals?: string[];
+    /**
+     * What a historical role is derived from (`derivedFrom
+     * Student.graduatedIn`): the `@participation`, `@creation` or
+     * `@termination` it names, by edge id, or the event type, by node id.
+     * The two never share an id, so one list says which each is. Only what is
+     * already in the view, as for a relation's.
+     */
+    derivedFrom?: string[];
     documentation?: string;
     source?: SourceLocation;
 }

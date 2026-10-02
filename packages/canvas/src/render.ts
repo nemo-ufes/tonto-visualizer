@@ -365,19 +365,36 @@ export function render(input: RenderInput): Rendered {
         .join('');
     // Drawn from the line that is drawn: an inverse pair shows one line, and
     // a derivation either half states belongs to that one.
-    const derivations = lines.flatMap(one => {
-        if (one.edge.kind !== 'relation') {
-            return [];
+    const drawnAs = new Map<string, string>();
+    for (const one of lines) {
+        drawnAs.set(one.edge.id, one.edge.id);
+        if (one.partner) {
+            drawnAs.set(one.partner.id, one.edge.id);
         }
-        const suppliers = new Set([...one.edge.derivedFrom ?? [], ...one.partner?.derivedFrom ?? []]);
-        return [...suppliers].flatMap(supplier => {
-            const rect = positions[supplier];
-            const line = rect ? derivationLine(one.points, rect, rects) : undefined;
-            return line ? [{ relation: one.edge.id, supplier, line }] : [];
-        });
+    }
+    const stated = [
+        ...lines.flatMap(one => one.edge.kind === 'relation'
+            ? [...new Set([...one.edge.derivedFrom ?? [], ...one.partner?.derivedFrom ?? []])]
+                .map(supplier => ({ client: one.edge.id, supplier }))
+            : []),
+        ...view.nodes.flatMap(node => (node.derivedFrom ?? [])
+            .map(supplier => ({ client: node.id, supplier: drawnAs.get(supplier) ?? supplier })))
+    ];
+    const derivations = stated.flatMap(one => {
+        const line = derivationBetween(one.client, one.supplier, paths, positions, rects);
+        return line ? [{ ...one, line }] : [];
     });
+    // Before any label: a historical role's arrowhead lands on the middle of
+    // a participation, which is where that relation's name goes, and printed
+    // over it the name could not be read. The line is carried too, so a
+    // multiplicity is not left beside it to be read against the dependency.
+    for (const one of derivations) {
+        const tip = one.line[one.line.length - 1]!;
+        placer.carry(`der:${one.client}->${one.supplier}`, one.line);
+        placer.take({ x: tip.x - ARROW_REACH, y: tip.y - ARROW_REACH, width: 2 * ARROW_REACH, height: 2 * ARROW_REACH });
+    }
     const derivationMarkup = derivations
-        .map(one => drawDerivation(one.relation, one.supplier, one.line))
+        .map(one => drawDerivation(one.client, one.supplier, one.line))
         .join('');
     const ordinaryHeads: HeadMarker[] = lines.flatMap(one => one.edge.kind === 'generalization'
         ? [{ owner: one.edge.id, points: trianglePoints(
@@ -795,9 +812,7 @@ export function derivationLine(relation: Point[], supplier: Rect, obstacles: rea
     }
     const inside = (point: Point) => point.x > supplier.x && point.x < supplier.x + supplier.width
         && point.y > supplier.y && point.y < supplier.y + supplier.height;
-    const others = obstacles.filter(rect => rect !== supplier
-        && (rect.x !== supplier.x || rect.y !== supplier.y
-            || rect.width !== supplier.width || rect.height !== supplier.height));
+    const others = obstacles.filter(rect => !sameRect(rect, supplier));
     const length = pathLength(relation);
     for (const fraction of [0.5, 0.42, 0.58, 0.34, 0.66, 0.26, 0.74]) {
         const start = alongPath(relation, true, length * fraction);
@@ -821,13 +836,53 @@ export function derivationLine(relation: Point[], supplier: Rect, obstacles: rea
 }
 
 /**
+ * Where a derivation between two drawn things runs, whichever of them is a
+ * line: a relation read off its relator leaves its line for the relator's
+ * card, a historical role points at the line of the participation it is
+ * derived from, and one derived from an event type points at its card.
+ *
+ * `lines` and `positions` are keyed by id, and an edge and a node never share
+ * one, so which of the two a name is found in is what it is.
+ */
+export function derivationBetween(
+    client: string, supplier: string,
+    lines: Readonly<Record<string, Point[]>>, positions: Readonly<Record<string, Rect>>,
+    obstacles: readonly Rect[]
+): Point[] | undefined {
+    const clientLine = lines[client];
+    const clientRect = positions[client];
+    const supplierLine = lines[supplier];
+    const supplierRect = positions[supplier];
+    if (clientLine && supplierRect) {
+        return derivationLine(clientLine, supplierRect, obstacles);
+    }
+    // The same way between a card and a line, walked the other way: the
+    // arrowhead belongs on the participation, not on the role's card.
+    if (clientRect && supplierLine) {
+        return derivationLine(supplierLine, clientRect, obstacles)?.reverse();
+    }
+    if (clientRect && supplierRect && !sameRect(clientRect, supplierRect)) {
+        return routeEdge(clientRect, supplierRect, {
+            obstacles: obstacles.filter(rect => !sameRect(rect, clientRect) && !sameRect(rect, supplierRect))
+        });
+    }
+    return undefined;
+}
+
+/** The same card: the canvas holds copies of a position as often as the position itself. */
+function sameRect(one: Rect, other: Rect): boolean {
+    return one === other || (one.x === other.x && one.y === other.y
+        && one.width === other.width && one.height === other.height);
+}
+
+/**
  * A UML dependency, dashed with an open arrowhead at the supplier: the same
  * mark an instantiation uses, since both say one thing depends on another.
  */
-export function drawDerivation(relation: string, supplier: string, line: Point[]): string {
+export function drawDerivation(client: string, supplier: string, line: Point[]): string {
     const tip = line[line.length - 1]!;
     const from = line[line.length - 2] ?? line[0]!;
-    return `<g class="tv-edge tv-derivation" data-derivation="${escape(relation)}" data-supplier="${escape(supplier)}">`
+    return `<g class="tv-edge tv-derivation" data-derivation="${escape(client)}" data-supplier="${escape(supplier)}">`
         + `<path d="${pathData(line)}" stroke-dasharray="6 4"/>${arrowAt(tip, from)}</g>`;
 }
 
@@ -2108,9 +2163,12 @@ function diamondAt(tip: Point, from: Point): string {
 }
 
 /** An open arrowhead: instantiation, which is a dependency and not a taxonomy. */
+/** How far an open arrowhead reaches back from its tip, which is as far as it reaches any way. */
+const ARROW_REACH = 11;
+
 function arrowAt(tip: Point, from: Point): string {
     const { unit, normal } = direction(tip, from);
-    const base = { x: tip.x + unit.x * 11, y: tip.y + unit.y * 11 };
+    const base = { x: tip.x + unit.x * ARROW_REACH, y: tip.y + unit.y * ARROW_REACH };
     return `<path class="tv-arrow" d="M ${round(base.x + normal.x * 6)} ${round(base.y + normal.y * 6)} `
         + `L ${round(tip.x)} ${round(tip.y)} `
         + `L ${round(base.x - normal.x * 6)} ${round(base.y - normal.y * 6)}"/>`;

@@ -68,7 +68,8 @@ enumerations, generalizations, generalization sets as one shared triangle with
 name and smaller, UML's solid reading-direction triangle just after the name,
 multiplicities and role names on opposite sides of each end, whole-part diamonds, `instanceOf`, a relation's
 `derivedFrom` as a UML dependency from the middle of its line to the relator or qualities it is
-derived from, and an open padlock on an end that
+derived from, a historical role's `derivedFrom` as one from the role to the middle of the
+participation (or creation, or termination) it names, or to the event type, and an open padlock on an end that
 is not `const` -- an end that cannot change is the ordinary case, so the
 exception is what carries a mark.
 
