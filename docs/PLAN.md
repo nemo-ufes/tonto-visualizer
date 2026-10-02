@@ -299,6 +299,10 @@ Parity *and* the notation the redesign can express, in the first release:
   from the middle of the relation's line to the relator (or qualities) it is
   derived from, leaving from further along the line when a card blocks the
   straight way from the middle;
+- a historical role's `derivedFrom`, as the same dependency the other way
+  round -- from the role to the middle of the `@participation`, `@creation` or
+  `@termination` it names, with the arrowhead on that line -- or to the event
+  type's card when it names an event;
 - `///` documentation on hover, and optionally as a note;
 - package boxes, external-reference elements, and the nature legend.
 

@@ -396,6 +396,48 @@ describe('the webview and its host protocol', () => {
             new PointerEvent('pointerup', { bubbles: true, pointerId: 1 }));
     });
 
+    test('moves a historical role\'s derivation live while the role is dragged', () => {
+        const relation = 'graduated-in';
+        const derived = {
+            ...view,
+            nodes: [...view.nodes, {
+                id: 'Sample::Graduate', kind: 'class' as const, name: 'Graduate', package: 'Sample',
+                stereotype: 'historicalRole', color: '#FFDDDD', isExternal: false, attributes: [],
+                derivedFrom: [relation]
+            }],
+            edges: [{
+                kind: 'relation' as const, id: relation, stereotype: 'participation', name: 'graduatedIn',
+                source: 'Sample::Person', target: 'Sample::Organization',
+                sourceEnd: { isConst: false, isAddOnly: false }, targetEnd: { isConst: false, isAddOnly: false }
+            }]
+        };
+        window.dispatchEvent(new MessageEvent('message', { data: {
+            type: 'model', view: derived,
+            positions: {
+                'Sample::Person': { x: 0, y: 0, width: 160, height: 60 },
+                'Sample::Organization': { x: 400, y: 0, width: 160, height: 60 },
+                'Sample::Graduate': { x: 200, y: 200, width: 160, height: 60 }
+            },
+            routes: {}, display: defaultDisplayOptions,
+            content: defaultContentOptions, layout: defaultLayoutOptions,
+            constraints: { pinned: [], alignments: [], distributions: [] },
+            packages: ['Sample'], filters: []
+        } }));
+
+        const line = () => document.querySelector('[data-derivation="Sample::Graduate"] path')!.getAttribute('d');
+        const before = line();
+        document.querySelector('[data-node="Sample::Graduate"]')!.dispatchEvent(
+            new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, clientX: 200, clientY: 200 }));
+        document.getElementById('viewport')!.dispatchEvent(new PointerEvent('pointermove', {
+            bubbles: true, pointerId: 1, clientX: 320, clientY: 260
+        }));
+
+        expect(before).toBeTruthy();
+        expect(line()).not.toBe(before);
+        document.getElementById('viewport')!.dispatchEvent(
+            new PointerEvent('pointerup', { bubbles: true, pointerId: 1 }));
+    });
+
     test('moves a sole generalization head live while its target class is dragged', () => {
         const edge = 'generalization:person-organization';
         const specialization = {

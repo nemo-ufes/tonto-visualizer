@@ -15,7 +15,7 @@ import { natureLegend } from 'tonto-view/palette';
 import { ASSOCIATION_DISTANCE, clampAssociationDistance, defaultLayoutOptions } from 'tonto-view/options';
 import type { Corner, Handle, Point, Rect, Size } from 'tonto-canvas/draw';
 import {
-    CORNERS, cornerOf, curvedRoute, darkTheme, derivationLine, distanceToPath, drawDerivation, drawNode, dropHandle,
+    CORNERS, cornerOf, curvedRoute, darkTheme, derivationBetween, distanceToPath, drawDerivation, drawNode, dropHandle,
     handlesFor, lightTheme, moveHandle, overlaps, pathData, rectBetween, relationSpreads, render, resizeTo, routeEdge, segmentHitsRect, sizeOf,
     trianglePoints
 } from 'tonto-canvas/draw';
@@ -404,26 +404,25 @@ function repaint(edge: string, points: Point[]): void {
                 .map(point => `${point.x},${point.y}`).join(' '));
         }
     }
-    repaintDerivations(relation => relation === edge);
+    repaintDerivations((client, supplier) => client === edge || supplier === edge);
 }
 
 /**
- * A derivation leaves the line of its relation and points at its relator, so
- * it follows either one while it is dragged -- left behind, it pointed from
- * where the association used to run.
+ * A derivation runs between a line and a card -- a relation and its relator,
+ * a historical role and its participation -- or between two cards, so it
+ * follows whichever is dragged: left behind, it pointed from where the
+ * association used to run.
  */
-function repaintDerivations(affected: (relation: string, supplier: string) => boolean): void {
+function repaintDerivations(affected: (client: string, supplier: string) => boolean): void {
     for (const group of Array.from(canvas.querySelectorAll('[data-derivation]'))) {
-        const relation = group.getAttribute('data-derivation')!;
+        const client = group.getAttribute('data-derivation')!;
         const supplier = group.getAttribute('data-supplier')!;
-        const points = paths[relation];
-        const rect = positions[supplier];
-        if (!affected(relation, supplier) || !points || !rect) {
+        if (!affected(client, supplier)) {
             continue;
         }
-        const line = derivationLine(points, rect, Object.values(positions));
+        const line = derivationBetween(client, supplier, paths, positions, Object.values(positions));
         if (line) {
-            group.outerHTML = drawDerivation(relation, supplier, line);
+            group.outerHTML = drawDerivation(client, supplier, line);
         } else {
             group.innerHTML = '';
         }
@@ -779,7 +778,7 @@ function redrawIncidentEdges(moved: Set<string>): void {
         });
         repaint(edge.id, points);
     }
-    repaintDerivations((_relation, supplier) => moved.has(supplier));
+    repaintDerivations((client, supplier) => moved.has(client) || moved.has(supplier));
 }
 
 viewport.addEventListener('dblclick', event => {

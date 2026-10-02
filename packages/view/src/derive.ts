@@ -7,7 +7,7 @@
  * tested with a string of Tonto and a golden file.
  */
 
-import type { AstNode } from 'langium';
+import type { AstNode, Reference } from 'langium';
 import { AstUtils } from 'langium';
 import type {
     Attribute,
@@ -77,7 +77,7 @@ class Derivation {
     /** `inverseOf` as it was written, resolved once every relation has an id. */
     private readonly inverses: Array<{ relation: Relation; inverse: Relation }> = [];
     /** `derivedFrom` as it was written, resolved once every class has an id. */
-    private readonly derivations: Array<{ relation: ViewRelation; from: Relation['derivedFrom'] }> = [];
+    private readonly derivations: Array<{ client: ViewRelation | ViewNode; from: ReadonlyArray<Reference> }> = [];
     /** Packages inside the view, as AST nodes, so containment is an identity test. */
     private readonly included = new Set<Package>();
 
@@ -110,7 +110,7 @@ class Derivation {
 
         const edges = this.edges.filter(edge => this.nodes.has(edge.source) && this.nodes.has(edge.target));
         this.linkInverses(edges);
-        this.linkDerivations();
+        this.linkDerivations(edges);
 
         return {
             ...(this.input.focus ? { focus: this.input.focus } : {}),
@@ -175,18 +175,22 @@ class Derivation {
     }
 
     /**
-     * Resolves each `derivedFrom` to the classes it names that are in the view.
+     * Resolves each `derivedFrom` to what it names that is in the view: the
+     * classes a relation is derived from, and the relations or event types a
+     * historical role is.
      *
      * Only after the walk, because the relator is often declared after the
-     * relation that is read off it, and before then has no id to point at.
+     * relation that is read off it, and a participation is walked after every
+     * class of its package -- before then neither has an id to point at.
      */
-    private linkDerivations(): void {
-        for (const { relation, from } of this.derivations) {
+    private linkDerivations(edges: ViewEdge[]): void {
+        const drawn = new Set(edges.map(edge => edge.id));
+        for (const { client, from } of this.derivations) {
             const ids = [...new Set(from
                 .map(reference => (reference.ref ? this.idOf.get(reference.ref) : undefined))
-                .filter((id): id is string => id !== undefined && this.nodes.has(id)))];
+                .filter((id): id is string => id !== undefined && (this.nodes.has(id) || drawn.has(id))))];
             if (ids.length > 0) {
-                relation.derivedFrom = ids;
+                client.derivedFrom = ids;
             }
         }
     }
@@ -234,7 +238,7 @@ class Derivation {
 
         this.idOf.set(declaration, id);
         const natures = this.naturesOf(declaration);
-        this.put({
+        const node: ViewNode = {
             id,
             kind: 'class',
             name: declaration.name,
@@ -246,7 +250,8 @@ class Derivation {
             ...(declaration.isPowerType ? { isPowerType: true } : {}),
             attributes: this.attributesOf(declaration.attributes),
             ...this.documentedAt(declaration)
-        });
+        };
+        this.put(node);
 
         // An element from outside the view is drawn because something inside
         // points at it, and it is drawn as a card and nothing more. Following
@@ -263,6 +268,10 @@ class Derivation {
             if (target) {
                 this.addEdge({ kind: 'generalization', id: generalizationId(id, target), source: id, target });
             }
+        }
+
+        if (declaration.derivedFrom.length > 0) {
+            this.derivations.push({ client: node, from: declaration.derivedFrom });
         }
 
         const instantiated = declaration.instanceOf;
@@ -350,7 +359,7 @@ class Derivation {
         };
         this.addEdge(edge);
         if (relation.derivedFrom.length > 0) {
-            this.derivations.push({ relation: edge, from: relation.derivedFrom });
+            this.derivations.push({ client: edge, from: relation.derivedFrom });
         }
     }
 
