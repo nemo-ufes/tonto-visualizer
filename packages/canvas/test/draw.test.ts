@@ -78,15 +78,35 @@ function inversePair(): ViewModel {
 }
 
 /** The pair drawn between two boxes a fixed distance apart. */
-function drawnPair(view = inversePair()) {
-    return render({
-        view,
-        positions: {
-            'Sample::Man': { x: 0, y: 0, width: 140, height: 42 },
-            'Sample::Person': { x: 460, y: 0, width: 140, height: 42 }
-        },
-        display
-    });
+function drawnPair(view = inversePair(), positions: Record<string, { x: number; y: number; width: number; height: number }> = {
+    'Sample::Man': { x: 0, y: 0, width: 140, height: 42 },
+    'Sample::Person': { x: 460, y: 0, width: 140, height: 42 }
+}) {
+    return render({ view, positions, display });
+}
+
+/**
+ * Each reading of a drawing, as which way its triangle points and which side
+ * of its name it sits on.
+ */
+function readingsOf(svg: string): Map<string, { points: { x: number; y: number }; side: number }> {
+    const found = new Map<string, { points: { x: number; y: number }; side: number }>();
+    const marks = [...svg.matchAll(/<polygon class="tv-reading" points="([-\d.]+),([-\d.]+) ([-\d.]+),([-\d.]+) ([-\d.]+),([-\d.]+)"/g)]
+        .map(match => {
+            const [tipX, tipY, oneX, oneY, twoX, twoY] = match.slice(1).map(Number) as [number, number, number, number, number, number];
+            const base = { x: (oneX + twoX) / 2, y: (oneY + twoY) / 2 };
+            const length = Math.hypot(tipX - base.x, tipY - base.y);
+            return { x: tipX, y: tipY, points: { x: (tipX - base.x) / length, y: (tipY - base.y) / length } };
+        });
+    for (const name of svg.matchAll(/<text data-for="[^"]*" x="([-\d.]+)" y="([-\d.]+)"[^>]*>(\w+)</g)) {
+        const x = Number(name[1]);
+        const y = Number(name[2]);
+        const mark = marks.find(one => Math.abs(one.y - (y - 3.5)) < 6);
+        if (mark) {
+            found.set(name[3]!, { points: mark.points, side: Math.sign(mark.x - x) });
+        }
+    }
+    return found;
 }
 
 /**
@@ -744,6 +764,30 @@ describe('drawing', () => {
         expect(triangles).toHaveLength(2);
         expect(Math.min(...triangles)).toBeLessThan(0);
         expect(Math.max(...triangles)).toBeGreaterThan(0);
+    });
+
+    test('puts each triangle of an inverse pair at the end of its name it points to', () => {
+        // Man on the right, so the line hasChild is drawn along runs right to
+        // left. Chosen by which reading was the forward one, both triangles
+        // sat at the end of their names they pointed away from.
+        const readings = readingsOf(drawnPair(inversePair(), {
+            'Sample::Man': { x: 460, y: 0, width: 140, height: 42 },
+            'Sample::Person': { x: 0, y: 0, width: 140, height: 42 }
+        }).svg);
+        expect(readings.get('hasChild')).toEqual({ points: { x: -1, y: 0 }, side: -1 });
+        expect(readings.get('hasFather')).toEqual({ points: { x: 1, y: 0 }, side: 1 });
+    });
+
+    test('points the readings of a steep inverse pair up and down', () => {
+        // Man below and to the left of Person. Tilted along the line, an
+        // equilateral triangle pointing up and right is the same shape as one
+        // pointing left, and hasChild read as pointing back at Man.
+        const readings = readingsOf(drawnPair(inversePair(), {
+            'Sample::Man': { x: 0, y: 300, width: 140, height: 42 },
+            'Sample::Person': { x: 160, y: 0, width: 140, height: 42 }
+        }).svg);
+        expect(readings.get('hasChild')?.points).toEqual({ x: 0, y: -1 });
+        expect(readings.get('hasFather')?.points).toEqual({ x: 0, y: 1 });
     });
 
     test('keeps a stereotype over the name it belongs to, on both readings', () => {
