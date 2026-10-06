@@ -1481,15 +1481,21 @@ function centreLabel(
             // The name keeps the middle and the triangle sits just off the end
             // it points at, which is where a reader expects the arrow of
             // "A has B ▶" to be -- and of "◀ B is had by A" on the way back.
+            // Which end that is comes from where the triangle points, not from
+            // whether the reading is the forward one: chosen by the latter, a
+            // line running leftwards had both of an inverse pair's triangles
+            // pointing back into their own names. One pointing up or down
+            // points at neither end, and keeps to the right.
             const baseline = top + line.name - 3 * font.scale;
             const marker = markerOf(one);
             const back = one.direction === 'backward' ? -1 : 1;
-            const centre = at.x - back * marker / 2;
+            const pointing = readingDirection(directionNear(points, at), back);
+            const side = pointing.x < 0 ? -1 : 1;
+            const centre = at.x - side * marker / 2;
             markup += label(centre, baseline, one.name, theme, 'middle', undefined, owner);
             if (marker > 0) {
-                const along = directionNear(points, at);
-                const tip = { x: centre + back * (nameWidth(one) / 2 + marker), y: baseline - 3.5 };
-                markup += readingTriangle(tip, { x: along.x * back, y: along.y * back });
+                const middle = { x: centre + side * (nameWidth(one) / 2 + marker - 3.5), y: baseline - 3.5 };
+                markup += readingTriangle(middle, pointing);
             }
             top += line.name;
         }
@@ -1498,6 +1504,21 @@ function centreLabel(
 }
 
 const MARKER = 9;
+
+/**
+ * Which of ▶ ◀ ▲ ▼ a reading points, from the way its line runs.
+ *
+ * Not the line's own direction: the triangle is close to equilateral, and one
+ * turned sixty degrees is the same shape as one pointing the opposite way
+ * along the text. Tilted along a diagonal, `hasChild` read as pointing back at
+ * Man and its inverse as pointing back at Person -- on the one line where the
+ * two triangles side by side had to say opposite things.
+ */
+function readingDirection(along: Point, back: number): Point {
+    const x = along.x * back;
+    const y = along.y * back;
+    return Math.abs(x) >= Math.abs(y) ? { x: Math.sign(x) || 1, y: 0 } : { x: 0, y: Math.sign(y) };
+}
 
 /** The direction the line runs at the point nearest `at`, source to target. */
 function directionNear(points: Point[], at: Point): Point {
@@ -1515,8 +1536,16 @@ function directionNear(points: Point[], at: Point): Point {
     return best?.direction ?? { x: 1, y: 0 };
 }
 
-/** UML's filled reading-direction triangle, pointing the way the name is read. */
-function readingTriangle(tip: Point, direction: Point): string {
+/**
+ * UML's filled reading-direction triangle, pointing the way the name is read.
+ *
+ * Placed by its middle rather than its tip: held by the tip at the height of
+ * the text, a triangle pointing down sat on the text and one pointing up hung
+ * below it, so the two readings of an inverse pair had their marks at
+ * different heights.
+ */
+function readingTriangle(middle: Point, direction: Point): string {
+    const tip = { x: middle.x + direction.x * 3.5, y: middle.y + direction.y * 3.5 };
     const back = { x: tip.x - direction.x * 7, y: tip.y - direction.y * 7 };
     const normal = { x: -direction.y, y: direction.x };
     return `<polygon class="tv-reading" points="${round(tip.x)},${round(tip.y)} `
