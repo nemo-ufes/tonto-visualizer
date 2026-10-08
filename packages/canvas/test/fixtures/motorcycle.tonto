@@ -1,0 +1,56 @@
+/// A motorcycle as a system of components, each part a role played by a kind
+/// of thing in that system: the partonomy pattern the partonomy-only view is
+/// arranged for. `System` and `Component` stand in for a generic systems
+/// ontology, and every part role specializes `Component`.
+package motorcycle
+
+category System of functional-complexes
+roleMixin Component of functional-complexes
+
+@componenthood relation System [1] <>-- hasProperPart -- [2..*] Component
+
+kind Motorcycle specializes System
+kind Engine specializes System
+kind Transmission specializes System
+kind WheelAssembly specializes System
+
+kind Frame
+kind Cylinder
+kind Piston
+kind Clutch
+kind Gearset
+kind Rim
+kind Tire
+kind Hub
+
+role MotorcycleEngine specializes Engine, Component
+role MotorcycleTransmission specializes Transmission, Component
+role MotorcycleWheel specializes WheelAssembly, Component
+role FrontMotorcycleWheel specializes MotorcycleWheel
+role RearMotorcycleWheel specializes MotorcycleWheel
+role MotorcycleFrame specializes Frame, Component
+
+disjoint complete genset motorcycleWheelPositions where FrontMotorcycleWheel, RearMotorcycleWheel specializes MotorcycleWheel
+
+role EngineCylinder specializes Cylinder, Component
+role EnginePiston specializes Piston, Component
+role TransmissionClutch specializes Clutch, Component
+role TransmissionGearset specializes Gearset, Component
+role WheelRim specializes Rim, Component
+role WheelTire specializes Tire, Component
+role WheelHub specializes Hub, Component
+
+@componenthood relation Motorcycle [1] <>-- hasEngine -- [1] MotorcycleEngine specializes hasProperPart
+@componenthood relation Motorcycle [1] <>-- hasTransmission -- [1] MotorcycleTransmission specializes hasProperPart
+@componenthood relation Motorcycle [1] <>-- hasWheel -- [2] MotorcycleWheel specializes hasProperPart
+@componenthood relation Motorcycle [1] <>-- hasFrontWheel -- [1] FrontMotorcycleWheel specializes hasWheel
+@componenthood relation Motorcycle [1] <>-- hasRearWheel -- [1] RearMotorcycleWheel specializes hasWheel
+@componenthood relation Motorcycle [1] <>-- hasFrame -- [1] MotorcycleFrame specializes hasProperPart
+
+@componenthood relation MotorcycleEngine [1] <>-- hasCylinder -- [1..*] EngineCylinder specializes hasProperPart
+@componenthood relation MotorcycleEngine [1] <>-- hasPiston -- [1..*] EnginePiston specializes hasProperPart
+@componenthood relation MotorcycleTransmission [1] <>-- hasClutch -- [1] TransmissionClutch specializes hasProperPart
+@componenthood relation MotorcycleTransmission [1] <>-- hasGearset -- [1] TransmissionGearset specializes hasProperPart
+@componenthood relation MotorcycleWheel [1] <>-- hasRim -- [1] WheelRim specializes hasProperPart
+@componenthood relation MotorcycleWheel [1] <>-- hasTire -- [1] WheelTire specializes hasProperPart
+@componenthood relation MotorcycleWheel [1] <>-- hasHub -- [1] WheelHub specializes hasProperPart

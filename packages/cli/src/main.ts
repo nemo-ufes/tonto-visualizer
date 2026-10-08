@@ -24,7 +24,8 @@ diagram of the model would hold.
   --routing <name>   straight (default), curved or orthogonal
   --direction <dir>  DOWN (default) or RIGHT
   --taxonomy-only    draw names and inheritance, without attributes or associations
-  --partonomy-only   draw names and whole-part relations, ranked whole above part
+  --partonomy-only   draw names, whole-part relations and constitution, ranked whole
+                     above part, with the specializations parts inherit them through
   --loose            lay the model out as one graph, ignoring its packages
   --package <name>   restrict the view to this package; repeatable
   --no-external      leave out elements from packages outside the view
