@@ -599,6 +599,41 @@ describe('packages and the layout', () => {
         expect(child.y - (middle.y + middle.height)).toBeGreaterThanOrEqual(defaultLayoutOptions.rankSpacing - 1);
     });
 
+    /**
+     * In package containers the appendix used to stay in the last layer ELK
+     * gave it inside its package, and re-ranking then built the hierarchy
+     * around it: classes outside the taxonomy sat on its rows, as if ranked.
+     */
+    test('keeps a hierarchy-only appendix off the hierarchy rows in package containers', async () => {
+        const clazz = (id: string) => ({
+            id, kind: 'class' as const, name: id.split('::')[1]!, package: id.split('::')[0]!,
+            stereotype: 'kind', color: '#FF99A3', isExternal: false, attributes: []
+        });
+        const ranked = ['A::Root', 'A::Child', 'B::Middle'];
+        const loose = ['A::Loose', 'A::Spare', 'B::Aside', 'B::Apart', 'B::Alone'];
+        const view: ViewModel = {
+            groups: [
+                { id: 'pkg:A', name: 'A', isExternal: false, nodes: ['A::Root', 'A::Child', 'A::Loose', 'A::Spare'] },
+                { id: 'pkg:B', name: 'B', isExternal: false, nodes: ['B::Middle', 'B::Aside', 'B::Apart', 'B::Alone'] }
+            ],
+            nodes: [...ranked, ...loose].map(clazz),
+            edges: [
+                { kind: 'generalization', id: 'upper', source: 'B::Middle', target: 'A::Root' },
+                { kind: 'generalization', id: 'lower', source: 'A::Child', target: 'B::Middle' }
+            ],
+            gensets: []
+        };
+        const sizes = Object.fromEntries(view.nodes.map(node => [node.id, sizeOf(node, display)]));
+        const laid = await autoLayout(view, sizes, {}, {
+            ...defaultLayoutOptions, groupByPackage: true, packageContainers: true, taxonomyOnly: true
+        });
+
+        const lowest = Math.max(...ranked.map(id => laid.positions[id]!.y + laid.positions[id]!.height));
+        for (const id of loose) {
+            expect(laid.positions[id]!.y, id).toBeGreaterThanOrEqual(lowest);
+        }
+    });
+
     test('places a higher-order type to the left of its base classifier', async () => {
         const clazz = (name: string, stereotype: string) => ({
             id: `Sample::${name}`, kind: 'class' as const, name, package: 'Sample',

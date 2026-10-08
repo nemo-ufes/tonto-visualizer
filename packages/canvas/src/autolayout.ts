@@ -417,6 +417,173 @@ function placeAppendixAfter(
     }
 }
 
+/**
+ * Puts the appendix after the hierarchy when packages are laid out as
+ * containers.
+ *
+ * `placeAppendixAfter` moves the appendix past the whole model, which suits a
+ * flat layout; for a grouped one the pass was skipped, so as not to stretch a
+ * package's box across every other package. The appendix then stayed in the
+ * last layer ELK gave it inside its package, and re-ranking built the
+ * hierarchy around it. On `university` that put `Department` and `Staff` on the
+ * `Organization` taxonomy's own rows, and in the partonomy seated
+ * `EmploymentContract` between `Staff` and `Employee`, where the membership had
+ * to bend round it.
+ *
+ * A package whose box can still be drawn keeps its appendix: a compact block
+ * past its own last rank, placed only further along the rank axis and clear of
+ * every card, every hierarchy line and every other package's box. The rest --
+ * packages a shared hierarchy has interleaved, which get no box anyway -- are
+ * gathered into one block after the whole model, as in a flat layout; kept
+ * package by package they landed beside other packages' rows and read as part
+ * of them. A package with nothing but appendix cards is a box of its own and
+ * stays where ELK packed it.
+ */
+function placeAppendixAfterPackages(
+    view: ViewModel,
+    positions: Positions,
+    appendix: ReadonlySet<string>,
+    subject: ReadonlySet<string>,
+    ranked: ReadonlySet<string>,
+    steps: RankStep,
+    settings: LayoutOptions
+): void {
+    const primary = settings.direction === 'DOWN' ? 'y' as const : 'x' as const;
+    const primarySize = settings.direction === 'DOWN' ? 'height' as const : 'width' as const;
+    const cross = settings.direction === 'DOWN' ? 'x' as const : 'y' as const;
+    const crossSize = settings.direction === 'DOWN' ? 'width' as const : 'height' as const;
+    const placed = (id: string) => subject.has(id) && positions[id] !== undefined;
+    const corridors = taxonomyCorridors(view, positions, ranked, steps);
+    const gap = Math.min(settings.nodeSpacing / 3, 20);
+    const moving = new Set([...appendix].filter(placed));
+    const occupied = new Map([...subject]
+        .filter(id => !moving.has(id) && positions[id] !== undefined)
+        .map(id => [id, positions[id]!] as const));
+    if (moving.size === 0 || occupied.size === 0) {
+        return;
+    }
+    const inflate = (rect: Rect): Rect => ({
+        x: rect.x - GROUP_PADDING,
+        y: rect.y - GROUP_PADDING - GROUP_HEADER,
+        width: rect.width + GROUP_PADDING * 2,
+        height: rect.height + GROUP_PADDING * 2 + GROUP_HEADER
+    });
+
+    /**
+     * The cards wrapped into rows across the rank axis, in the order ELK left
+     * them, starting at `along` and centred on `middle`. As wide as `span`, or
+     * as a block of these cards at the canvas's aspect would be, whichever is
+     * wider: a two-card hierarchy must not stack ten leftovers into a column.
+     */
+    const wrap = (ids: string[], along: number, middle: number, span: number): Map<string, Rect> => {
+        const area = ids.reduce((sum, id) =>
+            sum + (positions[id]!.width + settings.nodeSpacing) * (positions[id]!.height + settings.nodeSpacing), 0);
+        const ideal = Math.sqrt(settings.direction === 'DOWN' ? area * TARGET_ASPECT_RATIO : area / TARGET_ASPECT_RATIO);
+        const limit = Math.max(span, ideal, ...ids.map(id => positions[id]![crossSize]));
+        const lines: string[][] = [];
+        let used = 0;
+        for (const id of ids) {
+            const size = positions[id]![crossSize];
+            const line = lines.at(-1);
+            if (!line || used + settings.nodeSpacing + size > limit) {
+                lines.push([id]);
+                used = size;
+            } else {
+                line.push(id);
+                used += settings.nodeSpacing + size;
+            }
+        }
+        const block = new Map<string, Rect>();
+        for (const line of lines) {
+            const length = line.reduce((sum, id) => sum + positions[id]![crossSize], 0)
+                + settings.nodeSpacing * (line.length - 1);
+            let at = middle - length / 2;
+            for (const id of line) {
+                const rect = positions[id]!;
+                block.set(id, { ...rect, [primary]: Math.round(along), [cross]: Math.round(at) });
+                at += rect[crossSize] + settings.nodeSpacing;
+            }
+            along += Math.max(...line.map(id => positions[id]![primarySize])) + settings.nodeSpacing;
+        }
+        return block;
+    };
+
+    /** The nearest clear translation forwards along the rank axis, if any. */
+    const seat = (block: Map<string, Rect>, alsoClear: (dx: number, dy: number) => boolean): Point | undefined => {
+        const rects = [...block.values()];
+        const obstacles = [...occupied.values()];
+        const fits = (dx: number, dy: number) => rects.every(rect => {
+            const moved = { ...rect, x: rect.x + dx, y: rect.y + dy };
+            return !obstacles.some(other => overlaps(moved, other, gap))
+                && !corridors.some(corridor =>
+                    segmentHitsRect(corridor.from, corridor.to, moved, SEAT_LINE_CLEARANCE));
+        }) && alsoClear(dx, dy);
+        for (let ring = 0; ring < 80; ring += 1) {
+            for (const offset of ring === 0 ? [{ x: 0, y: 0 }] : partialRing(ring)) {
+                // Forwards only: back is where the rows are.
+                if (offset[primary] < 0) {
+                    continue;
+                }
+                const candidate = { x: offset.x * PARTIAL_STEP, y: offset.y * PARTIAL_STEP };
+                if (fits(candidate.x, candidate.y)) {
+                    return candidate;
+                }
+            }
+        }
+        return undefined;
+    };
+    const commit = (block: Map<string, Rect>, translation: Point, group?: string): void => {
+        for (const [id, rect] of block) {
+            const moved = { ...rect, x: rect.x + translation.x, y: rect.y + translation.y };
+            positions[id] = moved;
+            occupied.set(id, moved);
+            if (group !== undefined) {
+                groupOf.set(id, group);
+            }
+        }
+    };
+
+    const groupOf = new Map(view.groups.flatMap(group => group.nodes.map(id => [id, group.id] as const)));
+    const ordered = (ids: string[]) => [...ids].sort((one, other) =>
+        positions[one]![primary] - positions[other]![primary]
+        || positions[one]![cross] - positions[other]![cross] || one.localeCompare(other));
+    const foreignTo = (group: string) => [...occupied]
+        .filter(([id]) => groupOf.get(id) !== group).map(([, rect]) => rect);
+    const leftOver: string[] = [];
+    for (const group of [...view.groups].sort((one, other) => one.id.localeCompare(other.id))) {
+        const ids = ordered(group.nodes.filter(id => moving.has(id)));
+        const members = group.nodes.filter(id => occupied.has(id)).map(id => occupied.get(id)!);
+        if (ids.length === 0 || members.length === 0) {
+            continue;
+        }
+        const memberBounds = boundsOf(members);
+        const boxFree = (bounds: Rect) =>
+            !foreignTo(group.id).some(other => overlapArea(other, inflate(bounds)) > 0);
+        if (!boxFree(memberBounds)) {
+            leftOver.push(...ids);
+            continue;
+        }
+        const block = wrap(ids, memberBounds[primary] + memberBounds[primarySize] + settings.rankSpacing,
+            memberBounds[cross] + memberBounds[crossSize] / 2, memberBounds[crossSize]);
+        const translation = seat(block, (dx, dy) => boxFree(boundsOf([
+            ...members, ...[...block.values()].map(rect => ({ ...rect, x: rect.x + dx, y: rect.y + dy }))
+        ])));
+        if (translation) {
+            commit(block, translation, group.id);
+        } else {
+            leftOver.push(...ids);
+        }
+    }
+
+    if (leftOver.length === 0) {
+        return;
+    }
+    const body = boundsOf([...occupied.values()]);
+    const block = wrap(ordered(leftOver), body[primary] + body[primarySize] + settings.rankSpacing,
+        body[cross] + body[crossSize] / 2, body[crossSize]);
+    commit(block, seat(block, () => true) ?? { x: 0, y: 0 });
+}
+
 /** Grid step, in pixels, of the search for a free seat inside the model. */
 const SEAT_STEP = 8;
 /** Clear space kept between a seated card and a line or label near it. */
@@ -2769,8 +2936,14 @@ export async function autoLayout(
         const seated = seatAppendixInWhitespace(
             view, positions, appendixIds, subject, settings, routing, request.packageContainers === true
         );
+        const waiting = new Set([...appendixIds].filter(id => !seated.has(id)));
         if (!grouped) {
-            placeAppendixAfter(positions, new Set([...appendixIds].filter(id => !seated.has(id))), subject, settings);
+            placeAppendixAfter(positions, waiting, subject, settings);
+        } else if (request.taxonomyOnly || partonomy) {
+            // Only where the appendix is a list of what the hierarchy leaves
+            // out. Otherwise it holds just unjoined datatypes, which the
+            // grouped layout keeps among their package as it always has.
+            placeAppendixAfterPackages(view, positions, waiting, subject, ranked ?? new Set(), steps, settings);
         }
     }
     // Compaction is allowed to shorten ordinary links, but it must not silently
