@@ -151,6 +151,9 @@ function readDisplayOptions(value: unknown): DisplayOptions {
     const source = recordOf(value);
     return {
         taxonomyOnly: booleanOr(source.taxonomyOnly, defaultDisplayOptions.taxonomyOnly),
+        // Both set only by hand; the older option keeps the meaning it had.
+        partonomyOnly: booleanOr(source.partonomyOnly, defaultDisplayOptions.partonomyOnly)
+            && !booleanOr(source.taxonomyOnly, defaultDisplayOptions.taxonomyOnly),
         routing: oneOf(source.routing, ['straight', 'curved', 'orthogonal'])
             ? source.routing : defaultDisplayOptions.routing,
         fontFamily: oneOf(source.fontFamily, [

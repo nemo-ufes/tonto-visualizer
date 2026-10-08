@@ -995,6 +995,7 @@ function fillOptions(): void {
     }
     const displayRows: Array<[keyof DisplayOptions, string]> = [
         ['taxonomyOnly', 'Taxonomy only'],
+        ['partonomyOnly', 'Partonomy only'],
         ['showAttributes', 'Attributes'],
         ['showCardinalities', 'Cardinalities'],
         ['showRelationNames', 'Relation names'],
@@ -1071,7 +1072,14 @@ function fillOptions(): void {
             () => host.postMessage({ type: 'constraint', action: 'clear', ids: selectedNodes }))
     ]));
     optionsPanel.append(section('Drawn', displayRows.map(([key, label]) =>
-        toggle(label, Boolean(display?.[key]), value => host.postMessage({ type: 'display', display: { [key]: value } })))));
+        toggle(label, Boolean(display?.[key]), value => host.postMessage({
+            type: 'display',
+            // Each is a hierarchy to rank by, and only one can rank a drawing:
+            // turning one on turns the other off.
+            display: value && key === 'taxonomyOnly' ? { taxonomyOnly: true, partonomyOnly: false }
+                : value && key === 'partonomyOnly' ? { partonomyOnly: true, taxonomyOnly: false }
+                    : { [key]: value }
+        })))));
     optionsPanel.append(section('Included', contentRows.map(([key, label]) =>
         toggle(label, Boolean(content?.[key]), value => host.postMessage({ type: 'content', content: { [key]: value } })))));
 

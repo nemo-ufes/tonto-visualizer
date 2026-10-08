@@ -615,6 +615,33 @@ describe('drawing', () => {
         expect(output.svg).toContain('>Employee<');
     });
 
+    test('draws names and whole-part relations only in a partonomy-only view', () => {
+        const view = model();
+        view.nodes.push({
+            id: 'Sample::Heart', kind: 'class', name: 'Heart', package: 'Sample', stereotype: 'kind',
+            color: '#FF99A3', isExternal: false, attributes: []
+        });
+        view.edges.push({
+            kind: 'relation', id: 'heart', source: 'Sample::Person', target: 'Sample::Heart',
+            stereotype: 'componenthood', whole: 'source',
+            sourceEnd: { isConst: true, isAddOnly: false, isWhole: true },
+            targetEnd: { cardinality: '1', isConst: true, isAddOnly: false }
+        });
+        view.gensets.push({
+            id: 'set', name: 'Occupation', disjoint: false, complete: false,
+            general: 'Sample::Person', specifics: ['Sample::Employee'], categorizers: []
+        });
+        const output = drawn(view, { ...display, partonomyOnly: true });
+
+        expect(Object.keys(output.paths)).toEqual(['heart']);
+        expect(output.svg).not.toContain('data-edge="gen:');
+        // A generalization set draws its own tree, apart from the edge list;
+        // a partonomy that filtered only the lines still drew it.
+        expect(output.svg).not.toContain('Occupation');
+        expect(output.svg).not.toContain('name: string');
+        expect(output.svg).toContain('>Heart<');
+    });
+
     test('measures how much room an edge wants by its longest label', () => {
         // Labels are placed widest first, since each takes the best place left
         // and the one with the least choice of where to go should not be the

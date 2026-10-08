@@ -23,13 +23,18 @@
  * drawn around half the diagram. One package stays flat, which lets ELK pack
  * its disconnected components instead of stretching them into a row.
  *
+ * A partonomy-only view ranks by whole-part relations instead: wholes above
+ * their parts, the same way supertypes sit above their subtypes. Every pass
+ * that reads a rank asks a `RankStep` which end goes above, rather than
+ * assuming the hierarchy is the taxonomy.
+ *
  * Disconnected components are compacted after those semantic repairs. Keeping
  * a component rigid preserves its internal reading while recovering the space
  * the independent repairs otherwise leave between unrelated pieces.
  */
 
 import * as elkModule from 'elkjs/lib/elk.bundled.js';
-import type { LayoutOptions, ViewConstraints, ViewModel } from 'tonto-view';
+import type { LayoutOptions, ViewConstraints, ViewEdge, ViewModel } from 'tonto-view';
 import { clampAssociationDistance, defaultDisplayOptions, defaultLayoutOptions, inversePairs } from 'tonto-view';
 import type { Point, Rect, Size } from './geometry.js';
 import {
@@ -98,6 +103,8 @@ export interface AutoLayoutRequest extends Partial<LayoutOptions> {
     routing?: RoutingStyle;
     /** Arrange inheritance without letting hidden associations influence it. */
     taxonomyOnly?: boolean;
+    /** Arrange whole-part relations as ranks, with nothing else drawn to influence them. */
+    partonomyOnly?: boolean;
     /** Keep package members inside compound package nodes, not merely nearby. */
     packageContainers?: boolean;
     /** User-owned constraints retained by an explicit Arrange. */
@@ -116,6 +123,28 @@ export interface AutoLayoutResult {
      */
     routes: Record<string, Point[]>;
 }
+
+/**
+ * The edge as one step down a hierarchy: the class drawn above, and the one
+ * drawn below it. Anything else answers undefined and takes no part in ranks.
+ */
+type RankStep = (edge: ViewEdge) => { upper: string; lower: string } | undefined;
+
+/** A supertype above its subtype. The edge runs specific -> general. */
+const taxonomySteps: RankStep = edge => edge.kind === 'generalization'
+    ? { upper: edge.target, lower: edge.source }
+    : undefined;
+
+/**
+ * A whole above its part. Which end is the whole is the language's answer,
+ * carried on the edge; constitution names no whole and is not a parthood, so
+ * it stays out of the ranks.
+ */
+const partonomySteps: RankStep = edge => edge.kind === 'relation' && edge.whole
+    ? edge.whole === 'source'
+        ? { upper: edge.source, lower: edge.target }
+        : { upper: edge.target, lower: edge.source }
+    : undefined;
 
 /** What the layered initializer is told. */
 function optionsFor(settings: LayoutOptions, routing: RoutingStyle): Record<string, string> {
@@ -828,10 +857,11 @@ interface CrossAxisScore {
 function taxonomyCorridors(
     view: ViewModel,
     positions: Positions,
-    ranked: ReadonlySet<string>
+    ranked: ReadonlySet<string>,
+    steps: RankStep
 ): Corridor[] {
     return view.edges.flatMap(edge => {
-        if (edge.kind !== 'generalization' || !ranked.has(edge.source) || !ranked.has(edge.target)) {
+        if (!steps(edge) || !ranked.has(edge.source) || !ranked.has(edge.target)) {
             return [];
         }
         const source = positions[edge.source];
@@ -1317,7 +1347,8 @@ function optimizeRankCrossAxis(
     excluded: ReadonlySet<string>,
     settings: LayoutOptions,
     compactCoordinates: boolean,
-    protectedEdges: ReadonlySet<string>
+    protectedEdges: ReadonlySet<string>,
+    steps: RankStep
 ): void {
     // This first slice deliberately excludes large models. Re-rendering every
     // promising candidate is the correctness gate for ports, trees and labels;
@@ -1505,7 +1536,7 @@ function optimizeRankCrossAxis(
                         if (!rect || members.has(neighbour) === false) {
                             continue;
                         }
-                        const edgeWeight = edge.kind === 'generalization' ? 3 : 1;
+                        const edgeWeight = steps(edge) ? 3 : 1;
                         total += (rect[cross] + rect[crossSize] / 2) * edgeWeight;
                         weight += edgeWeight;
                     }
@@ -1575,7 +1606,7 @@ function optimizeRankCrossAxis(
                         if (!rect) {
                             continue;
                         }
-                        const edgeWeight = edge.kind === 'generalization' ? 3 : 1;
+                        const edgeWeight = steps(edge) ? 3 : 1;
                         target += (rect[cross] + rect[crossSize] / 2) * edgeWeight;
                         weight += edgeWeight;
                     }
@@ -1611,7 +1642,7 @@ function optimizeRankCrossAxis(
         // inheritance lane. This is deliberately after compaction, which is
         // the pass that can close a previously adequate corridor.
         const edgeIds = new Set(edges.map(edge => edge.id));
-        const corridors = taxonomyCorridors(view, positions, ranked);
+        const corridors = taxonomyCorridors(view, positions, ranked, steps);
         const nodeById = new Map(view.nodes.map(node => [node.id, node]));
         for (let pass = 0; pass < 2; pass += 1) {
             let changed = false;
@@ -1731,7 +1762,8 @@ function settleOrphans(
     view: ViewModel,
     positions: Positions,
     only: ReadonlySet<string>,
-    ranked: ReadonlySet<string>
+    ranked: ReadonlySet<string>,
+    steps: RankStep
 ): void {
     const nodeById = new Map(view.nodes.map(node => [node.id, node]));
     const isOrphan = (id: string): boolean => {
@@ -1749,7 +1781,7 @@ function settleOrphans(
     // and its specific forces the router to draw inheritance around a class it
     // has nothing to do with. Keep a modest lane around the direct border-to-
     // border path while the orphan components search for their nearest place.
-    const corridors = taxonomyCorridors(view, positions, ranked);
+    const corridors = taxonomyCorridors(view, positions, ranked, steps);
 
     const neighboursOf = new Map<string, Set<string>>();
     for (const edge of view.edges) {
@@ -1868,7 +1900,8 @@ function orientCharacterizedAspects(
     positions: Positions,
     subject: ReadonlySet<string>,
     ranked: ReadonlySet<string>,
-    settings: LayoutOptions
+    settings: LayoutOptions,
+    steps: RankStep
 ): void {
     const nodes = new Map(view.nodes.map(node => [node.id, node]));
     const covered = inversePairs(view.edges).covered;
@@ -1885,7 +1918,7 @@ function orientCharacterizedAspects(
         bearers.set(edge.source, new Set([...(bearers.get(edge.source) ?? []), edge.target]));
     }
 
-    const corridors = taxonomyCorridors(view, positions, ranked);
+    const corridors = taxonomyCorridors(view, positions, ranked, steps);
     for (const [aspect, bearerIds] of [...bearers].sort(([one], [other]) => one.localeCompare(other))) {
         // Moving a member independently would undo the taxonomy's cross-axis
         // ordering even when it happens not to alter the formal rank.
@@ -2273,21 +2306,25 @@ function enforceTaxonomyRanks(
     positions: Positions,
     subject: ReadonlySet<string>,
     settings: LayoutOptions,
-    packageContainers: boolean
+    packageContainers: boolean,
+    steps: RankStep
 ): Set<string> | undefined {
-    const generalizations = view.edges.filter(edge => edge.kind === 'generalization'
-        && subject.has(edge.source) && subject.has(edge.target));
-    if (generalizations.length === 0) {
+    const ladder = view.edges.flatMap(edge => {
+        const step = steps(edge);
+        return step && step.upper !== step.lower && subject.has(step.upper) && subject.has(step.lower)
+            ? [step] : [];
+    });
+    if (ladder.length === 0) {
         return undefined;
     }
 
     const parents = new Map<string, Set<string>>();
     const children = new Map<string, Set<string>>();
-    for (const edge of generalizations) {
-        parents.set(edge.source, new Set([...(parents.get(edge.source) ?? []), edge.target]));
-        children.set(edge.target, new Set([...(children.get(edge.target) ?? []), edge.source]));
-        parents.set(edge.target, parents.get(edge.target) ?? new Set());
-        children.set(edge.source, children.get(edge.source) ?? new Set());
+    for (const { upper, lower } of ladder) {
+        parents.set(lower, new Set([...(parents.get(lower) ?? []), upper]));
+        children.set(upper, new Set([...(children.get(upper) ?? []), lower]));
+        parents.set(upper, parents.get(upper) ?? new Set());
+        children.set(lower, children.get(lower) ?? new Set());
     }
 
     // Parent -> child topological walk. A temporarily cyclic model is left in
@@ -2523,8 +2560,18 @@ export async function autoLayout(
     // model. Removing non-taxonomy edges at the layout boundary lets ELK and
     // every semantic repair optimize the graph the user can actually see,
     // while ids and saved positions remain those of the full view.
-    if (request.taxonomyOnly) {
-        view = { ...view, edges: view.edges.filter(edge => edge.kind === 'generalization') };
+    //
+    // A partonomy-only view is the same move with whole-part relations kept
+    // instead, and those relations then rank the drawing the way inheritance
+    // otherwise does. Taxonomy wins if a hand-edited view file asks for both.
+    const partonomy = request.partonomyOnly === true && request.taxonomyOnly !== true;
+    const steps = partonomy ? partonomySteps : taxonomySteps;
+    if (request.taxonomyOnly || partonomy) {
+        view = {
+            ...view,
+            edges: view.edges.filter(edge => steps(edge) !== undefined),
+            ...(partonomy ? { gensets: [] } : {})
+        };
     }
     const requestedSettings: LayoutOptions = { ...defaultLayoutOptions, ...request };
     const associationDistance = clampAssociationDistance(requestedSettings.associationDistance);
@@ -2540,7 +2587,7 @@ export async function autoLayout(
     const pinned = new Set(request.constraints?.pinned.filter(id => current[id] !== undefined) ?? []);
     const subject = new Set([...requested].filter(id => !pinned.has(id)));
     const inverses = inversePairs(view.edges);
-    const hasTaxonomy = view.edges.some(edge => edge.kind === 'generalization'
+    const hasTaxonomy = view.edges.some(edge => steps(edge) !== undefined
         && subject.has(edge.source) && subject.has(edge.target));
     const nodes = view.nodes.filter(node => subject.has(node.id));
     if (nodes.length === 0) {
@@ -2585,7 +2632,7 @@ export async function autoLayout(
      */
     const joined = new Set(view.edges.flatMap(edge => [edge.source, edge.target]));
     const appendixIds = new Set(view.nodes
-        .filter(node => !joined.has(node.id) && (request.taxonomyOnly
+        .filter(node => !joined.has(node.id) && (request.taxonomyOnly || partonomy
             || node.kind === 'datatype' || node.kind === 'enumeration'))
         .map(node => node.id));
     const appendix = (id: string): Pick<ElkNode, 'layoutOptions'> | Record<string, never> =>
@@ -2636,11 +2683,12 @@ export async function autoLayout(
             .filter(edge => !inverses.covered.has(edge.id)
                 && subject.has(edge.source) && subject.has(edge.target))
             .map((edge): ElkEdge => {
-                if (edge.kind === 'generalization') {
+                const step = steps(edge);
+                if (step) {
                     return {
                         id: edge.id,
-                        sources: [edge.target],
-                        targets: [edge.source],
+                        sources: [step.upper],
+                        targets: [step.lower],
                         layoutOptions: {
                             'elk.layered.priority.direction': '10',
                             'elk.layered.priority.straightness': '10'
@@ -2687,21 +2735,31 @@ export async function autoLayout(
         .map(id => [id, { ...positions[id]! }]));
     let ranked: Set<string> | undefined;
     if (!request.only) {
-        ranked = enforceTaxonomyRanks(view, positions, subject, settings, grouped);
+        ranked = enforceTaxonomyRanks(view, positions, subject, settings, grouped, steps);
     }
     guardedSemanticCandidate(view, positions, settings, () => {
         settleRelators(view, positions, subject, ranked ? settings.direction : undefined, ranked);
         if (ranked) {
-            settleOrphans(view, positions, subject, ranked);
+            settleOrphans(view, positions, subject, ranked, steps);
         }
         if (!grouped) {
             orientInstantiationTypes(view, positions, subject, settings);
         }
-        orientCharacterizedAspects(view, positions, subject, ranked ?? new Set(), settings);
-        const wholeFans = orientWholeFans(view, positions, subject, ranked, settings);
-        orientWholes(view, positions, subject, ranked, settings.direction, wholeFans);
+        orientCharacterizedAspects(view, positions, subject, ranked ?? new Set(), settings, steps);
+        // In a partonomy the ranks already put every whole before its parts.
+        // Running the pairwise preference as well would push each part off
+        // the row beneath its whole, sideways, which the rank axis does not
+        // forbid but which breaks the very fan the ranks just drew.
+        const wholeFans = partonomy
+            ? new Set<string>()
+            : orientWholeFans(view, positions, subject, ranked, settings);
+        if (!partonomy) {
+            orientWholes(view, positions, subject, ranked, settings.direction, wholeFans);
+        }
         if (!request.only && ranked) {
-            optimizeRankCrossAxis(view, positions, subject, ranked, appendixIds, settings, !grouped, wholeFans);
+            optimizeRankCrossAxis(
+                view, positions, subject, ranked, appendixIds, settings, !grouped, wholeFans, steps
+            );
         }
     });
     const packed = !request.only && !grouped
@@ -2799,10 +2857,12 @@ export async function autoLayout(
                     }
                     continue;
                 }
-                // Selected mediations may be handed to ELK backwards for
-                // ranking. Stored routes always follow the view model's
-                // source -> target direction.
-                const reversed = turnedMediations.has(edge.id);
+                // Selected mediations, and a partonomy's parthoods written
+                // part-first, are handed to ELK backwards for ranking. Stored
+                // routes always follow the view model's source -> target
+                // direction.
+                const reversed = turnedMediations.has(edge.id)
+                    || steps(definition)?.upper === definition.target;
                 const ordered = reversed ? points.reverse() : points;
                 const oldSource = elkPositions[definition.source];
                 const oldTarget = elkPositions[definition.target];

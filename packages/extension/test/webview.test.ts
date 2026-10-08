@@ -141,6 +141,21 @@ describe('the webview and its host protocol', () => {
             .some(candidate => candidate.querySelector('span')?.textContent === 'Arrangement')).toBe(false);
     });
 
+    test('turns one hierarchy-only view off when the other is turned on', () => {
+        sendModel();
+        openOptions();
+
+        const partonomy = checkbox('Partonomy only');
+        partonomy.click();
+        expect(posted('display').at(-1)).toEqual({
+            type: 'display', display: { partonomyOnly: true, taxonomyOnly: false }
+        });
+        checkbox('Taxonomy only').click();
+        expect(posted('display').at(-1)).toEqual({
+            type: 'display', display: { taxonomyOnly: true, partonomyOnly: false }
+        });
+    });
+
     test('offers persisted typeface and text-size choices', () => {
         sendModel();
         openOptions();

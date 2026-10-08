@@ -100,6 +100,13 @@ describe('view file options', () => {
         }
     });
 
+    test('reads a partonomy-only view, and never one that is also taxonomy-only', () => {
+        expect(readViewFile({ display: { partonomyOnly: true } }).display)
+            .toEqual({ ...defaultDisplayOptions, partonomyOnly: true });
+        expect(readViewFile({ display: { taxonomyOnly: true, partonomyOnly: true } }).display)
+            .toEqual({ ...defaultDisplayOptions, taxonomyOnly: true });
+    });
+
     test('retains curved association routing', () => {
         expect(readViewFile({ display: { routing: 'curved' } }).display.routing).toBe('curved');
     });
