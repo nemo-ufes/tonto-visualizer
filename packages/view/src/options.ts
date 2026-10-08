@@ -55,8 +55,9 @@ export interface DisplayOptions {
     /** Draw classifier names and inheritance only, preserving the other choices for later. */
     taxonomyOnly: boolean;
     /**
-     * Draw classifier names and whole-part relations only, ranked whole above
-     * part. Exclusive with `taxonomyOnly`: each is a hierarchy to rank by, and
+     * Draw classifier names, whole-part relations and constitution only,
+     * ranked whole above part, with the specializations between those classes.
+     * Exclusive with `taxonomyOnly`: each is a hierarchy to rank by, and
      * a drawing can only be ranked by one.
      */
     partonomyOnly: boolean;

@@ -29,6 +29,41 @@ async function benchmark(target = fixture, display = defaultDisplayOptions) {
 }
 
 describe('layout quality benchmarks', () => {
+    test('draws the motorcycle partonomy whole above part, with its role specializations', async () => {
+        const target = resolve(import.meta.dirname, 'fixtures/motorcycle.tonto');
+        const session = new ViewSession({ workspace: [dirname(target)] });
+        const view = derive({
+            models: await session.modelsOf(pathToFileURL(target).toString()),
+            documentation: session.documentation()
+        });
+        const display = { ...defaultDisplayOptions, partonomyOnly: true };
+        const sizes = Object.fromEntries(view.nodes.map(node => [node.id, sizeOf(node, display)]));
+        const laid = await autoLayout(view, sizes, {}, { ...defaultLayoutOptions, partonomyOnly: true });
+        const at = (name: string) => laid.positions[`motorcycle::${name}`]!;
+        const above = (upper: string, lower: string) =>
+            expect(at(upper).y + at(upper).height, `${upper} above ${lower}`).toBeLessThan(at(lower).y);
+
+        above('Motorcycle', 'MotorcycleEngine');
+        above('MotorcycleEngine', 'EnginePiston');
+        above('MotorcycleWheel', 'WheelRim');
+        above('MotorcycleWheel', 'FrontMotorcycleWheel');
+        above('MotorcycleWheel', 'RearMotorcycleWheel');
+        // One bus is drawn under both wheel positions; nothing may sit on it.
+        const front = at('FrontMotorcycleWheel');
+        const rear = at('RearMotorcycleWheel');
+        expect(front.y).toBe(rear.y);
+        const [left, right] = [front, rear].sort((one, other) => one.x - other.x);
+        const between = Object.entries(laid.positions).filter(([, rect]) =>
+            rect.y === front.y && rect.x > left!.x && rect.x < right!.x);
+        expect(between.map(([id]) => id)).toEqual([]);
+
+        const drawn = render({ view, positions: laid.positions, display, direction: 'DOWN' });
+        // A motorcycle has proper parts because a system does.
+        expect(drawn.svg).toContain('data-edge="gen:motorcycle::Motorcycle-&gt;motorcycle::System"');
+        expect(drawn.svg).not.toContain('data-edge="gen:motorcycle::MotorcycleEngine-&gt;motorcycle::Component"');
+        expect(drawn.svg).toContain('motorcycleWheelPositions');
+    });
+
     test('keeps the class-only taxonomy clear at a crowded generalization head', async () => {
         const target = resolve(repository, 'vendor/tontoredesign/examples/classonly.tonto');
         for (const fontFamily of ['sans', 'condensed'] as const) {

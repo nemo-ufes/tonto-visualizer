@@ -75,8 +75,17 @@ exact ELK coordinates.
   from inheritance alone; classifiers outside a hierarchy form an appendix.
 - [x] Add a persisted partonomy-only view, its counterpart for whole-part
   relations: wholes rank above their parts as supertypes rank above subtypes,
-  through the same ranking passes asked which end of an edge goes above. The
-  two views are exclusive; a file that asks for both is read as taxonomy-only.
+  through the same ranking passes asked which end of an edge goes above.
+  Constitution ranks the constituted above its constituent. Parts are mostly
+  roles, so a generalization is drawn, and ranked, when its supertype is a
+  whole or both ends are parts of one whole (`FrontMotorcycleWheel` under
+  `MotorcycleWheel`); a generic supertype every part role specializes is not.
+  A generalization set's specifics stay side by side, off each other's bus.
+  The two views are exclusive; a file that asks for both is read as
+  taxonomy-only.
+- [x] Keep a hierarchy-only appendix off the hierarchy's rows in package
+  containers: under its package while that box can still be drawn, else in one
+  block after the model.
 - [x] Add persistent pin, alignment and distribution constraints, followed by a
   bounded-rank policy whose wrapping remains stable by element id.
 

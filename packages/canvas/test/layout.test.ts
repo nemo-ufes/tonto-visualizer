@@ -288,6 +288,27 @@ describe('arranging a model', () => {
         expect(onBorder(route.at(-1), laid.positions['Sample::Car']!)).toBe(true);
     });
 
+    test('ranks what is constituted above what constitutes it', async () => {
+        const view = partonomy();
+        view.nodes.push({
+            id: 'Sample::PortionOfAluminium', kind: 'class', name: 'PortionOfAluminium', package: 'Sample',
+            stereotype: 'quantity', color: '#FF99A3', isExternal: false, attributes: []
+        });
+        view.groups[0]!.nodes.push('Sample::PortionOfAluminium');
+        view.edges.push({
+            kind: 'relation', id: 'aluminium', source: 'Sample::Piston', target: 'Sample::PortionOfAluminium',
+            stereotype: 'constitution', name: 'isConstitutedOf',
+            sourceEnd: { isConst: false, isAddOnly: false }, targetEnd: { isConst: false, isAddOnly: false }
+        });
+        const display = { ...defaultDisplayOptions, partonomyOnly: true };
+        const sizes = Object.fromEntries(view.nodes.map(node => [node.id, sizeOf(node, display)]));
+        const laid = await autoLayout(view, sizes, {}, { ...defaultLayoutOptions, groupByPackage: false, partonomyOnly: true });
+        const piston = laid.positions['Sample::Piston']!;
+
+        expect(laid.positions['Sample::PortionOfAluminium']!.y)
+            .toBeGreaterThanOrEqual(piston.y + piston.height + defaultLayoutOptions.rankSpacing);
+    });
+
     test('ranks by inheritance when a view asks for both hierarchies', async () => {
         const view = partonomy();
         const sizes = Object.fromEntries(view.nodes.map(node => [node.id, sizeOf(node, display)]));

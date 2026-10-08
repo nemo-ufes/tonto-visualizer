@@ -21,6 +21,7 @@ import {
 import type { FontMetrics } from './measure.js';
 import type { Positions } from './place.js';
 import type { TreeStem } from './ports.js';
+import { partonomyView } from './partonomy.js';
 import { assignPorts, endKey } from './ports.js';
 import { curvedRoute, pathData, roundedRoute, routeEdge } from './route.js';
 import type { Theme } from './theme.js';
@@ -193,11 +194,7 @@ function shownView(view: ViewModel, display: DisplayOptions): ViewModel {
         return { ...view, edges: view.edges.filter(edge => edge.kind === 'generalization') };
     }
     if (display.partonomyOnly) {
-        return {
-            ...view,
-            edges: view.edges.filter(edge => edge.kind === 'relation' && edge.whole !== undefined),
-            gensets: []
-        };
+        return partonomyView(view);
     }
     return view;
 }

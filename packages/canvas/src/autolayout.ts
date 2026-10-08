@@ -45,6 +45,7 @@ import { assignPorts } from './ports.js';
 import type { RoutingStyle } from './route.js';
 import { routeEdge } from './route.js';
 import { FONT, textWidth } from './measure.js';
+import { partonomyView, wholePartOf } from './partonomy.js';
 import { groupBoxes, labelWidth, render } from './render.js';
 
 const GROUP_PADDING = 18;
@@ -103,7 +104,10 @@ export interface AutoLayoutRequest extends Partial<LayoutOptions> {
     routing?: RoutingStyle;
     /** Arrange inheritance without letting hidden associations influence it. */
     taxonomyOnly?: boolean;
-    /** Arrange whole-part relations as ranks, with nothing else drawn to influence them. */
+    /**
+     * Arrange whole-part relations and constitution as ranks, with only the
+     * specializations between their classes drawn beside them.
+     */
     partonomyOnly?: boolean;
     /** Keep package members inside compound package nodes, not merely nearby. */
     packageContainers?: boolean;
@@ -136,15 +140,16 @@ const taxonomySteps: RankStep = edge => edge.kind === 'generalization'
     : undefined;
 
 /**
- * A whole above its part. Which end is the whole is the language's answer,
- * carried on the edge; constitution names no whole and is not a parthood, so
- * it stays out of the ranks.
+ * A whole above its part, constitution included -- and a supertype above
+ * the subtypes a partonomy draws (see `partonomyView`). Left beside the ranks
+ * instead, a front and a rear wheel shared the row of the wheel they
+ * specialize, and their generalization set was drawn sideways, its label
+ * landing among the wheel's own parts.
  */
-const partonomySteps: RankStep = edge => edge.kind === 'relation' && edge.whole
-    ? edge.whole === 'source'
-        ? { upper: edge.source, lower: edge.target }
-        : { upper: edge.target, lower: edge.source }
-    : undefined;
+const partonomySteps: RankStep = edge => {
+    const pair = wholePartOf(edge);
+    return pair ? { upper: pair.whole, lower: pair.part } : taxonomySteps(edge);
+};
 
 /** What the layered initializer is told. */
 function optionsFor(settings: LayoutOptions, routing: RoutingStyle): Record<string, string> {
@@ -1101,13 +1106,11 @@ function semanticGeometryCost(
         if (edge.kind !== 'relation') {
             continue;
         }
-        const whole = edge.whole === 'source' ? edge.source
-            : edge.whole === 'target' ? edge.target
-                : edge.stereotype === 'constitution' ? edge.source : undefined;
-        if (!whole) {
+        const pair = wholePartOf(edge);
+        if (!pair) {
             continue;
         }
-        const part = whole === edge.source ? edge.target : edge.source;
+        const { whole, part } = pair;
         const wholeCentre = centerOf(positions[whole]!);
         const partCentre = centerOf(positions[part]!);
         if (wholeCentre.x >= partCentre.x && wholeCentre.y >= partCentre.y) {
@@ -1515,7 +1518,8 @@ function optimizeRankCrossAxis(
     settings: LayoutOptions,
     compactCoordinates: boolean,
     protectedEdges: ReadonlySet<string>,
-    steps: RankStep
+    steps: RankStep,
+    setsTogether = false
 ): void {
     // This first slice deliberately excludes large models. Re-rendering every
     // promising candidate is the correctness gate for ports, trees and labels;
@@ -1655,14 +1659,37 @@ function optimizeRankCrossAxis(
             return Object.entries(candidate).every(([otherId, other]) => row.has(otherId)
                 || !subject.has(otherId) || !overlaps(rect, other, Math.min(settings.nodeSpacing / 3, 20)));
         });
+        // The score counts a set's member lines, not the bus its tree draws
+        // under all of them, so it will happily seat a class between two
+        // specifics and on that bus. Where re-ranking put them side by side
+        // (see `enforceTaxonomyRanks`), no candidate may split more sets than
+        // the arrangement it replaces.
+        const splitSets = (candidate: Positions): number => !setsTogether ? 0 : view.gensets.filter(genset => {
+            const rows = new Map<number, string[]>();
+            for (const id of genset.specifics.filter(one => members.has(one) && candidate[one])) {
+                rows.set(candidate[id]![primary], [...(rows.get(candidate[id]![primary]) ?? []), id]);
+            }
+            return [...rows].some(([at, specifics]) => {
+                if (specifics.length < 2) {
+                    return false;
+                }
+                const middles = specifics.map(id => candidate[id]![cross] + candidate[id]![crossSize] / 2);
+                const low = Math.min(...middles);
+                const high = Math.max(...middles);
+                return ids.some(id => !specifics.includes(id) && candidate[id]?.[primary] === at
+                    && candidate[id]![cross] + candidate[id]![crossSize] / 2 > low
+                    && candidate[id]![cross] + candidate[id]![crossSize] / 2 < high);
+            });
+        }).length;
         const acceptCandidates = (candidates: Positions[], movable: ReadonlySet<string>): boolean => {
+            const splitCeiling = splitSets(positions);
             let bestScore = score(positions);
             const edgeIds = new Set(edges.map(edge => edge.id));
             let bestSafety = renderedSafety(view, positions, ids, edgeIds, settings.direction);
             const labelCeiling = bestSafety.labelOcclusions;
             let best: Positions | undefined;
             for (const candidate of candidates) {
-                if (!clear(candidate, movable)) {
+                if (!clear(candidate, movable) || splitSets(candidate) > splitCeiling) {
                     continue;
                 }
                 const candidateScore = score(candidate);
@@ -1728,6 +1755,29 @@ function optimizeRankCrossAxis(
                         const swapped = [...base];
                         [swapped[index], swapped[index + 1]] = [swapped[index + 1]!, swapped[index]!];
                         orders.push(swapped);
+                    }
+                }
+                // A set's specifics move as one: an adjacent exchange with one
+                // of them would split the set, which `splitSets` refuses, so a
+                // class on the wrong side of a set could never cross it.
+                const setOf = new Map((setsTogether ? view.gensets : []).flatMap(genset =>
+                    genset.specifics.filter(id => current.includes(id)).map(id => [id, genset.id] as const)));
+                for (const base of setOf.size > 0 ? [current, barycentric] : []) {
+                    for (let index = 0; index < base.length; index += 1) {
+                        const id = base[index]!;
+                        for (const step of [1, -1]) {
+                            const set = setOf.get(base[index + step] ?? '');
+                            if (set === undefined || setOf.get(id) === set) {
+                                continue;
+                            }
+                            let past = index + step;
+                            while (setOf.get(base[past + step] ?? '') === set) {
+                                past += step;
+                            }
+                            const moved = base.filter(other => other !== id);
+                            moved.splice(past, 0, id);
+                            orders.push(moved);
+                        }
                     }
                 }
                 const distinctOrders = [...new Map(orders.map(order => [order.join('\0'), order])).values()];
@@ -2346,16 +2396,9 @@ function orientWholes(
             || !subject.has(edge.source) || !subject.has(edge.target) || skipped.has(edge.id)) {
             continue;
         }
-        if (edge.whole) {
-            pairs.push(edge.whole === 'source'
-                ? { whole: edge.source, part: edge.target }
-                : { whole: edge.target, part: edge.source });
-        } else if (edge.stereotype === 'constitution') {
-            // Unlike a diamond, constitution names no whole -- but it is
-            // written the same way a parthood without one is: the constituted
-            // thing as the source, the matter it is constituted of as the
-            // target.
-            pairs.push({ whole: edge.source, part: edge.target });
+        const pair = wholePartOf(edge);
+        if (pair) {
+            pairs.push(pair);
         }
     }
     if (pairs.length === 0) {
@@ -2474,7 +2517,8 @@ function enforceTaxonomyRanks(
     subject: ReadonlySet<string>,
     settings: LayoutOptions,
     packageContainers: boolean,
-    steps: RankStep
+    steps: RankStep,
+    setsTogether = false
 ): Set<string> | undefined {
     const ladder = view.edges.flatMap(edge => {
         const step = steps(edge);
@@ -2562,12 +2606,35 @@ function enforceTaxonomyRanks(
         const rects = new Map<string, Rect>();
         let at = Math.min(...originals.map(rect => rect[primary]));
         for (const rank of [...rows.keys()].sort((one, other) => one - other)) {
-            const rowIds = rows.get(rank)!.sort((one, other) => {
-                const oneRect = positions[one]!;
-                const otherRect = positions[other]!;
-                return oneRect[cross] + oneRect[crossSize] / 2 - (otherRect[cross] + otherRect[crossSize] / 2)
-                    || one.localeCompare(other);
-            });
+            // In a partonomy, a generalization set's specifics side by side, at
+            // the middle of where ELK put them: its tree is one bus under all
+            // of them, and a class seated between two of them sits on that
+            // bus. In the motorcycle the wheel's own rim, tire and hub came
+            // between the front and the rear wheel, which ELK had placed each
+            // beside its line from the motorcycle. Not in a taxonomy: there
+            // sets overlap -- a class is a specific of several -- and forcing
+            // each together raised `gufo` from 17 crossings to 30.
+            const middleOf = (id: string) => positions[id]![cross] + positions[id]![crossSize] / 2;
+            const rowSet = new Set(rows.get(rank)!);
+            const setOf = new Map<string, string>();
+            for (const genset of setsTogether ? view.gensets : []) {
+                const together = genset.specifics.filter(id => rowSet.has(id) && !setOf.has(id));
+                if (together.length > 1) {
+                    for (const id of together) {
+                        setOf.set(id, genset.id);
+                    }
+                }
+            }
+            const keyOf = new Map([...rowSet].map(id => {
+                const set = setOf.get(id);
+                const siblings = set === undefined ? [id] : [...rowSet].filter(other => setOf.get(other) === set);
+                return [id, siblings.reduce((sum, other) => sum + middleOf(other), 0) / siblings.length] as const;
+            }));
+            const rowIds = rows.get(rank)!.sort((one, other) =>
+                keyOf.get(one)! - keyOf.get(other)!
+                || (setOf.get(one) ?? '').localeCompare(setOf.get(other) ?? '')
+                || middleOf(one) - middleOf(other)
+                || one.localeCompare(other));
             if (packageContainers) {
                 // Compound packages already own disjoint cross-axis bands.
                 // Retain those bands while sharing the taxonomy's rank axis;
@@ -2733,12 +2800,10 @@ export async function autoLayout(
     // otherwise does. Taxonomy wins if a hand-edited view file asks for both.
     const partonomy = request.partonomyOnly === true && request.taxonomyOnly !== true;
     const steps = partonomy ? partonomySteps : taxonomySteps;
-    if (request.taxonomyOnly || partonomy) {
-        view = {
-            ...view,
-            edges: view.edges.filter(edge => steps(edge) !== undefined),
-            ...(partonomy ? { gensets: [] } : {})
-        };
+    if (partonomy) {
+        view = partonomyView(view);
+    } else if (request.taxonomyOnly) {
+        view = { ...view, edges: view.edges.filter(edge => edge.kind === 'generalization') };
     }
     const requestedSettings: LayoutOptions = { ...defaultLayoutOptions, ...request };
     const associationDistance = clampAssociationDistance(requestedSettings.associationDistance);
@@ -2902,7 +2967,7 @@ export async function autoLayout(
         .map(id => [id, { ...positions[id]! }]));
     let ranked: Set<string> | undefined;
     if (!request.only) {
-        ranked = enforceTaxonomyRanks(view, positions, subject, settings, grouped, steps);
+        ranked = enforceTaxonomyRanks(view, positions, subject, settings, grouped, steps, partonomy);
     }
     guardedSemanticCandidate(view, positions, settings, () => {
         settleRelators(view, positions, subject, ranked ? settings.direction : undefined, ranked);
@@ -2925,7 +2990,7 @@ export async function autoLayout(
         }
         if (!request.only && ranked) {
             optimizeRankCrossAxis(
-                view, positions, subject, ranked, appendixIds, settings, !grouped, wholeFans, steps
+                view, positions, subject, ranked, appendixIds, settings, !grouped, wholeFans, steps, partonomy
             );
         }
     });
