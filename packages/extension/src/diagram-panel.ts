@@ -251,6 +251,7 @@ export class DiagramPanel {
                 ...store.state.layout,
                 routing: store.state.display.routing,
                 taxonomyOnly: store.state.display.taxonomyOnly,
+                partonomyOnly: store.state.display.partonomyOnly,
                 packageContainers: store.state.display.showPackageGroups,
                 constraints: store.state.constraints,
                 ...(only ? { only } : {})

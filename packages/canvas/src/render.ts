@@ -180,8 +180,31 @@ function mergedWith(edge: ViewRelation, partner: ViewRelation): ViewRelation {
     };
 }
 
+/**
+ * The edges a taxonomy-only or partonomy-only drawing keeps, and nothing else.
+ *
+ * Filtered here, once, rather than where lines are drawn: generalization-set
+ * trees, loops and port spreading each read the edges on their own, and a
+ * partonomy that filtered only the drawn lines still drew every set's tree
+ * over it.
+ */
+function shownView(view: ViewModel, display: DisplayOptions): ViewModel {
+    if (display.taxonomyOnly) {
+        return { ...view, edges: view.edges.filter(edge => edge.kind === 'generalization') };
+    }
+    if (display.partonomyOnly) {
+        return {
+            ...view,
+            edges: view.edges.filter(edge => edge.kind === 'relation' && edge.whole !== undefined),
+            gensets: []
+        };
+    }
+    return view;
+}
+
 export function render(input: RenderInput): Rendered {
-    const { view, positions, display } = input;
+    const { positions, display } = input;
+    const view = shownView(input.view, display);
     const font = fontMetrics(display);
     const theme = input.theme ?? lightTheme;
     const padding = input.padding ?? 16;
@@ -206,8 +229,7 @@ export function render(input: RenderInput): Rendered {
     // borders: the half that is not drawn must not be given a share of a border
     // either, or the line that is drawn arrives beside the space kept for it.
     const inverses = inversePairs(view.edges);
-    const drawn = view.edges.filter(edge => !inverses.covered.has(edge.id)
-        && (!display.taxonomyOnly || edge.kind === 'generalization'));
+    const drawn = view.edges.filter(edge => !inverses.covered.has(edge.id));
     const spreads = input.repeatedAssociationFans === false ? new Map() : relationSpreads(drawn);
     const portInput = drawn.filter(edge => !trees.covered.has(edge.id));
     const loops = loopIndex(view);

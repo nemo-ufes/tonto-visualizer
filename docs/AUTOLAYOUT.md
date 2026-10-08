@@ -73,6 +73,10 @@ exact ELK coordinates.
 - [x] Add a persisted taxonomy-only view. It keeps the same classifiers and
   user preferences, but hides attributes and non-taxonomy edges and arranges
   from inheritance alone; classifiers outside a hierarchy form an appendix.
+- [x] Add a persisted partonomy-only view, its counterpart for whole-part
+  relations: wholes rank above their parts as supertypes rank above subtypes,
+  through the same ranking passes asked which end of an edge goes above. The
+  two views are exclusive; a file that asks for both is read as taxonomy-only.
 - [x] Add persistent pin, alignment and distribution constraints, followed by a
   bounded-rank policy whose wrapping remains stable by element id.
 

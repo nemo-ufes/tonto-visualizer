@@ -24,6 +24,7 @@ diagram of the model would hold.
   --routing <name>   straight (default), curved or orthogonal
   --direction <dir>  DOWN (default) or RIGHT
   --taxonomy-only    draw names and inheritance, without attributes or associations
+  --partonomy-only   draw names and whole-part relations, ranked whole above part
   --loose            lay the model out as one graph, ignoring its packages
   --package <name>   restrict the view to this package; repeatable
   --no-external      leave out elements from packages outside the view
@@ -42,6 +43,7 @@ export async function run(argv: string[]): Promise<number> {
     let asSvg = false;
     let dark = false;
     let taxonomyOnly = false;
+    let partonomyOnly = false;
     let routing: DisplayOptions['routing'] = defaultDisplayOptions.routing;
     let direction: LayoutOptions['direction'] = defaultLayoutOptions.direction;
     let groupByPackage = defaultLayoutOptions.groupByPackage;
@@ -66,6 +68,8 @@ export async function run(argv: string[]): Promise<number> {
             dark = true;
         } else if (argument === '--taxonomy-only') {
             taxonomyOnly = true;
+        } else if (argument === '--partonomy-only') {
+            partonomyOnly = true;
         } else if (argument === '--routing') {
             routing = argv[++index] as DisplayOptions['routing'];
         } else if (argument === '--direction') {
@@ -78,6 +82,11 @@ export async function run(argv: string[]): Promise<number> {
         } else {
             paths.push(argument);
         }
+    }
+
+    if (taxonomyOnly && partonomyOnly) {
+        process.stderr.write('--taxonomy-only and --partonomy-only rank by different hierarchies; choose one\n');
+        return 2;
     }
 
     const target = resolve(paths[0] ?? '.');
@@ -106,13 +115,14 @@ export async function run(argv: string[]): Promise<number> {
     // Nothing is placed here -- a command line has no saved arrangement -- so
     // this is the picture a view gets the first time it is opened: laid out
     // automatically, and afterwards the modeller's to move.
-    const display: DisplayOptions = { ...defaultDisplayOptions, routing, taxonomyOnly };
+    const display: DisplayOptions = { ...defaultDisplayOptions, routing, taxonomyOnly, partonomyOnly };
     const sizes = Object.fromEntries(view.nodes.map(node => [node.id, sizeOf(node, display)]));
     const laid = await autoLayout(view, sizes, placeNewNodes(view, sizes, {}), {
         ...defaultLayoutOptions,
         direction,
         routing,
         taxonomyOnly,
+        partonomyOnly,
         groupByPackage,
         packageContainers: display.showPackageGroups
     });

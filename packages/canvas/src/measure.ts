@@ -158,7 +158,7 @@ export function multiplicityLabel(cardinality: string | undefined): string | und
 
 /** The lines of the attribute compartment, as they are drawn. */
 export function attributeLines(node: ViewNode, options: DisplayOptions): string[] {
-    if (options.taxonomyOnly || !options.showAttributes) {
+    if (options.taxonomyOnly || options.partonomyOnly || !options.showAttributes) {
         return [];
     }
     if (node.kind === 'enumeration') {

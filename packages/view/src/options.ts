@@ -55,6 +55,12 @@ export interface DisplayOptions {
     /** Draw classifier names and inheritance only, preserving the other choices for later. */
     taxonomyOnly: boolean;
     /**
+     * Draw classifier names and whole-part relations only, ranked whole above
+     * part. Exclusive with `taxonomyOnly`: each is a hierarchy to rank by, and
+     * a drawing can only be ranked by one.
+     */
+    partonomyOnly: boolean;
+    /**
      * Straight by default: a direct line says "these two" at a glance, and a
      * model with many associations drawn with right angles turns into a set of
      * corridors that read as the diagram. Curved associations retain that
@@ -135,6 +141,7 @@ export const defaultContentOptions: ContentOptions = {
 
 export const defaultDisplayOptions: DisplayOptions = {
     taxonomyOnly: false,
+    partonomyOnly: false,
     routing: 'straight',
     fontFamily: 'sans',
     fontSize: 'medium',

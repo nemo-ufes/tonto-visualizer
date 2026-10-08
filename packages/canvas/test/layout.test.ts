@@ -217,6 +217,86 @@ describe('arranging a model', () => {
             .toBeGreaterThanOrEqual(taxonomyBottom + defaultLayoutOptions.rankSpacing);
     });
 
+    /**
+     * A car and what it is made of: wholes above parts, one rank per level,
+     * whichever end the relation happens to be written from. `Wheel` names
+     * its whole as the target, which is the case ELK has to be handed
+     * backwards and whose saved route has to be turned the right way round.
+     */
+    function partonomy(): ViewModel {
+        const names = ['Car', 'Engine', 'Wheel', 'Piston', 'Vehicle', 'Driver'];
+        const end = (isWhole = false) => ({ isConst: false, isAddOnly: false, ...(isWhole ? { isWhole } : {}) });
+        const parthood = (id: string, source: string, target: string, whole: 'source' | 'target') => ({
+            kind: 'relation' as const, id, source: `Sample::${source}`, target: `Sample::${target}`,
+            stereotype: 'componenthood', whole,
+            sourceEnd: end(whole === 'source'), targetEnd: end(whole === 'target')
+        });
+        return {
+            groups: [{ id: 'pkg:Sample', name: 'Sample', isExternal: false, nodes: names.map(name => `Sample::${name}`) }],
+            nodes: names.map(name => ({
+                id: `Sample::${name}`, kind: 'class' as const, name, package: 'Sample',
+                stereotype: name === 'Vehicle' ? 'category' : name === 'Driver' ? 'role' : 'kind',
+                color: '#FF99A3', isExternal: false, attributes: []
+            })),
+            edges: [
+                parthood('engine', 'Car', 'Engine', 'source'),
+                parthood('wheel', 'Wheel', 'Car', 'target'),
+                parthood('piston', 'Engine', 'Piston', 'source'),
+                { kind: 'generalization', id: 'gen:Sample::Car->Sample::Vehicle', source: 'Sample::Car', target: 'Sample::Vehicle' },
+                {
+                    kind: 'relation', id: 'drives', source: 'Sample::Driver', target: 'Sample::Car',
+                    stereotype: 'material', name: 'drives', sourceEnd: end(), targetEnd: end()
+                }
+            ],
+            gensets: []
+        };
+    }
+
+    test('ranks a partonomy-only layout whole above part, from parthoods alone', async () => {
+        const view = partonomy();
+        const display = { ...defaultDisplayOptions, partonomyOnly: true };
+        const sizes = Object.fromEntries(view.nodes.map(node => [node.id, sizeOf(node, display)]));
+        const request = { ...defaultLayoutOptions, groupByPackage: false, partonomyOnly: true };
+        const laid = await autoLayout(view, sizes, {}, request);
+        const at = (name: string) => laid.positions[`Sample::${name}`]!;
+
+        expect(at('Engine').y).toBe(at('Wheel').y);
+        expect(at('Engine').y).toBeGreaterThanOrEqual(at('Car').y + at('Car').height + defaultLayoutOptions.rankSpacing);
+        expect(at('Piston').y).toBeGreaterThanOrEqual(at('Engine').y + at('Engine').height + defaultLayoutOptions.rankSpacing);
+
+        // Inheritance and associations are not drawn, so they have no say:
+        // the same arrangement as a model that never had them.
+        const partsOnly = { ...view, edges: view.edges.filter(edge => edge.kind === 'relation' && edge.whole) };
+        expect(laid.positions).toEqual((await autoLayout(partsOnly, sizes, {}, request)).positions);
+        // And a class that is in no whole-part relation joins the appendix,
+        // after the partonomy rather than above it as another whole.
+        for (const name of ['Vehicle', 'Driver']) {
+            expect(at(name).y).toBeGreaterThan(at('Piston').y);
+        }
+    });
+
+    test('keeps a partonomy route running from the relation\'s own source', async () => {
+        const view = partonomy();
+        const display = { ...defaultDisplayOptions, partonomyOnly: true };
+        const sizes = Object.fromEntries(view.nodes.map(node => [node.id, sizeOf(node, display)]));
+        const laid = await autoLayout(view, sizes, {}, {
+            ...defaultLayoutOptions, groupByPackage: false, partonomyOnly: true, routing: 'orthogonal'
+        });
+        const route = laid.routes.wheel!;
+
+        expect(onBorder(route[0], laid.positions['Sample::Wheel']!)).toBe(true);
+        expect(onBorder(route.at(-1), laid.positions['Sample::Car']!)).toBe(true);
+    });
+
+    test('ranks by inheritance when a view asks for both hierarchies', async () => {
+        const view = partonomy();
+        const sizes = Object.fromEntries(view.nodes.map(node => [node.id, sizeOf(node, display)]));
+        const base = { ...defaultLayoutOptions, groupByPackage: false, taxonomyOnly: true };
+        const both = await autoLayout(view, sizes, {}, { ...base, partonomyOnly: true });
+
+        expect(both.positions).toEqual((await autoLayout(view, sizes, {}, base)).positions);
+    });
+
     test('wraps a broad taxonomy rank deterministically by stable id', async () => {
         const view = taxonomy(8);
         const sizes = Object.fromEntries(view.nodes.map(node => [node.id, sizeOf(node, display)]));
