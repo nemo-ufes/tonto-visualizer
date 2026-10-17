@@ -1,0 +1,13 @@
+package lending in library
+
+use catalogue
+import people from <../../parties/hr.tonto>
+
+role Borrower specializes people.Person
+
+role LentCopy specializes catalogue.Copy
+
+relator Loan {
+    @mediation [1..*] -- [1] (const) Borrower
+    @mediation [1] -- [1] (const) LentCopy
+}

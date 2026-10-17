@@ -1,4 +1,4 @@
-package Parties
+package parties in hr
 
 /// A person, in the everyday sense.
 ///
@@ -18,8 +18,8 @@ kind Organization {
 }
 
 datatype Address {
-    street: string
-    city: string
+    street: const string
+    city: const string
 }
 
 role Employee specializes Person

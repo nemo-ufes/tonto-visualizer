@@ -68,7 +68,13 @@ export function filterItemsOf(view: ViewModel): FilterItem[] {
 export function filterView(view: ViewModel, hiddenIds: Iterable<string>): ViewModel {
     const hidden = new Set(hiddenIds);
     const nodes = view.nodes.filter(node => !hidden.has(node.id));
-    const visible = new Set(nodes.map(node => node.id));
+    const shown = new Set(nodes.map(node => node.id));
+    const groups = view.groups
+        .map(group => ({ ...group, nodes: group.nodes.filter(id => shown.has(id)) }))
+        .filter(group => group.nodes.length > 0);
+    // An import the manifest declares leaves from the ontology's frame, which
+    // is an end as long as the frame is drawn, i.e. while it holds a package.
+    const visible = new Set([...shown, ...groups.filter(group => group.kind === 'ontology').map(group => group.id)]);
     const retained = view.edges.filter(edge =>
         !hidden.has(edge.id) && visible.has(edge.source) && visible.has(edge.target));
     const edgeIds = new Set(retained.map(edge => edge.id));
@@ -80,12 +86,11 @@ export function filterView(view: ViewModel, hiddenIds: Iterable<string>): ViewMo
         return unpaired;
     });
     return {
+        ...(view.kind ? { kind: view.kind } : {}),
         ...(view.focus ? { focus: view.focus } : {}),
         nodes,
         edges,
-        groups: view.groups
-            .map(group => ({ ...group, nodes: group.nodes.filter(id => visible.has(id)) }))
-            .filter(group => group.nodes.length > 0),
+        groups,
         gensets: view.gensets.map(genset => {
             const { general, ...rest } = genset;
             return {

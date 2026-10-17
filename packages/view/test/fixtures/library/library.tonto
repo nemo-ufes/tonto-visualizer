@@ -1,0 +1,8 @@
+/// A lending library: what it holds, and who borrows it.
+///
+/// @namespace https://example.org/library#
+ontology library bundles
+    catalogue from <catalogue.tonto>
+    lending from <lending/lending.tonto>
+
+import places from <../places/places.tonto>

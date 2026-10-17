@@ -2790,6 +2790,9 @@ export async function autoLayout(
     current: Positions,
     request: AutoLayoutRequest = {}
 ): Promise<AutoLayoutResult> {
+    if (view.kind === 'packages') {
+        return packageLayout(view, sizes, current, request);
+    }
     // Taxonomy-only is a view of the same classifiers, not a second semantic
     // model. Removing non-taxonomy edges at the layout boundary lets ELK and
     // every semantic repair optimize the graph the user can actually see,
@@ -3153,6 +3156,100 @@ export async function autoLayout(
     }
     const turned = await attempt(turnedMediations);
     return strandedRelators(view, turned.positions, subject).size < stranded.size ? turned : plain;
+}
+
+/**
+ * A package diagram, laid out as one: the ontology a frame round its member
+ * packages, the ontologies it imports outside, and every dependency a step
+ * from the package depended on down to the one that depends on it.
+ *
+ * Supplier above client is the class diagram's reading carried over: a
+ * package that uses `core` mostly specializes what `core` declares, and in
+ * the class diagram those supertypes sit above. None of the class layout's
+ * repairs apply -- there are no relators to seat or taxonomies to rank -- so
+ * ELK's arrangement is the arrangement.
+ */
+async function packageLayout(
+    view: ViewModel,
+    sizes: Record<string, Size>,
+    current: Positions,
+    request: AutoLayoutRequest
+): Promise<AutoLayoutResult> {
+    const requestedSettings: LayoutOptions = { ...defaultLayoutOptions, ...request };
+    const scale = clampAssociationDistance(requestedSettings.associationDistance)
+        / defaultLayoutOptions.associationDistance;
+    const settings: LayoutOptions = {
+        ...requestedSettings,
+        nodeSpacing: Math.round(requestedSettings.nodeSpacing * scale),
+        rankSpacing: Math.round(requestedSettings.rankSpacing * scale)
+    };
+    const pinned = new Set(request.constraints?.pinned.filter(id => current[id] !== undefined) ?? []);
+    const subject = new Set((request.only ?? view.nodes.map(node => node.id)).filter(id => !pinned.has(id)));
+    if (subject.size === 0) {
+        return { positions: current, routes: {} };
+    }
+    const sizeOf = (id: string): Size => sizes[id] ?? { width: 160, height: 60 };
+    const algorithmOptions = optionsFor(settings, request.routing ?? 'straight');
+    const frames = view.groups.filter(group => group.kind === 'ontology');
+    const framed = new Set(frames.flatMap(group => group.nodes));
+    const nodes = new Set(view.nodes.map(node => node.id));
+    const ends = new Set([...nodes, ...frames.map(group => group.id)]);
+    const graph: ElkNode = {
+        id: 'root',
+        layoutOptions: {
+            ...algorithmOptions,
+            // An import the manifest declares leaves from the frame itself,
+            // which is an edge on a compound node: ELK lays those out only
+            // when it lays the hierarchy out as one.
+            'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
+            'elk.json.edgeCoords': 'ROOT'
+        },
+        children: [
+            ...frames.map(group => ({
+                id: group.id,
+                layoutOptions: {
+                    ...algorithmOptions,
+                    'elk.padding': `[top=${GROUP_PADDING + GROUP_HEADER},left=${GROUP_PADDING},bottom=${GROUP_PADDING},right=${GROUP_PADDING}]`
+                },
+                children: group.nodes.filter(id => nodes.has(id)).map(id => ({ id, ...sizeOf(id) }))
+            })),
+            ...view.nodes.filter(node => !framed.has(node.id)).map(node => ({ id: node.id, ...sizeOf(node.id) }))
+        ],
+        edges: view.edges
+            .filter(edge => ends.has(edge.source) && ends.has(edge.target) && edge.source !== edge.target)
+            .map((edge): ElkEdge => ({ id: edge.id, sources: [edge.target], targets: [edge.source] }))
+    };
+    const laid = await new Elk().layout(graph);
+    const positions: Positions = { ...current };
+    const walk = (node: ElkNode, offsetX: number, offsetY: number) => {
+        for (const child of node.children ?? []) {
+            const x = offsetX + (child.x ?? 0);
+            const y = offsetY + (child.y ?? 0);
+            if (nodes.has(child.id)) {
+                if (subject.has(child.id)) {
+                    positions[child.id] = {
+                        x: Math.round(x),
+                        y: Math.round(y),
+                        width: child.width ?? sizeOf(child.id).width,
+                        height: child.height ?? sizeOf(child.id).height
+                    };
+                }
+            } else {
+                walk(child, x, y);
+            }
+        }
+    };
+    walk(laid, 0, 0);
+    if (request.only || pinned.size > 0) {
+        placePartialLayout(view, positions, current, subject);
+    }
+    if (request.constraints) {
+        applyLayoutConstraints(positions, request.constraints, { movable: subject, direction: settings.direction });
+    }
+    // No routes, whatever the routing: ELK's would run to the frame ELK
+    // drew, and the frame drawn is the one round the packages where they
+    // end up, which a partial layout or a constraint may have moved.
+    return { positions, routes: {} };
 }
 
 /** The relators that did not land between the classes they mediate. */

@@ -12,10 +12,11 @@ import type {
     ContentOptions, DisplayOptions, EdgeRoute, LayoutOptions, ViewConstraints, ViewModel
 } from 'tonto-view';
 import { natureLegend } from 'tonto-view/palette';
+import { edgeTouches } from 'tonto-view/outline';
 import { ASSOCIATION_DISTANCE, clampAssociationDistance, defaultLayoutOptions } from 'tonto-view/options';
 import type { Corner, Handle, Point, Rect, Size } from 'tonto-canvas/draw';
 import {
-    CORNERS, cornerOf, curvedRoute, darkTheme, derivationBetween, distanceToPath, drawDerivation, drawNode, dropHandle,
+    CORNERS, cornerOf, curvedRoute, darkTheme, derivationBetween, distanceToPath, drawDerivation, drawNode, dropHandle, edgeEnds,
     handlesFor, lightTheme, moveHandle, overlaps, pathData, rectBetween, relationSpreads, render, resizeTo, routeEdge, segmentHitsRect, sizeOf,
     trianglePoints
 } from 'tonto-canvas/draw';
@@ -387,8 +388,9 @@ function repaint(edge: string, points: Point[]): void {
     const group = canvas.querySelector(`[data-edge="${cssEscape(edge)}"]`);
     const path = group?.querySelector('path');
     const definition = view.edges.find(candidate => candidate.id === edge);
-    const source = definition ? positions[definition.source] : undefined;
-    const target = definition ? positions[definition.target] : undefined;
+    const ends = edgeEnds(view, positions);
+    const source = definition ? ends[definition.source] : undefined;
+    const target = definition ? ends[definition.target] : undefined;
     const drawn = display?.routing === 'curved' && source && target
         ? curvedRoute(points, source, target, Object.values(positions))
         : { points, data: pathData(points) };
@@ -687,7 +689,7 @@ viewport.addEventListener('pointerup', () => {
     const moved = new Set(drag.ids);
     const rerouted = view.edges
         .filter(edge => {
-            if (moved.has(edge.source) || moved.has(edge.target)) {
+            if (edgeTouches(view, edge, moved)) {
                 return true;
             }
             const points = routes[edge.id]?.points;
@@ -748,11 +750,11 @@ function keepSize(id: string, rect: Rect, sized = true): void {
     host.postMessage({
         type: 'moved',
         positions: { [id]: { x: rect.x, y: rect.y, ...(sized ? { width: rect.width, height: rect.height } : {}) } },
-        rerouted: view.edges.filter(edge => edge.source === id || edge.target === id).map(edge => edge.id),
+        rerouted: view.edges.filter(edge => edgeTouches(view, edge, new Set([id]))).map(edge => edge.id),
         resized: true
     });
     for (const edge of view.edges) {
-        if (edge.source === id || edge.target === id) {
+        if (edgeTouches(view, edge, new Set([id]))) {
             delete routes[edge.id];
         }
     }
@@ -762,12 +764,14 @@ function keepSize(id: string, rect: Rect, sized = true): void {
 /** While a node is being dragged its edges follow it, without a full redraw. */
 function redrawIncidentEdges(moved: Set<string>): void {
     const spreads = relationSpreads(view.edges.filter(edge => guides[edge.id] !== undefined));
+    // A frame is drawn round its packages, so it moves with any of them.
+    const ends = edgeEnds(view, positions);
     for (const edge of view.edges) {
-        if (!moved.has(edge.source) && !moved.has(edge.target)) {
+        if (!edgeTouches(view, edge, moved)) {
             continue;
         }
-        const source = positions[edge.source];
-        const target = positions[edge.target];
+        const source = ends[edge.source];
+        const target = ends[edge.target];
         const path = canvas.querySelector(`[data-edge="${cssEscape(edge.id)}"] path`) as SVGPathElement | null;
         if (!source || !target || !path) {
             continue;

@@ -11,11 +11,31 @@
  * Node only. The canvas gets a `ViewModel`, never this.
  */
 
-import type { LangiumDocument } from 'langium';
-import { DocumentState, URI } from 'langium';
+import { resolve, sep } from 'node:path';
+import type { AstNode, LangiumDocument } from 'langium';
+import { AstUtils, DocumentState, URI } from 'langium';
 import { NodeFileSystem } from 'langium/node';
-import { createTontoServices, isModel } from 'tonto-language';
+import type { Import, Package } from 'tonto-language';
+import { createTontoServices, isModel, isOntologyBody } from 'tonto-language';
 import type { Model } from './language.js';
+import type { SourceLocation } from './model.js';
+import type { OntologyOutline, OutlineImport, OutlinePackage } from './outline.js';
+
+// Ownership is the language's: which package a bundle entry selected, and
+// which ontology an import loaded, as its publication workspace decided them
+// on the last build. The module reads the file system, which is why it is
+// borrowed here and not in `language.ts` (see the note there).
+// eslint-disable-next-line no-restricted-imports
+import { bundleTargets, publicationWorkspace } from '../../../vendor/tontoredesign/packages/language/out/publication/workspace.js';
+
+/**
+ * Where the model a file belongs to starts, by the language's own rule: the
+ * nearest ancestor with a `tonto.json`, else the highest one still holding
+ * models. A package bundled from `lending/lending.tonto` belongs to the
+ * manifest a directory up, and a session over the file's folder alone never
+ * loaded it.
+ */
+export { modelRoot } from 'tonto-language';
 
 export interface SessionOptions {
     /** Directories whose `.tonto` files are loaded, so imports resolve. */
@@ -94,14 +114,126 @@ export class ViewSession {
             this.services.shared.workspace.DocumentBuilder.resetToState(document, DocumentState.Parsed);
         }
         await this.services.shared.workspace.DocumentBuilder.build(documents, { validation: false });
-        return documents
+        const roots = (this.options.workspace ?? []).map(folder => resolve(folder));
+        // The build may have added documents: an ontology imported by location
+        // is loaded during it, from wherever the import points.
+        return this.services.shared.workspace.LangiumDocuments.all.toArray()
+            .sort((one, other) => one.uri.toString().localeCompare(other.uri.toString()))
             // The built-in datatypes are a virtual document the workspace loads
             // so that `name: string` resolves. They are the standard library,
             // not part of anyone's model, and drawing six boxes for them is not
             // what "show datatypes" means.
             .filter(document => document.uri.scheme === 'file')
+            // Nor is an ontology this one imports from outside the workspace.
+            // Its classes are drawn where something here points at them, as
+            // any external class is; it does not join the packages a
+            // workspace-wide view is made of.
+            .filter(document => roots.length === 0 || this.dirty.has(document.uri.toString())
+                || roots.some(root => document.uri.fsPath === root || document.uri.fsPath.startsWith(root + sep)))
             .map(document => document.parseResult.value)
             .filter((value): value is Model => isModel(value));
+    }
+
+    /**
+     * The ontology a manifest declares, as a package diagram reads it, or
+     * `undefined` when the document is not a manifest.
+     *
+     * A manifest is an entry document with a `bundles` clause. An entry whose
+     * packages are all written in it, or a monolithic one, holds the
+     * declarations themselves, and its picture is still a class diagram.
+     *
+     * Read after `models()`, whose build is what decided ownership.
+     */
+    async outline(uri: string): Promise<OntologyOutline | undefined> {
+        await this.open();
+        const document = this.documentOf(uri);
+        const model = document?.parseResult.value;
+        if (!isModel(model)) {
+            return undefined;
+        }
+        const header = model.ontologies[0];
+        if (!header?.bundled) {
+            return undefined;
+        }
+        const publication = publicationWorkspace(this.services.shared);
+        const documentation = this.documentation();
+        const documented = (node: AstNode) => {
+            const text = documentation(node);
+            return text ? { documentation: text } : {};
+        };
+        const located = (node: AstNode) => {
+            const source = locationOf(node);
+            return source ? { source } : {};
+        };
+
+        const importOf = (statement: Import): OutlineImport => {
+            const unit = publication.imported.get(statement);
+            const header = unit?.root?.parseResult.value.ontologies[0];
+            const opens = header && unit?.root?.uri.scheme === 'file' ? locationOf(header) : undefined;
+            const at = locationOf(statement);
+            return {
+                alias: statement.alias ?? '',
+                location: (statement.location ?? '').slice(1, -1),
+                ...(unit ? { ontology: { id: unit.id, name: unit.declaration?.name ?? unit.name } } : {}),
+                ...(at ? { statement: at } : {}),
+                ...(opens ? { header: opens } : {}),
+                ...(header ? documented(header) : {})
+            };
+        };
+        const ontologyImports = (statements: Import[]) =>
+            statements.filter(statement => statement.location !== undefined).map(importOf);
+
+        const members = new Set<Package>();
+        const memberOf = (one: Package, location?: string): OutlinePackage => {
+            members.add(one);
+            const own = AstUtils.getDocument(one).parseResult.value as Model;
+            // A document-level `use` or import applies to the packages of its
+            // document; in the manifest, an import there applies to every
+            // member and is the ontology's, so it is not repeated per package.
+            const inManifest = own === model;
+            const statements = [...(inManifest ? own.imports.filter(one => one.location === undefined) : own.imports), ...one.imports];
+            return {
+                name: one.name ?? '',
+                ...(location ? { location } : {}),
+                available: true,
+                uses: statements
+                    .filter(statement => statement.location === undefined && statement.package?.ref)
+                    .map(statement => {
+                        const at = locationOf(statement);
+                        return { name: statement.package!.ref!.name ?? '', ...(at ? { statement: at } : {}) };
+                    }),
+                imports: ontologyImports(statements),
+                ...located(one),
+                ...documented(one)
+            };
+        };
+
+        const packages: OutlinePackage[] = [];
+        for (const one of model.packages) {
+            if (!isOntologyBody(one) && one.name) {
+                packages.push(memberOf(one));
+            }
+        }
+        for (const bundle of header.bundles) {
+            const location = bundle.location.slice(1, -1);
+            const selected = bundleTargets.get(bundle);
+            if (selected && !members.has(selected)) {
+                packages.push(memberOf(selected, location));
+            } else if (!selected) {
+                const at = locationOf(bundle);
+                packages.push({
+                    name: bundle.name, location, available: false, uses: [], imports: [],
+                    ...(at ? { source: at } : {})
+                });
+            }
+        }
+        return {
+            name: header.name,
+            packages,
+            imports: ontologyImports(model.imports),
+            ...located(header),
+            ...documented(header)
+        };
     }
 
     /** The models of one document only, for a view that follows a single file. */
@@ -144,4 +276,18 @@ export class ViewSession {
 
 function documentUri(model: Model): string | undefined {
     return model.$document?.uri.toString();
+}
+
+function locationOf(node: AstNode): SourceLocation | undefined {
+    const range = node.$cstNode?.range;
+    if (!range) {
+        return undefined;
+    }
+    return {
+        uri: AstUtils.getDocument(node).uri.toString(),
+        line: range.start.line,
+        character: range.start.character,
+        endLine: range.end.line,
+        endCharacter: range.end.character
+    };
 }

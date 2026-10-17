@@ -16,7 +16,11 @@ export interface SourceLocation {
     endCharacter: number;
 }
 
-export type NodeKind = 'class' | 'datatype' | 'enumeration' | 'unresolved';
+/**
+ * `package` is a package diagram's card: a member package of an ontology, or
+ * an ontology the manifest imports, drawn as the package it is to its importer.
+ */
+export type NodeKind = 'class' | 'datatype' | 'enumeration' | 'unresolved' | 'package';
 
 /** One attribute line inside a node's compartment. */
 export interface ViewAttribute {
@@ -58,6 +62,14 @@ export interface ViewNode {
      * already in the view, as for a relation's.
      */
     derivedFrom?: string[];
+    /**
+     * Where a package diagram's card is read from: the document a bundle
+     * entry names, or the location an ontology is imported from. A manifest
+     * is a list of these, and the picture of one should say them too.
+     */
+    location?: string;
+    /** A bundled package or an imported ontology that did not load. */
+    unavailable?: boolean;
     documentation?: string;
     source?: SourceLocation;
 }
@@ -123,7 +135,25 @@ export interface ViewInstantiation {
     target: string;
 }
 
-export type ViewEdge = ViewGeneralization | ViewRelation | ViewInstantiation;
+/**
+ * A package diagram's dependency: `use core`, which lets one package of an
+ * ontology refer to another, or `import shop from <...>`, which brings in
+ * another ontology. The client of an import the manifest declares for every
+ * member is the ontology itself, so `source` may be the id of an ontology
+ * group rather than of a card.
+ */
+export interface ViewDependency {
+    kind: 'dependency';
+    id: string;
+    source: string;
+    target: string;
+    stereotype: 'use' | 'import';
+    /** The alias an import binds, when it is not the imported ontology's own name. */
+    name?: string;
+    source_?: SourceLocation;
+}
+
+export type ViewEdge = ViewGeneralization | ViewRelation | ViewInstantiation | ViewDependency;
 
 /**
  * A generalization set: one triangle shared by several specializations, which
@@ -147,9 +177,22 @@ export interface ViewGroup {
     name: string;
     isExternal: boolean;
     nodes: string[];
+    /**
+     * `ontology` in a package diagram: the ontology that owns the packages
+     * inside, drawn as the UML package that holds them. It is what the
+     * diagram is of rather than a grouping laid over it, so it is drawn
+     * whether or not package boxes are.
+     */
+    kind?: 'ontology';
 }
 
 export interface ViewModel {
+    /**
+     * `packages` for an ontology manifest's diagram: its packages, the
+     * ontologies it imports, and the dependencies between them. Absent for a
+     * class diagram, which is every other view.
+     */
+    kind?: 'packages';
     /** The package the view is centred on, when it is centred on one. */
     focus?: string;
     groups: ViewGroup[];

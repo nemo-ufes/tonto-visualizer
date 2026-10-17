@@ -78,3 +78,10 @@ export const natureLegend: NatureLegendEntry[] = [
 export const DATATYPE_COLOR = COLORS.WHITE;
 export const UNRESOLVED_COLOR = COLORS.GREY;
 
+
+/**
+ * A package diagram's cards. A package has no nature to be coloured by, and
+ * any hue of the nature palette would say one; this is the manila of the
+ * folder the UML icon is drawn after.
+ */
+export const PACKAGE_COLOR = '#F3EBD3';

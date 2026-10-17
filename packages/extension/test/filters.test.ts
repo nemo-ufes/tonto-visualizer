@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { ViewModel, ViewRelation } from 'tonto-view';
+import { derivePackages } from 'tonto-view';
 import { filterItemsOf, filterView } from '../src/filters.js';
 
 function relation(id: string, source: string, target: string, name?: string): ViewRelation {
@@ -94,5 +95,24 @@ describe('class and association filters', () => {
         expect(filtered.edges).toHaveLength(1);
         expect(filtered.edges[0]).not.toHaveProperty('inverseOf');
         expect(filtered.edges[0]?.id).toBe(inverse.id);
+    });
+
+    test('keeps a package diagram one, with the imports that leave its frame', () => {
+        const view = derivePackages({
+            name: 'library',
+            packages: [
+                { name: 'catalogue', available: true, uses: [], imports: [] },
+                { name: 'lending', available: true, uses: [{ name: 'catalogue' }], imports: [] }
+            ],
+            imports: [{ alias: 'places', location: 'places.tonto', ontology: { id: 'places', name: 'places' } }]
+        });
+        const filtered = filterView(view, []);
+        // Without its kind the panel laid a manifest out as a class diagram.
+        expect(filtered.kind).toBe('packages');
+        expect(filtered.edges.map(edge => edge.id)).toEqual(view.edges.map(edge => edge.id));
+        // A frame with nothing left in it is not drawn, and is no end either.
+        const emptied = filterView(view, ['package:catalogue', 'package:lending']);
+        expect(emptied.groups).toEqual([]);
+        expect(emptied.edges).toEqual([]);
     });
 });

@@ -1,0 +1,11 @@
+package catalogue in library
+
+/// A work as published: every copy of it is a copy of the same publication.
+kind Publication
+
+subkind Book specializes Publication
+
+/// A physical exemplar of a publication, which is what is lent.
+kind Copy
+
+subkind Branch specializes places.Building
