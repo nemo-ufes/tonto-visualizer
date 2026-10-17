@@ -54,6 +54,17 @@ describe('the view store', () => {
         });
     });
 
+    test('writes to where its file was moved once it is relocated', async () => {
+        const store = await ViewStore.open(modelUri() as never, 'Sample', true);
+        store.relocate(modelUri('/workspace/views/renamed.tontoview') as never);
+        store.begin('Move');
+        store.move({ 'Sample::Person': { x: 24, y: 48 } });
+
+        await store.dispose();
+
+        expect(filesystem.writeFile.mock.calls.map(call => call[0].path)).toEqual(['/workspace/views/renamed.tontoview']);
+    });
+
     test('does not create a view file for an untouched automatic layout', async () => {
         const store = await ViewStore.open(modelUri() as never, 'Sample', true);
 

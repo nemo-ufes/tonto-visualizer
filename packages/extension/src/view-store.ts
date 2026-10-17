@@ -48,7 +48,7 @@ export class ViewStore {
     private writes: Promise<void> = Promise.resolve();
     private disposal: Promise<void> | undefined;
 
-    private constructor(private readonly uri: vscode.Uri, file: ViewFile, private enabled: boolean) {
+    private constructor(private uri: vscode.Uri, file: ViewFile, private enabled: boolean) {
         this.file = file;
     }
 
@@ -89,6 +89,15 @@ export class ViewStore {
 
     get location(): vscode.Uri {
         return this.uri;
+    }
+
+    /**
+     * Writes from now on go to where the file was moved. Its model was
+     * renamed and the file went with it; a store still writing to the old
+     * name would put the arrangement back beside a model that is not there.
+     */
+    relocate(uri: vscode.Uri): void {
+        this.uri = uri;
     }
 
     /** Copies the current view deliberately, even when automatic saving is off. */

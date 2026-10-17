@@ -108,6 +108,8 @@ With a diagram open, **Tonto: Save Diagram as Named View** copies its current
 content and arrangement to a named file such as
 `views/employment.core-taxonomy.tontoview`. **Tonto: Open Diagram View**
 switches between that model's default and named views.
+Renaming or moving a model in VS Code takes its views along, in the same
+edit as the rename, so undoing the rename puts them back too.
 
 The Tonto language itself is consumed as a pinned submodule under `vendor/`,
 never edited from here — one grammar, one set of checks, one answer about what a

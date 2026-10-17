@@ -52,9 +52,20 @@ view are created lazily, only after the modeller changes the automatic result.
 - [ ] Put the view switcher in the panel toolbar as well as the command palette.
 - [ ] Create an empty named view as an alternative to copying the current one.
 - [ ] Rename and delete named views with explicit, recoverable file operations.
+- [x] Move a model's default and named views with it when it is renamed or
+  moved in the editor, as part of the rename's own edit.
 - [ ] Surface orphaned placements so they can be reassigned after a model rename.
 
 ## Progress log
+
+### 2026-10-17 (views follow renames)
+
+- Renaming or moving a `.tonto` file in VS Code moves its views to the new
+  name in the same workspace edit, so one undo restores both. Legacy sibling
+  views are moved into `views`; a view whose filename belongs to another model
+  (`a.roles.tontoview` beside `a.roles.tonto`) stays; an existing view at the
+  new name is never overwritten. An open diagram follows to the new name and
+  writes to the moved file.
 
 ### 2026-10-17
 
