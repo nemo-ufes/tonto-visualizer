@@ -2,6 +2,8 @@
 /// of thing in that system: the partonomy pattern the partonomy-only view is
 /// arranged for. `System` and `Component` stand in for a generic systems
 /// ontology, and every part role specializes `Component`.
+ontology motorcycle
+
 package motorcycle
 
 category System of functional-complexes

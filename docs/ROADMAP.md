@@ -56,6 +56,15 @@ view are created lazily, only after the modeller changes the automatic result.
 
 ## Progress log
 
+### 2026-10-17
+
+- Followed tontoredesign's main, where every package belongs to a declared
+  ontology: a bare package is an error, and implicit ontologies -- by shared
+  document, name, namespace or `tonto.json` -- are gone. The canvas fixtures
+  carry an `ontology` header above their package, so their ids are unchanged.
+- The university example is now the `academia` manifest, so its benchmark
+  draws resolved references again and is back under its original ceiling.
+
 ### 2026-10-16
 
 - Followed tontoredesign to ontologies as the unit of publication: `ontology`
