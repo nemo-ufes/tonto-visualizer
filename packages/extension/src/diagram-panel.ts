@@ -12,6 +12,7 @@ import {
     contentAfter, derive, derivePackages, expandInverseIds, idsAtSource, packageName, packagesInScope, reconcile
 } from 'tonto-view';
 import { ViewSession } from 'tonto-view/session';
+import type { ViewMove } from './rename.js';
 import { autoLayout } from 'tonto-canvas';
 import { darkTheme, drawnSizes, lightTheme, movedTo, placeNewNodes, render, sizeOf } from 'tonto-canvas/draw';
 import { filterItemsOf, filterView } from './filters.js';
@@ -171,6 +172,39 @@ export class DiagramPanel {
         this.selected = new Set();
         this.hasPresentedView = false;
         await this.refresh();
+    }
+
+    /** Writes the arrangement now, so a file about to be moved holds all of it. */
+    async flushView(): Promise<void> {
+        await this.store?.write();
+    }
+
+    /**
+     * Follows a rename of the model on screen to its new name, and its view to
+     * where the rename moved it.
+     *
+     * The editor reopens a renamed file as a new document, and the panel
+     * follows that only when the editor is the active one; a panel left on
+     * the old document would go on reading a file that no longer exists.
+     */
+    async followRename(files: ReadonlyArray<{ oldUri: vscode.Uri; newUri: vscode.Uri }>, moved: readonly ViewMove[]): Promise<void> {
+        const store = this.store;
+        const document = this.document;
+        if (!store || !document) {
+            return;
+        }
+        const renamed = files.find(file => file.oldUri.toString() === document.uri.toString());
+        const view = moved.find(move => move.from.toString() === store.location.toString())?.to;
+        if (view) {
+            store.relocate(view);
+        }
+        if (!renamed) {
+            return;
+        }
+        const next = await vscode.workspace.openTextDocument(renamed.newUri);
+        if (this.document === document) {
+            await this.show(next, view ?? viewUriFor(renamed.newUri, viewNameFor(renamed.oldUri, store.location)));
+        }
     }
 
     /** Chooses another arrangement over the current model. */

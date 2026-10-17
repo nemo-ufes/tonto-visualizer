@@ -1,8 +1,38 @@
 import * as vscode from 'vscode';
 import { DiagramPanel } from './diagram-panel.js';
+import type { ViewMove } from './rename.js';
+import { viewRenamesFor } from './rename.js';
 
 export function activate(context: vscode.ExtensionContext): void {
+    // What the last rename moved, from the edit that moved it to the panel
+    // that has to follow; the two events of one rename arrive in order.
+    let moved: ViewMove[] = [];
     context.subscriptions.push(
+        // Part of the rename's own edit, not a second operation after it: the
+        // views move with the model in one step, and one undo puts both back.
+        vscode.workspace.onWillRenameFiles(event => {
+            event.waitUntil((async () => {
+                await DiagramPanel.current?.flushView();
+                const edit = new vscode.WorkspaceEdit();
+                const plans = await Promise.all(event.files.map(file => viewRenamesFor(file.oldUri, file.newUri)));
+                moved = plans.flatMap(plan => plan.moves);
+                for (const move of moved) {
+                    edit.renameFile(move.from, move.to, { overwrite: false, ignoreIfExists: true });
+                }
+                const blocked = plans.flatMap(plan => plan.blocked);
+                if (blocked.length > 0) {
+                    void vscode.window.showWarningMessage(
+                        `Left ${blocked.map(uri => uri.path.slice(uri.path.lastIndexOf('/') + 1)).join(', ')} `
+                        + 'where it is: a view of that name already exists for the new model name.');
+                }
+                return edit;
+            })());
+        }),
+        vscode.workspace.onDidRenameFiles(event => {
+            const followed = moved;
+            moved = [];
+            void DiagramPanel.current?.followRename(event.files, followed);
+        }),
         vscode.commands.registerCommand('tonto.viz.open', async (resource?: vscode.Uri) => {
             const document = resource
                 ? await vscode.workspace.openTextDocument(resource)
