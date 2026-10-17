@@ -13,6 +13,7 @@
         "./options": "./out/options.js",
         "./outline": "./out/outline.js",
         "./palette": "./out/palette.js",
+        "./selection": "./out/selection.js",
         "./session": "./out/session.js"
     },
     "files": [

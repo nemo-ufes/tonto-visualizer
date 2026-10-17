@@ -39,7 +39,7 @@ function panelHtml(): string {
     return `<div id="shell">
         <div id="toolbar">
             <button id="fit"></button><button id="arrange"></button><button id="newWindow"></button>
-            <button id="distanceDown"></button><span id="distance"></span><button id="distanceUp"></button>
+            <button id="distanceDown"></button><span id="distance"></span><button id="distanceUp"></button><button id="views"></button>
             <button id="zoomOut"></button><span id="scale"></span><button id="zoomIn"></button>
             <button id="hide" disabled></button><button id="optionsButton"></button><button id="exportButton"></button>
             <span id="stale" hidden></span>
@@ -78,6 +78,39 @@ function sendModel(hidden: string[] = [], stale?: string, fit = false): void {
         ],
         ...(fit ? { fit: true } : {}),
         ...(stale ? { stale } : {})
+    } }));
+}
+
+/** `Person` with a declared age phase set: two phases under one shared triangle. */
+const treeSet = 'set:Sample::PersonAgePhases';
+
+function sendTree(positions?: Record<string, { x: number; y: number; width: number; height: number }>): void {
+    const clazz = (name: string, stereotype: string) => ({
+        id: `Sample::${name}`, kind: 'class' as const, name, package: 'Sample',
+        stereotype, color: '#eee', isExternal: false, attributes: []
+    });
+    const specialization = (name: string) => ({
+        kind: 'generalization' as const,
+        id: `gen:Sample::${name}->Sample::Person`,
+        source: `Sample::${name}`, target: 'Sample::Person', genset: treeSet
+    });
+    window.dispatchEvent(new MessageEvent('message', { data: {
+        type: 'model',
+        view: {
+            groups: [], gensets: [{
+                id: treeSet, name: 'PersonAgePhases', disjoint: true, complete: true,
+                general: 'Sample::Person', specifics: ['Sample::Child', 'Sample::Adult'], categorizers: []
+            }],
+            nodes: [clazz('Person', 'kind'), clazz('Child', 'phase'), clazz('Adult', 'phase')],
+            edges: [specialization('Child'), specialization('Adult')]
+        },
+        positions: positions ?? {
+            'Sample::Person': { x: 120, y: 0, width: 160, height: 42 },
+            'Sample::Adult': { x: 0, y: 200, width: 120, height: 42 },
+            'Sample::Child': { x: 240, y: 200, width: 120, height: 42 }
+        },
+        routes: {}, display: defaultDisplayOptions, content: defaultContentOptions,
+        layout: defaultLayoutOptions, packages: ['Sample'], filters: [], title: 'sample.tonto'
     } }));
 }
 
@@ -337,6 +370,96 @@ describe('the webview and its host protocol', () => {
         // Only the scope is sent: which packages it comes to is the host's to
         // answer, and it answers it again on every keystroke.
         expect(posted('content').at(-1)).toEqual({ type: 'content', content: { scope: 'workspace' } });
+    });
+
+    /**
+     * A branch of a shared tree is a generalization: it can be chosen and it
+     * can be opened. What it cannot be is routed -- the tree decides where its
+     * branches run -- so it is offered no handle to bend, which every other
+     * chosen line has.
+     */
+    test('chooses the branch of a shared tree that was clicked, and offers no bend on it', () => {
+        sendTree();
+
+        const leg = document.querySelector('[data-edge="gen:Sample::Child->Sample::Person"]');
+        expect(leg).not.toBeNull();
+        expect(leg!.tagName.toLowerCase()).toBe('path');
+
+        leg!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1 }));
+
+        expect(posted('selected').at(-1))
+            .toEqual({ type: 'selected', ids: ['gen:Sample::Child->Sample::Person'] });
+        expect(leg!.classList.contains('tv-selected')).toBe(true);
+        // The handles layer is there, and empty: nothing on a leg to take hold of.
+        expect(document.querySelector('.tv-handles')?.children.length).toBe(0);
+        // Nor is it something the panel offers to hide, as no generalization is.
+        expect((document.getElementById('hide') as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    /**
+     * The set is declared in the model and drawn as one shared triangle, so it
+     * is chosen as itself -- and what an arrange then acts on is the classes it
+     * holds, since a set has no place on the canvas of its own.
+     */
+    test('chooses the generalization set from the bar its branches hang from', () => {
+        sendTree();
+        const tree = document.querySelector(`[data-genset="${treeSet}"]`)!;
+        const bar = [...tree.querySelectorAll('path')].find(path =>
+            /^M [\d.]+ ([\d.]+) L [\d.]+ \1$/.test(path.getAttribute('d') ?? ''));
+        expect(bar).toBeDefined();
+
+        bar!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1 }));
+
+        expect(posted('selected').at(-1)).toEqual({ type: 'selected', ids: [treeSet] });
+        expect(tree.classList.contains('tv-selected')).toBe(true);
+        // Nothing to take hold of: a set is not a line anybody routed.
+        expect(document.querySelector('.tv-handles')?.children.length).toBe(0);
+        // Arranging it arranges the taxonomy it draws, not the whole diagram.
+        document.getElementById('arrange')!.click();
+        expect(posted('autoLayout').at(-1)).toEqual({
+            type: 'autoLayout', only: ['Sample::Person', 'Sample::Child', 'Sample::Adult']
+        });
+    });
+
+    /**
+     * A tree is derived from where its classes are, so it has to follow one
+     * being dragged. Nothing about a leg can be nudged the way an association's
+     * endpoint can: the whole figure is drawn again.
+     */
+    test('moves a shared tree with the class being dragged', () => {
+        sendTree();
+        const legOf = () => document.querySelector('[data-edge="gen:Sample::Child->Sample::Person"]')
+            ?.getAttribute('d');
+        const before = legOf();
+
+        const child = document.querySelector('[data-node="Sample::Child"]')!;
+        child.dispatchEvent(new PointerEvent('pointerdown', {
+            bubbles: true, pointerId: 2, clientX: 300, clientY: 220
+        }));
+        document.getElementById('viewport')!.dispatchEvent(new PointerEvent('pointermove', {
+            bubbles: true, pointerId: 2, clientX: 300, clientY: 320
+        }));
+
+        expect(legOf()).not.toBe(before);
+        // Drawn from where the card now is: the leg ends on its top edge,
+        // however far the zoom made the pointer's hundred pixels go.
+        const top = document.querySelector('[data-node="Sample::Child"] rect')!.getAttribute('y');
+        expect(Number(top)).toBeGreaterThan(200);
+        expect(legOf()).toMatch(new RegExp(` ${top}$`));
+        document.getElementById('viewport')!.dispatchEvent(
+            new PointerEvent('pointerup', { bubbles: true, pointerId: 2 }));
+    });
+
+    /**
+     * The commands are in the palette, which is not where somebody looking at
+     * a diagram looks for another arrangement of it.
+     */
+    test('asks the host for another view from the toolbar', () => {
+        sendModel();
+
+        document.getElementById('views')!.click();
+
+        expect(posted('chooseView').at(-1)).toEqual({ type: 'chooseView' });
     });
 
     test('does not offer to hide lines outside the association filter', () => {

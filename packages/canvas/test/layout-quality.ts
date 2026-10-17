@@ -53,7 +53,10 @@ export function measureLayout(
     direction: 'DOWN' | 'RIGHT'
 ): LayoutQuality {
     const edgeById = new Map(view.edges.map(edge => [edge.id, edge]));
-    const paths = Object.entries(rendered.paths);
+    // Tree legs are in `paths` so the canvas can point at them, but a tree's
+    // shape is the tree's: the ceilings measure routed lines, as they always
+    // have, and a bar's legs meeting it are not crossings.
+    const paths = Object.entries(rendered.paths).filter(([id]) => rendered.trees[id] === undefined);
     const lengths = paths.map(([, points]) => pathLength(points));
     let edgeNodeIntersections = 0;
     for (const [id, points] of paths) {

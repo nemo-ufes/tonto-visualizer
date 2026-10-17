@@ -486,12 +486,13 @@ to buy most of what that would.
   view is a subset, which the package filter and hidden-element list already are.
 - **View-file churn.** Positions in a committed file produce diffs. Kept small
   by rounding coordinates and by writing only what differs from the layout.
-- **A generalization drawn as part of a tree cannot be pointed at.** Several
-  generalizations onto the same supertype are gathered into one shared stem, and
-  the legs of that stem are drawn as bare paths inside a single group carrying
-  the generalization set's id: no leg carries the id of the generalization it
-  is, so clicking one selects nothing and double-clicking one opens nothing,
-  though each does have a declaration to open. Tagging the legs is easy; what it
-  needs a decision about is what the leg then *is* to the rest of the panel --
-  offering route handles on one branch of a shared stem would bend a line that
-  is not there, and hiding one leg leaves the tree drawn around a gap.
+- **A generalization drawn as part of a tree cannot be pointed at.** *Settled
+  after this plan closed.* Each leg now carries the id of the generalization it
+  is, so a branch is chosen and opened like any other line, while the group
+  around it goes on naming the set -- which is what the model declares, and what
+  the stem, bar and triangle are drawn for: clicking those chooses the set
+  itself, and double-clicking them opens the `genset` line. The two open
+  questions were answered by what a leg *is*
+  rather than by what it looks like. It is not routed, since the tree decides
+  where its branches run, so it is offered no handle to bend; and it is not
+  hideable, which is not a special case at all -- no generalization is.

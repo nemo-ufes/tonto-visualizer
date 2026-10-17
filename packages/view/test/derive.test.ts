@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { derive, expandInverseIds, idsAtSource, packagesInScope } from '../src/index.js';
+import { derive, expandInverseIds, idsAtSource, nodesInSelection, packagesInScope } from '../src/index.js';
 import { ViewSession } from '../src/session.js';
 
 const parties = resolve(import.meta.dirname, 'fixtures/parties');
@@ -251,6 +251,23 @@ kind Animal {
         expect(picked.groups.filter(group => !group.isExternal).map(group => group.name)).toEqual(['parties']);
     });
 
+    /**
+     * A generalization has no declaration of its own -- `phase Child
+     * specializes Person` states the class and the specialization together --
+     * so the line it is opened at is the parent's name inside the child.
+     */
+    test('says where a specialization is written', async () => {
+        const view = await viewOfText(`
+package Sample
+kind Person
+phase Child specializes Person
+`);
+        const edge = view.edges.find(candidate => candidate.kind === 'generalization');
+        expect(edge?.id).toBe('gen:Sample::Child->Sample::Person');
+        expect(edge && 'source_' in edge ? edge.source_ : undefined)
+            .toMatchObject({ line: 3, character: 24, endLine: 3, endCharacter: 30 });
+    });
+
     test('drops datatype nodes and the attributes typed by them together', async () => {
         const view = await viewOfFixture({ showDatatypes: false });
         expect(view.nodes.some(node => node.kind === 'datatype' || node.kind === 'enumeration')).toBe(false);
@@ -362,6 +379,44 @@ subkind Man specializes Person {
         // the validator, which is worse than drawing both.
         expect(relation(view, 'worksAt').inverseOf).toBeUndefined();
         expect(relation(view, 'hasFather').inverseOf).toBeUndefined();
+    });
+
+    /**
+     * A generalization set is declared on a line of its own, so the cursor
+     * being on it names the set -- and only the set. A specialization shares
+     * its class's line, and naming both from one cursor would be two answers to
+     * one question.
+     */
+    test('finds a generalization set at the line it is declared on', async () => {
+        const view = await viewOfText(`
+package Sample
+kind Person
+phase Child specializes Person
+phase Adult specializes Person
+disjoint complete genset AgePhases where Child, Adult specializes Person
+`);
+        const genset = view.gensets[0]!;
+        expect(genset.id).toBe('set:Sample::AgePhases');
+        expect(genset.source).toBeDefined();
+        expect(idsAtSource(view, genset.source!.uri, genset.source!.line)).toEqual([genset.id]);
+        // The class's own line still names the class, and nothing else.
+        const child = node(view, 'Sample::Child');
+        expect(idsAtSource(view, child.source!.uri, child.source!.line)).toEqual([child.id]);
+    });
+
+    test('reads a chosen generalization set as the classes it holds', async () => {
+        const view = await viewOfText(`
+package Sample
+kind Person
+phase Child specializes Person
+phase Adult specializes Person
+disjoint complete genset AgePhases where Child, Adult specializes Person
+`);
+        expect(nodesInSelection(view, ['set:Sample::AgePhases']))
+            .toEqual(['Sample::Person', 'Sample::Child', 'Sample::Adult']);
+        // Anything else stands for itself, and only what the view still holds.
+        expect(nodesInSelection(view, ['Sample::Child', 'Sample::Gone']))
+            .toEqual(['Sample::Child']);
     });
 
     test('finds relation declarations as well as classes at an editor line', async () => {

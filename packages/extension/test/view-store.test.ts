@@ -14,7 +14,7 @@ vi.mock('vscode', () => ({
 }));
 
 import {
-    ViewStore, viewChoicesFor, viewFileExists, viewNameFor, viewNameOf, viewUriFor
+    ViewStore, viewChoicesFor, viewFileExists, viewNameFor, viewNameOf, viewToShow, viewUriFor
 } from '../src/view-store.js';
 
 function modelUri(path = '/workspace/model.tonto') {
@@ -22,6 +22,11 @@ function modelUri(path = '/workspace/model.tonto') {
         path,
         with(change: { path: string }) {
             return modelUri(change.path);
+        },
+        // A URI is what one document is told apart from another by, here as in
+        // VS Code: without it two of these fakes are the same string.
+        toString() {
+            return `file://${path}`;
         }
     };
 }
@@ -263,6 +268,59 @@ describe('the view store', () => {
             nodes: { 'Sample::Person': { x: 24, y: 48 } },
             content: { hidden: ['Sample::Employee'] }
         });
+    });
+
+    /**
+     * A view of `employment.v2.tonto` sits beside `employment.tonto` under a
+     * name that begins the same way. Offered as a view of the shorter model it
+     * would open somebody else's arrangement over this one's classes.
+     */
+    test('leaves alone the views of a model whose name begins the same way', async () => {
+        filesystem.readDirectory.mockResolvedValue([
+            ['employment.tontoview', 1],
+            ['employment.core-taxonomy.tontoview', 1],
+            ['employment.v2.tonto', 1],
+            ['employment.v2.tontoview', 1],
+            ['employment.v2.roles.tontoview', 1]
+        ]);
+        const model = modelUri('/workspace/employment.tonto');
+
+        const views = await viewChoicesFor(model as never);
+
+        expect(views.map(view => view.description)).toEqual([
+            'views/employment.tontoview',
+            'views/employment.core-taxonomy.tontoview'
+        ]);
+        // Nor is one read as a name of this model's, wherever it comes from.
+        expect(viewNameFor(model as never, modelUri('/workspace/views/employment.v2.roles.tontoview') as never))
+            .toBeUndefined();
+        expect(viewNameFor(model as never, modelUri('/workspace/employment.v2.roles.tontoview') as never))
+            .toBeUndefined();
+        expect(viewNameFor(model as never, modelUri('/elsewhere/employment.roles.tontoview') as never))
+            .toBeUndefined();
+    });
+
+    test('opens a document in the view it was last seen in', () => {
+        const model = modelUri('/workspace/employment.tonto');
+        const other = modelUri('/workspace/parties.tonto');
+        const named = viewUriFor(model as never, 'core-taxonomy');
+        const asked = viewUriFor(model as never, 'roles');
+        const seen = new Map([[model.toString(), named as unknown as never]]);
+        const showing = { document: model as never, view: named };
+
+        // What was asked for outranks everything.
+        expect(viewToShow(model as never, asked, showing, seen).path)
+            .toBe('/workspace/views/employment.roles.tontoview');
+        // Coming back to the editor from the webview keeps what is open.
+        expect(viewToShow(model as never, undefined, showing, new Map()).path)
+            .toBe('/workspace/views/employment.core-taxonomy.tontoview');
+        // So does following the editor to another model and back.
+        expect(viewToShow(model as never, undefined,
+            { document: other as never, view: viewUriFor(other as never) }, seen).path)
+            .toBe('/workspace/views/employment.core-taxonomy.tontoview');
+        // A document nothing is known about opens in its default view.
+        expect(viewToShow(other as never, undefined, showing, seen).path)
+            .toBe('/workspace/views/parties.tontoview');
     });
 
     test('checks whether a proposed named view already exists', async () => {

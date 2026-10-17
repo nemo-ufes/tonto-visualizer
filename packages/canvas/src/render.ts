@@ -52,6 +52,26 @@ export interface Rendered {
     guides: Record<string, Point[]>;
     /** Lines or neighboring decorators that enter a generalization head. */
     headCollisions: number;
+    /**
+     * The generalization set each line drawn as a leg of a shared tree belongs
+     * to.
+     *
+     * A leg is a generalization like any other -- it can be pointed at, chosen
+     * and opened -- but its shape is the tree's rather than its own, so
+     * whatever offers to bend a line has to know not to offer it here.
+     */
+    trees: Record<string, string>;
+    /**
+     * The stem and bar of each tree, by the set it draws.
+     *
+     * The set is a thing in the model with a declaration of its own, and this
+     * is the line it is drawn as: kept apart from `paths` because a set is not
+     * an edge -- nothing routes it, and nothing may offer to bend it -- but a
+     * pointer near it is still asking for it.
+     */
+    spines: Record<string, Point[]>;
+    /** Where each tree's triangle meets its parent, for `drawTrees` to redraw it in the same place. */
+    anchors: Record<string, Point>;
 }
 
 interface HeadMarker {
@@ -378,14 +398,16 @@ export function render(input: RenderInput): Rendered {
             placer.take(strip);
         }
     }
-    const buses: BusLine[] = [];
     const treeHeads: HeadMarker[] = [];
     const treeHeadStrokes: HeadStroke[] = [];
-    const treeMarkup = trees.plans
-        .map(plan => drawTree(
-            plan, positions, theme, placer, font, rects, buses, assigned.stems, treeHeads, treeHeadStrokes
-        ))
-        .join('');
+    // The legs join the routed lines once they are drawn: a leg is a line the
+    // reader can point at, and everything that answers "which line is this?"
+    // asks `paths`.
+    const drawnTrees = drawPlannedTrees(trees.plans, positions, theme, selected, rects, placer, font, {
+        stems: assigned.stems, heads: treeHeads, headStrokes: treeHeadStrokes
+    });
+    const treeMarkup = Object.values(drawnTrees.markup).join('');
+    Object.assign(paths, drawnTrees.legs);
 
     // Labels are drawn last, over the boxes. A line may pass behind a class --
     // that reads as a line -- but a cardinality hidden behind one has simply
@@ -520,14 +542,19 @@ text {
 .tv-ontology text { font-weight: 600; font-size: ${font.name}px; fill: ${theme.text}; }
 .tv-location { font-size: ${font.attribute}px; fill-opacity: 0.72; }
 .tv-selected rect { stroke: ${theme.accent}; stroke-width: 2.5; }
-.tv-selected path { stroke: ${theme.accent}; stroke-width: 2.2; }
+/* The second selector is for a leg of a shared tree, which carries its own id
+   and so is chosen as itself rather than through a group around it. */
+.tv-selected path, path.tv-selected { stroke: ${theme.accent}; stroke-width: 2.2; }
 .tv-unresolved rect { stroke-dasharray: 5 3; }
 .tv-external rect { stroke-dasharray: 2 2; }
 </style>
 <rect x="${origin.x}" y="${origin.y}" width="${width}" height="${height}" fill="${theme.background}"/>
 ${groups.map(group => drawGroup(group, font)).join('')}${edgeMarkup}${derivationMarkup}${treeMarkup}${nodeMarkup}<g class="tv-labels">${labelMarkup}</g></svg>`;
 
-    return { svg, bounds: { x: origin.x, y: origin.y, width, height }, paths, guides, headCollisions };
+    return {
+        svg, bounds: { x: origin.x, y: origin.y, width, height }, paths, guides, headCollisions,
+        trees: drawnTrees.inTree, spines: drawnTrees.spines, anchors: drawnTrees.anchors
+    };
 }
 
 /** Generalizations whose marker footprint, not only tip, reaches a neighbour. */
@@ -1847,18 +1874,133 @@ function treeStems(plans: TreePlan[], positions: Positions): TreeStem[] {
     return stems;
 }
 
+interface DrawnTree {
+    markup: string;
+    /** The polyline of each leg, by the generalization it is. */
+    legs: Record<string, Point[]>;
+    /** The stem and the bar, as one line, for a pointer to be measured against. */
+    spine: Point[];
+    /** Where the triangle's tip met the parent. */
+    apex?: Point;
+}
+
+/** Every tree in a view, drawn. */
+export interface TreeDrawing {
+    /** What each tree is drawn as, by the set it draws. */
+    markup: Record<string, string>;
+    /** The polyline of each leg, by the generalization it is. */
+    legs: Record<string, Point[]>;
+    /** The set each leg belongs to. */
+    inTree: Record<string, string>;
+    /** The stem and bar of each tree, by the set. */
+    spines: Record<string, Point[]>;
+    /** Where each triangle meets its parent, from the parent's corner, by the set. */
+    anchors: Record<string, Point>;
+    /** The specializations the trees took over, which nothing else may draw. */
+    covered: Set<string>;
+}
+
+/**
+ * The trees of a view, drawn on their own.
+ *
+ * A tree is the one part of the picture whose shape is not a line between two
+ * boxes: it is a triangle, a stem, a bar and a leg for each subtype, all of it
+ * derived from where those boxes are. So a class being dragged has to redraw
+ * its trees, and redrawing the whole diagram on every pointer move is not what
+ * the canvas does for anything else. `render` draws the trees through this too,
+ * so what a drag leaves behind is what the next full drawing produces.
+ */
+export function drawTrees(input: {
+    view: ViewModel;
+    positions: Positions;
+    theme?: Theme;
+    selection?: Iterable<string>;
+    /** Boxes the bars and legs keep clear of. Every card, unless said otherwise. */
+    obstacles?: Rect[];
+    /** What the labels are set in, so a redrawn tree's label is the size of a drawn one. */
+    display?: Pick<DisplayOptions, 'fontFamily' | 'fontSize'>;
+    /**
+     * Where the last full drawing put each triangle, as `render` reports it.
+     *
+     * Only a full drawing knows that: it shares the parent's border out among
+     * every line that meets it. A tree redrawn without it fell back to an even
+     * share, and its triangle jumped sideways the moment a drag began.
+     */
+    anchors?: Readonly<Record<string, Point>>;
+}): TreeDrawing {
+    const { view, positions } = input;
+    const obstacles = input.obstacles ?? view.nodes
+        .map(node => positions[node.id])
+        .filter((rect): rect is Rect => rect !== undefined);
+    const planned = planTrees(view, positions);
+    const stems = new Map<string, Point>();
+    for (const plan of planned.plans) {
+        const anchor = input.anchors?.[plan.marker ?? plan.general];
+        const general = positions[plan.general];
+        if (anchor && general) {
+            stems.set(treeStemId(plan), { x: general.x + anchor.x, y: general.y + anchor.y });
+        }
+    }
+    return {
+        ...drawPlannedTrees(
+            planned.plans, positions, input.theme ?? lightTheme,
+            new Set(input.selection ?? []), obstacles, new LabelPlacer(obstacles, [], {}, fontMetrics(input.display ?? { fontFamily: 'sans', fontSize: 'medium' })),
+            fontMetrics(input.display ?? { fontFamily: 'sans', fontSize: 'medium' }), { stems }
+        ),
+        covered: planned.covered
+    };
+}
+
+function drawPlannedTrees(
+    plans: TreePlan[], positions: Positions, theme: Theme, selected: ReadonlySet<string>,
+    obstacles: Rect[], placer: LabelPlacer, font: FontMetrics,
+    anchors: {
+        stems?: ReadonlyMap<string, Point>;
+        heads?: HeadMarker[];
+        headStrokes?: HeadStroke[];
+    } = {}
+): Omit<TreeDrawing, 'covered'> {
+    const buses: BusLine[] = [];
+    const markup: Record<string, string> = {};
+    const legs: Record<string, Point[]> = {};
+    const inTree: Record<string, string> = {};
+    const spines: Record<string, Point[]> = {};
+    const apexes: Record<string, Point> = {};
+    for (const plan of plans) {
+        const tree = drawTree(
+            plan, positions, theme, placer, font, obstacles, buses,
+            anchors.stems, anchors.heads, anchors.headStrokes, selected
+        );
+        if (!tree.markup) {
+            continue;
+        }
+        const set = plan.marker ?? plan.general;
+        markup[set] = tree.markup;
+        spines[set] = tree.spine;
+        const general = positions[plan.general];
+        if (tree.apex && general) {
+            apexes[set] = { x: tree.apex.x - general.x, y: tree.apex.y - general.y };
+        }
+        for (const [edge, leg] of Object.entries(tree.legs)) {
+            legs[edge] = leg;
+            inTree[edge] = set;
+        }
+    }
+    return { markup, legs, inTree, spines, anchors: apexes };
+}
+
 function drawTree(
     plan: TreePlan, positions: Positions, theme: Theme, placer: LabelPlacer, font: FontMetrics,
     obstacles: Rect[] = [],
     buses: BusLine[] = [], stems: ReadonlyMap<string, Point> = new Map(),
-    heads: HeadMarker[] = [], headStrokes: HeadStroke[] = []
-): string {
+    heads: HeadMarker[] = [], headStrokes: HeadStroke[] = [], selected: ReadonlySet<string> = new Set()
+): DrawnTree {
     const general = positions[plan.general];
     const children = plan.children
         .map(id => ({ id, rect: positions[id] }))
         .filter((entry): entry is { id: string; rect: Rect } => entry.rect !== undefined);
     if (!general || children.length < 2) {
-        return '';
+        return { markup: '', legs: {}, spine: [] };
     }
 
     // Which side of the general the bus sits on -- a majority vote, not a
@@ -1900,25 +2042,47 @@ function drawTree(
     const crossHigh = Math.max(...children.map(entry => axis.cross(entry.rect)), axis.crossOfPoint(base));
     buses.push({ vertical: axis.vertical, at: bus, from: crossLow, to: crossHigh });
 
-    let markup = `<g class="tv-edge tv-tree"${plan.marker ? ` data-genset="${escape(plan.marker)}"` : ''}>`;
+    const set = plan.marker ?? plan.general;
+    // The set is a thing in the model, so it can be chosen like one -- and what
+    // is drawn chosen is the whole tree, since the whole tree is what it is.
+    // One leg chosen is one specialization; that is a different answer, and it
+    // looks different.
+    let markup = `<g class="tv-edge tv-tree${selected.has(set) ? ' tv-selected' : ''}"`
+        + `${plan.marker ? ` data-genset="${escape(plan.marker)}"` : ''}>`;
     // The triangle's two base corners sit either side of `base` along the
     // cross axis -- the same nine pixels a vertical tree always used, now
     // measured across whichever axis the bus actually runs on.
     const cornerLeft = axis.point(axis.primary(base), crossAt - 9);
     const cornerRight = axis.point(axis.primary(base), crossAt + 9);
-    heads.push({ owner: plan.marker ?? plan.general, points: [apex, cornerLeft, cornerRight] });
+    heads.push({ owner: set, points: [apex, cornerLeft, cornerRight] });
     markup += `<polygon class="tv-marker" points="${round(apex.x)},${round(apex.y)} `
         + `${round(cornerLeft.x)},${round(cornerLeft.y)} ${round(cornerRight.x)},${round(cornerRight.y)}"/>`;
     const busStart = axis.point(bus, crossAt);
-    headStrokes.push({ owner: plan.marker ?? plan.general, points: [base, busStart] });
+    headStrokes.push({ owner: set, points: [base, busStart] });
     markup += `<path d="M ${round(base.x)} ${round(base.y)} L ${round(busStart.x)} ${round(busStart.y)}"/>`;
     const left = crossLow;
     const right = crossHigh;
     const busLeft = axis.point(bus, left);
     const busRight = axis.point(bus, right);
     markup += `<path d="M ${round(busLeft.x)} ${round(busLeft.y)} L ${round(busRight.x)} ${round(busRight.y)}"/>`;
+    // A leg is one generalization, and says so: the group around it names the
+    // set, which is what the tree is, and not what any one branch of it is.
+    // Without the id on the leg, clicking a branch chose nothing and
+    // double-clicking it opened nothing, though each has a line of text behind
+    // it like every other element in the drawing.
+    const legs: Record<string, Point[]> = {};
     for (const entry of children) {
-        markup += `<path d="${legPath(entry.rect, bus, obstacles, axis)}"/>`;
+        const points = legPath(entry.rect, bus, obstacles, axis);
+        const edge = plan.edgeOf[entry.id];
+        if (edge) {
+            legs[edge] = points;
+        }
+        // Drawn chosen here as well as marked in the panel: a redraw comes with
+        // every keystroke, and a branch that lost its highlight on one would
+        // leave the modeller holding a selection the picture denies.
+        const chosen = edge !== undefined && selected.has(edge);
+        markup += `<path${edge ? ` data-edge="${escape(edge)}"` : ''}`
+            + `${chosen ? ' class="tv-selected"' : ''} d="${pathData(points)}"/>`;
     }
 
     if (plan.label) {
@@ -1946,17 +2110,24 @@ function drawTree(
             axis.point(near, baseCross + width / 2 + 14),
             axis.point(near, baseCross - width / 2 - 14)
         ], label, plan.marker ?? plan.general);
-        markup += `<text x="${round(at.x)}" y="${round(at.y)}" fill="${theme.muted}" text-anchor="middle" `
+        markup += `<text data-for="${escape(set)}" x="${round(at.x)}" y="${round(at.y)}" `
+            + `fill="${theme.muted}" text-anchor="middle" `
             + `paint-order="stroke" stroke="${theme.background}" stroke-width="3" stroke-linejoin="round">`
             + `${escape(label)}</text>`;
     }
-    return markup + '</g>';
+    // Down the stem and along the whole bar, retracing the middle: a pointer is
+    // measured against this, and every segment of it is a place the set is
+    // drawn.
+    const spine = [apex, axis.point(bus, crossAt), axis.point(bus, left), axis.point(bus, right)];
+    return { markup: markup + '</g>', legs, spine, apex };
 }
 
 interface TreePlan {
     general: string;
     children: string[];
     edges: string[];
+    /** The generalization each child's leg is, so a leg can be pointed at. */
+    edgeOf: Record<string, string>;
     label?: string;
     marker?: string;
     /** Which of this parent's trees this is, and how many it has. */
@@ -1979,12 +2150,13 @@ function planTrees(view: ViewModel, positions: Positions): { plans: TreePlan[]; 
             continue;
         }
         const constraints = [genset.disjoint ? 'disjoint' : '', genset.complete ? 'complete' : ''].filter(Boolean);
+        const specializations = view.edges
+            .filter(edge => edge.kind === 'generalization' && edge.genset === genset.id);
         plans.push({
             general: genset.general,
             children: genset.specifics,
-            edges: view.edges
-                .filter(edge => edge.kind === 'generalization' && edge.genset === genset.id)
-                .map(edge => edge.id),
+            edges: specializations.map(edge => edge.id),
+            edgeOf: Object.fromEntries(specializations.map(edge => [edge.source, edge.id])),
             label: constraints.length > 0 ? `${genset.name} {${constraints.join(', ')}}` : genset.name,
             marker: genset.id,
             lane: { index: 0, count: 1 }
@@ -2041,7 +2213,7 @@ function legEdge(child: Rect, bus: number, axis: TreeAxis): number {
  * nothing to do with is read as ending there -- so it steps aside, comes down
  * beside the obstacle and turns back in just above the subtype.
  */
-function legPath(child: Rect, bus: number, obstacles: Rect[], axis: TreeAxis): string {
+function legPath(child: Rect, bus: number, obstacles: Rect[], axis: TreeAxis): Point[] {
     const centre = axis.cross(child);
     const edge = legEdge(child, bus, axis);
     const direction = edge >= bus ? 1 : -1;
@@ -2049,7 +2221,7 @@ function legPath(child: Rect, bus: number, obstacles: Rect[], axis: TreeAxis): s
     const to = axis.point(edge, centre);
     const blocking = obstacles.filter(rect => rect !== child && segmentHitsRect(from, to, rect, 2));
     if (blocking.length === 0) {
-        return `M ${round(from.x)} ${round(from.y)} L ${round(to.x)} ${round(to.y)}`;
+        return [from, to];
     }
 
     const turn = edge - direction * 22;
@@ -2063,13 +2235,11 @@ function legPath(child: Rect, bus: number, obstacles: Rect[], axis: TreeAxis): s
                     || segmentHitsRect(viaBus, viaTurn, other, 2)
                     || segmentHitsRect(viaTurn, backIn, other, 2)));
             if (clear) {
-                return `M ${round(from.x)} ${round(from.y)} L ${round(viaBus.x)} ${round(viaBus.y)} `
-                    + `L ${round(viaTurn.x)} ${round(viaTurn.y)} L ${round(backIn.x)} ${round(backIn.y)} `
-                    + `L ${round(to.x)} ${round(to.y)}`;
+                return [from, viaBus, viaTurn, backIn, to];
             }
         }
     }
-    return `M ${round(from.x)} ${round(from.y)} L ${round(to.x)} ${round(to.y)}`;
+    return [from, to];
 }
 
 /**
