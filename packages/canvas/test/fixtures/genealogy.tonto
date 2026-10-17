@@ -5,6 +5,8 @@
 // about (which filiation is biological, when a marriage began, which record
 // says so) has somewhere to be written.
 
+ontology genealogy
+
 package Genealogy
 
 enum BloodGroup {
