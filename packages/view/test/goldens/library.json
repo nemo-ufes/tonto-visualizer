@@ -1,0 +1,84 @@
+{
+  "kind": "packages",
+  "groups": [
+    {
+      "id": "ontology:library",
+      "name": "library",
+      "isExternal": false,
+      "nodes": [
+        "package:catalogue",
+        "package:lending"
+      ],
+      "kind": "ontology"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "package:catalogue",
+      "kind": "package",
+      "name": "catalogue",
+      "package": "library",
+      "color": "#F3EBD3",
+      "isExternal": false,
+      "attributes": [],
+      "location": "catalogue.tonto"
+    },
+    {
+      "id": "package:lending",
+      "kind": "package",
+      "name": "lending",
+      "package": "library",
+      "color": "#F3EBD3",
+      "isExternal": false,
+      "attributes": [],
+      "location": "lending/lending.tonto"
+    },
+    {
+      "id": "import:places",
+      "kind": "package",
+      "name": "places",
+      "stereotype": "ontology",
+      "color": "#F3EBD3",
+      "isExternal": true,
+      "attributes": [],
+      "location": "../places/places.tonto",
+      "documentation": "Where things are: the buildings that stand in cities.\n\nNamespace: `https://example.org/places#`"
+    },
+    {
+      "id": "import:hr",
+      "kind": "package",
+      "name": "hr",
+      "stereotype": "ontology",
+      "color": "#F3EBD3",
+      "isExternal": true,
+      "attributes": [],
+      "location": "../../parties/hr.tonto",
+      "documentation": "People and organizations, and the contracts that employ them.\n\nNamespace: `https://example.org/hr#`"
+    }
+  ],
+  "edges": [
+    {
+      "kind": "dependency",
+      "id": "import:ontology:library->import:places",
+      "source": "ontology:library",
+      "target": "import:places",
+      "stereotype": "import"
+    },
+    {
+      "kind": "dependency",
+      "id": "use:package:lending->package:catalogue",
+      "source": "package:lending",
+      "target": "package:catalogue",
+      "stereotype": "use"
+    },
+    {
+      "kind": "dependency",
+      "id": "import:package:lending->import:hr",
+      "source": "package:lending",
+      "target": "import:hr",
+      "stereotype": "import",
+      "name": "people"
+    }
+  ],
+  "gensets": []
+}

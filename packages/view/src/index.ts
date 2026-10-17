@@ -6,5 +6,6 @@ export * from './inverses.js';
 export * from './palette.js';
 export * from './source.js';
 export { colorOf } from './natures.js';
-export { derive } from './derive.js';
+export { derive, packageName } from './derive.js';
+export * from './outline.js';
 export type { DeriveInput } from './derive.js';

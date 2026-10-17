@@ -16,7 +16,8 @@ import {
     segmentsProperlyCross, sideOf
 } from './geometry.js';
 import {
-    fontMetrics, multiplicityLabel, NODE, nodeLabel, stereotypeLabel, textWidth, wrappedAttributeLines
+    fontMetrics, multiplicityLabel, NODE, nodeLabel, PACKAGE_TAB, packageLocationLine, packageTabWidth,
+    stereotypeLabel, textWidth, wrappedAttributeLines
 } from './measure.js';
 import type { FontMetrics } from './measure.js';
 import type { Positions } from './place.js';
@@ -190,6 +191,11 @@ function mergedWith(edge: ViewRelation, partner: ViewRelation): ViewRelation {
  * over it.
  */
 function shownView(view: ViewModel, display: DisplayOptions): ViewModel {
+    // A package diagram has no taxonomy or partonomy to rank by, and either
+    // filter would leave it with no lines at all.
+    if (view.kind === 'packages') {
+        return view;
+    }
     if (display.taxonomyOnly) {
         return { ...view, edges: view.edges.filter(edge => edge.kind === 'generalization') };
     }
@@ -209,7 +215,12 @@ export function render(input: RenderInput): Rendered {
     const rects = view.nodes
         .map(node => positions[node.id])
         .filter((rect): rect is Rect => rect !== undefined);
-    const groups = display.showPackageGroups ? groupBoxes(view, positions) : [];
+    // An ontology frame is what a package diagram is of, so it is drawn
+    // whatever the package boxes are set to -- and an import the manifest
+    // declares leaves from it, so it is an end lines are routed to as well.
+    const groups = groupBoxes(view, positions)
+        .filter(group => display.showPackageGroups || group.kind === 'ontology');
+    const ends = withFrames(positions, groups);
 
     // Decided before ports are assigned, not only before routing: a tree's
     // member edges take no share of the border themselves -- the shared stem
@@ -240,7 +251,7 @@ export function render(input: RenderInput): Rendered {
     // part of final routing quality instead of blindly preferring either rule.
     const routeCandidate = (associationAnchors: 'ray' | 'even', reserveHeads: boolean) => {
         const assigned = assignPorts(
-            portInput, positions, through, stems, associationAnchors, input.direction, reserveHeads
+            portInput, ends, through, stems, associationAnchors, input.direction, reserveHeads
         );
         const crowdedHeads = crowdedGeneralizationHeads(portInput, stems, assigned, input.direction);
         const guides: Record<string, Point[]> = {};
@@ -252,8 +263,8 @@ export function render(input: RenderInput): Rendered {
             if (trees.covered.has(edge.id)) {
                 continue;
             }
-            const source = positions[edge.source];
-            const target = positions[edge.target];
+            const source = ends[edge.source];
+            const target = ends[edge.target];
             if (!source || !target) {
                 continue;
             }
@@ -284,7 +295,7 @@ export function render(input: RenderInput): Rendered {
         // purchase that local fix with a new centre-line crossing elsewhere.
         // Try a whole fan together: adding its stubs one at a time can make the
         // first stub cross a neighbor that has not received its own stub yet.
-        let drawable = drawableRoutes(guides, drawn, positions, rects, display.routing === 'curved');
+        let drawable = drawableRoutes(guides, drawn, ends, rects, display.routing === 'curved');
         let faults = routeFaults(drawable.paths, drawn, positions);
         for (const ids of relationSpreadGroups(drawn)) {
             const previous = new Map(ids.map(id => [id, guides[id]!]).filter((entry): entry is [string, Point[]] =>
@@ -297,7 +308,7 @@ export function render(input: RenderInput): Rendered {
                         guides[id] = candidate;
                     }
                 }
-                const candidate = drawableRoutes(guides, drawn, positions, rects, display.routing === 'curved');
+                const candidate = drawableRoutes(guides, drawn, ends, rects, display.routing === 'curved');
                 const candidateFaults = routeFaults(candidate.paths, drawn, positions);
                 if (candidateFaults.intersections <= faults.intersections
                     && candidateFaults.crossings <= faults.crossings) {
@@ -318,7 +329,7 @@ export function render(input: RenderInput): Rendered {
             for (const id of ids) {
                 guides[id] = squareApproaches.get(id)!;
             }
-            const candidate = drawableRoutes(guides, drawn, positions, rects, display.routing === 'curved');
+            const candidate = drawableRoutes(guides, drawn, ends, rects, display.routing === 'curved');
             const candidateFaults = routeFaults(candidate.paths, drawn, positions);
             if (candidateFaults.intersections <= faults.intersections
                 && candidateFaults.crossings <= faults.crossings) {
@@ -350,6 +361,23 @@ export function render(input: RenderInput): Rendered {
     // A copy: the placer is told about the bar of each tree as it is drawn,
     // and `paths` is what the canvas hit-tests edges against.
     const placer = new LabelPlacer(rects, groups.map(group => group.rect), { ...paths }, font);
+    // A package box's dashed border is cheap to write across. An ontology
+    // frame's is a solid line, and its tab holds a name: a label there was
+    // struck through, so the frame's edges and tab are taken like a card.
+    for (const group of groups.filter(one => one.kind === 'ontology')) {
+        const { x, y, width, height } = group.rect;
+        const top = y + GROUP_HEADER;
+        const tab = Math.min(width, textWidth(group.name, font.name, true, font.kind) + 16);
+        placer.take({ x, y, width: tab, height: GROUP_HEADER });
+        for (const strip of [
+            { x, y: top - 3, width, height: 6 },
+            { x, y: y + height - 3, width, height: 6 },
+            { x: x - 3, y: top, width: 6, height: height - GROUP_HEADER },
+            { x: x + width - 3, y: top, width: 6, height: height - GROUP_HEADER }
+        ]) {
+            placer.take(strip);
+        }
+    }
     const buses: BusLine[] = [];
     const treeHeads: HeadMarker[] = [];
     const treeHeadStrokes: HeadStroke[] = [];
@@ -367,7 +395,7 @@ export function render(input: RenderInput): Rendered {
     // drawn from what both halves say, so the half that keeps the line carries
     // the other's ends and its name.
     const lines = drawn
-        .filter(edge => !trees.covered.has(edge.id) && positions[edge.source] && positions[edge.target])
+        .filter(edge => !trees.covered.has(edge.id) && ends[edge.source] && ends[edge.target])
         .map(edge => {
             const partner = edge.kind === 'relation' ? inverses.partnerOf.get(edge.id) : undefined;
             return {
@@ -488,13 +516,16 @@ text {
 .tv-lock rect { fill: ${theme.background}; }
 .tv-group rect { fill: none; stroke: ${theme.muted}; stroke-dasharray: 4 3; }
 .tv-group text { font-size: ${font.stereotype}px; fill: ${theme.muted}; }
+.tv-ontology rect { fill: none; stroke: ${theme.line}; stroke-width: 1.2; stroke-dasharray: none; }
+.tv-ontology text { font-weight: 600; font-size: ${font.name}px; fill: ${theme.text}; }
+.tv-location { font-size: ${font.attribute}px; fill-opacity: 0.72; }
 .tv-selected rect { stroke: ${theme.accent}; stroke-width: 2.5; }
 .tv-selected path { stroke: ${theme.accent}; stroke-width: 2.2; }
 .tv-unresolved rect { stroke-dasharray: 5 3; }
 .tv-external rect { stroke-dasharray: 2 2; }
 </style>
 <rect x="${origin.x}" y="${origin.y}" width="${width}" height="${height}" fill="${theme.background}"/>
-${groups.map(group => drawGroup(group)).join('')}${edgeMarkup}${derivationMarkup}${treeMarkup}${nodeMarkup}<g class="tv-labels">${labelMarkup}</g></svg>`;
+${groups.map(group => drawGroup(group, font)).join('')}${edgeMarkup}${derivationMarkup}${treeMarkup}${nodeMarkup}<g class="tv-labels">${labelMarkup}</g></svg>`;
 
     return { svg, bounds: { x: origin.x, y: origin.y, width, height }, paths, guides, headCollisions };
 }
@@ -761,6 +792,9 @@ export function drawNode(
 ): string {
     const font = fontMetrics(display);
     const stereotype = stereotypeLabel(node);
+    if (node.kind === 'package') {
+        return drawPackage(node, rect, display, theme, isSelected);
+    }
     const lines = wrappedAttributeLines(node, display, rect.width - font.cardPadding * 2);
     const fill = display.showColors && node.kind !== 'unresolved' ? node.color : theme.surface;
     const classes = ['tv-node',
@@ -800,14 +834,56 @@ export function drawNode(
         + title + text + compartment + '</g>';
 }
 
+/**
+ * A package as UML draws one: a folder, its tab above the left of the body,
+ * the name in the body and, under it, where the manifest reads it from.
+ */
+function drawPackage(node: ViewNode, rect: Rect, display: DisplayOptions, theme: Theme, isSelected: boolean): string {
+    const font = fontMetrics(display);
+    const stereotype = stereotypeLabel(node);
+    const location = packageLocationLine(node);
+    const fill = display.showColors && !node.unavailable ? node.color : theme.surface;
+    const classes = ['tv-node',
+        node.unavailable ? 'tv-unresolved' : '',
+        node.isExternal ? 'tv-external' : '',
+        isSelected ? 'tv-selected' : ''
+    ].filter(Boolean).join(' ');
+    const tab = PACKAGE_TAB.height * font.scale;
+    const body = { x: rect.x, y: rect.y + tab, width: rect.width, height: rect.height - tab };
+    const middle = rect.x + rect.width / 2;
+    let y = body.y + NODE.headerGap * 2;
+    let text = '';
+    if (stereotype) {
+        y += font.stereotype;
+        text += `<text class="tv-stereotype" x="${middle}" y="${y}" text-anchor="middle">${escape(stereotype)}</text>`;
+        y += NODE.stereotypeHeight * font.scale - font.stereotype;
+    }
+    y += font.name;
+    text += `<text class="tv-name" x="${middle}" y="${y}" text-anchor="middle">${escape(nodeLabel(node, display))}</text>`;
+    y += NODE.nameHeight * font.scale - font.name;
+    if (location) {
+        y += font.attribute;
+        text += `<text class="tv-location" x="${middle}" y="${y}" text-anchor="middle">${escape(location)}</text>`;
+    }
+    const title = node.documentation && display.showDocumentation
+        ? `<title>${escape(node.documentation)}</title>`
+        : '';
+    // The tab first, so the body's top edge is drawn over the seam between them.
+    return `<g class="${classes}" data-node="${escape(node.id)}">`
+        + `<rect x="${rect.x}" y="${rect.y}" width="${packageTabWidth(rect.width)}" height="${tab + 1}" rx="2" fill="${fill}"/>`
+        + `<rect x="${body.x}" y="${body.y}" width="${body.width}" height="${body.height}" rx="2" fill="${fill}"/>`
+        + title + text + '</g>';
+}
+
 function drawEdge(
     edge: ViewEdge, points: Point[], theme: Theme, isSelected: boolean, data = pathData(points)
 ): string {
-    const path = `<path d="${data}"${edge.kind === 'instantiation' ? ' stroke-dasharray="6 4"' : ''}/>`;
+    const dashed = edge.kind === 'instantiation' || edge.kind === 'dependency';
+    const path = `<path d="${data}"${dashed ? ' stroke-dasharray="6 4"' : ''}/>`;
     const classes = `tv-edge${isSelected ? ' tv-selected' : ''}`;
     const decoration = edge.kind === 'generalization'
         ? triangleAt(points[points.length - 1]!, points[points.length - 2] ?? points[0]!)
-        : edge.kind === 'instantiation'
+        : edge.kind === 'instantiation' || edge.kind === 'dependency'
             ? arrowAt(points[points.length - 1]!, points[points.length - 2] ?? points[0]!)
             : relationDecoration(edge, points, theme);
     return `<g class="${classes}" data-edge="${escape(edge.id)}">${path}${decoration}</g>`;
@@ -937,6 +1013,14 @@ function drawEdgeLabels(
     }
     if (edge.kind === 'instantiation') {
         return centreLabel(points, [{ stereotype: '«instanceOf»' }], display, theme, placer, edge.id);
+    }
+    if (edge.kind === 'dependency') {
+        // The alias an import binds is what its importer writes before every
+        // name it borrows, so when it is not the ontology's own name it is
+        // worth saying on the line.
+        return centreLabel(points, [{
+            stereotype: `«${edge.stereotype}»`, ...(edge.name ? { name: `as ${edge.name}` } : {})
+        }], display, theme, placer, edge.id);
     }
     return '';
 }
@@ -2092,7 +2176,14 @@ function canDrawTree(generalId: string, childIds: string[], positions: Positions
  * `Staff` as well. A box that says a class is in a package it is not in is
  * worse than no box: the reader believes it.
  */
-export function groupBoxes(view: ViewModel, positions: Positions): Array<{ id: string; name: string; rect: Rect }> {
+export interface GroupBox {
+    id: string;
+    name: string;
+    rect: Rect;
+    kind?: 'ontology';
+}
+
+export function groupBoxes(view: ViewModel, positions: Positions): GroupBox[] {
     return view.groups
         .map(group => {
             const members = new Set(group.nodes);
@@ -2113,13 +2204,52 @@ export function groupBoxes(view: ViewModel, positions: Positions): Array<{ id: s
                 const other = positions[node.id];
                 return !members.has(node.id) && other !== undefined && overlapArea(other, rect) > 0;
             });
-            return encloses ? undefined : { id: group.id, name: group.name, rect };
+            return encloses
+                ? undefined
+                : { id: group.id, name: group.name, rect, ...(group.kind ? { kind: group.kind } : {}) };
         })
-        .filter((group): group is { id: string; name: string; rect: Rect } => group !== undefined);
+        .filter((group): group is GroupBox => group !== undefined);
 }
 
-function drawGroup(group: { id: string; name: string; rect: Rect }): string {
+/**
+ * Where every edge end is: the cards, and the ontology frames an import can
+ * leave from. A frame is an end and never an obstacle -- the packages inside
+ * it are the obstacles -- so it is kept out of `positions` itself.
+ */
+export function withFrames(positions: Positions, groups: readonly GroupBox[]): Positions {
+    const frames = groups.filter(group => group.kind === 'ontology');
+    // The body, under the header row: the tab covers only the left of that
+    // row, and a line meeting the top of the whole box ended in the air
+    // beside it.
+    return frames.length === 0
+        ? positions
+        : {
+            ...positions,
+            ...Object.fromEntries(frames.map(group => [group.id, {
+                ...group.rect, y: group.rect.y + GROUP_HEADER, height: group.rect.height - GROUP_HEADER
+            }]))
+        };
+}
+
+/** `withFrames` from the view, for a caller that has not drawn the boxes. */
+export function edgeEnds(view: ViewModel, positions: Positions): Positions {
+    return view.groups.some(group => group.kind === 'ontology')
+        ? withFrames(positions, groupBoxes(view, positions))
+        : positions;
+}
+
+function drawGroup(group: GroupBox, font: FontMetrics): string {
     const { rect } = group;
+    if (group.kind === 'ontology') {
+        // The ontology is the package that holds the others, drawn as one:
+        // its name on the tab, which sits in the header the layout keeps
+        // above the packages inside.
+        const tab = Math.min(rect.width, textWidth(group.name, font.name, true, font.kind) + 16);
+        return `<g class="tv-group tv-ontology" data-group="${escape(group.id)}">`
+            + `<rect x="${rect.x}" y="${rect.y}" width="${tab}" height="${GROUP_HEADER + 1}" rx="2"/>`
+            + `<rect x="${rect.x}" y="${rect.y + GROUP_HEADER}" width="${rect.width}" height="${rect.height - GROUP_HEADER}" rx="2"/>`
+            + `<text x="${rect.x + 8}" y="${rect.y + GROUP_HEADER - 6}">${escape(group.name)}</text></g>`;
+    }
     return `<g class="tv-group" data-group="${escape(group.id)}">`
         + `<rect x="${rect.x}" y="${rect.y}" width="${rect.width}" height="${rect.height}" rx="4"/>`
         + `<text x="${rect.x + 8}" y="${rect.y + 14}">${escape(group.name)}</text></g>`;

@@ -56,6 +56,24 @@ view are created lazily, only after the modeller changes the automatic result.
 
 ## Progress log
 
+### 2026-10-16
+
+- Followed tontoredesign to ontologies as the unit of publication: `ontology`
+  headers, `bundles`, member packages (`package core in shop`), `use` for a
+  package dependency and `import alias from <location>` for another ontology.
+  `global` packages are gone from the language and from here.
+- Drew a manifest as a package diagram: the ontology as a frame round its
+  member packages, «use» between them, and each imported ontology as an
+  external package, imported from the frame or from the package that declares
+  the import. Laid out supplier above client; the frame is an edge end that
+  moves with its packages.
+- Drew a monolithic ontology as a class diagram named after the ontology, kept
+  ontologies imported from outside the workspace out of its package list, and
+  made the CLI find a model's root as the language does.
+- Re-baselined the pets and university benchmarks for upstream's changed
+  examples; university's files are three separate ontologies until upstream
+  gives the folder one.
+
 ### 2026-09-07
 
 - Defined the post-0.1 feature order.

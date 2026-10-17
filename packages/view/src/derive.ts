@@ -29,6 +29,8 @@ import {
     isEnumeration,
     isExternalRelation,
     isGeneralizationSet,
+    isModel,
+    isOntologyBody,
     inverseEndsAgree,
     isParthood,
     wholeEndOf
@@ -64,6 +66,23 @@ export function derive(input: DeriveInput): ViewModel {
     return new Derivation(input).run();
 }
 
+/**
+ * The name a package goes by in the diagram.
+ *
+ * A monolithic ontology -- an `ontology` header followed straight by its
+ * declarations -- holds them in a package with no name, since nothing else
+ * could `use` it. The language names those declarations by the ontology, and
+ * so does the diagram: `shop::Product`, in a box labelled `shop`. Without
+ * this the starter model the editor now writes drew nothing at all.
+ */
+export function packageName(one: Package): string | undefined {
+    if (isOntologyBody(one)) {
+        const model = one.$container;
+        return isModel(model) ? model.ontologies[0]?.name : undefined;
+    }
+    return one.name ?? undefined;
+}
+
 class Derivation {
     private readonly options: ContentOptions;
     private readonly hidden: Set<string>;
@@ -90,7 +109,8 @@ class Derivation {
         const packages = this.input.models.flatMap(model => model.packages);
         const included = this.options.includedPackages ? new Set(this.options.includedPackages) : undefined;
         for (const one of packages) {
-            if (one.name !== undefined && (!included || included.has(one.name))) {
+            const name = packageName(one);
+            if (name !== undefined && (!included || included.has(name))) {
                 this.included.add(one);
             }
         }
@@ -242,7 +262,7 @@ class Derivation {
             id,
             kind: 'class',
             name: declaration.name,
-            package: declaration.$container.name ?? undefined,
+            package: packageName(declaration.$container),
             stereotype: declaration.stereotype,
             ...(natures ? { natures } : {}),
             color: colorOf(declaration),
@@ -301,7 +321,7 @@ class Derivation {
             id,
             kind: isEnum ? 'enumeration' : 'datatype',
             name: declaration.name,
-            package: declaration.$container.name ?? undefined,
+            package: packageName(declaration.$container),
             stereotype: isEnum ? 'enum' : 'datatype',
             color: DATATYPE_COLOR,
             isExternal,
@@ -364,7 +384,7 @@ class Derivation {
     }
 
     private addGenset(declaration: GeneralizationSet, owner: Package): void {
-        const id = gensetId(owner.name, declaration.name);
+        const id = gensetId(packageName(owner), declaration.name);
         const general = declaration.general?.ref ? this.idOf.get(declaration.general.ref) : undefined;
         const specifics = declaration.specifics
             .map(specific => (specific.ref ? this.idOf.get(specific.ref) : undefined))
@@ -477,7 +497,7 @@ class Derivation {
     }
 
     private declarationId(declaration: ClassDeclaration | Datatype | Enumeration): string {
-        return qualify(declaration.$container.name, declaration.name);
+        return qualify(packageName(declaration.$container), declaration.name);
     }
 
     private naturesOf(declaration: ClassDeclaration): ViewNode['natures'] {

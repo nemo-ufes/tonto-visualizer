@@ -29,7 +29,7 @@ describe('the view of a model', () => {
 
     test('is the whole model, and nothing the standard library declares', async () => {
         const view = await viewOfFixture();
-        expect(view.groups.map(group => group.name).sort()).toEqual(['Employment', 'Parties']);
+        expect(view.groups.map(group => group.name).sort()).toEqual(['employment', 'parties']);
         expect(view.nodes.map(node => node.id)).not.toContain('Tonto.BuiltinDatatypes::string');
     });
 
@@ -63,11 +63,11 @@ kind Tree
         expect(set).toMatchObject({
             disjoint: true,
             complete: true,
-            general: 'Parties::Person',
-            specifics: ['Parties::Child', 'Parties::Adult']
+            general: 'parties::Person',
+            specifics: ['parties::Child', 'parties::Adult']
         });
         const grouped = view.edges.filter(edge => edge.kind === 'generalization' && edge.genset === set?.id);
-        expect(grouped.map(edge => edge.source)).toEqual(['Parties::Child', 'Parties::Adult']);
+        expect(grouped.map(edge => edge.source)).toEqual(['parties::Child', 'parties::Adult']);
     });
 
     test('derives specializations declared by a generalization set', async () => {
@@ -132,13 +132,13 @@ kind Animal {
     });
 
     test('drops what external references bring in when they are turned off', async () => {
-        const inside = await viewOfFixture({ showExternalReferences: false, includedPackages: ['Employment'] });
+        const inside = await viewOfFixture({ showExternalReferences: false, includedPackages: ['employment'] });
         expect(inside.nodes.map(node => node.id).sort())
-            .toEqual(['Employment::Car', 'Employment::Currency', 'Employment::EmploymentContract', 'Employment::Wheel']);
+            .toEqual(['employment::Car', 'employment::Currency', 'employment::EmploymentContract', 'employment::Wheel']);
 
-        const outside = await viewOfFixture({ includedPackages: ['Employment'] });
+        const outside = await viewOfFixture({ includedPackages: ['employment'] });
         expect(outside.nodes.filter(node => node.isExternal).map(node => node.id).sort())
-            .toEqual(['Parties::Employee', 'Parties::Organization']);
+            .toEqual(['parties::Employee', 'parties::Organization']);
     });
 
     test('parses what the language in the editor parses', async () => {
@@ -217,8 +217,8 @@ kind Animal {
         const focused = await session.modelsOf(uri, models);
         const includedPackages = focused.flatMap(model => model.packages.map(one => one.name));
         const view = derive({ models, options: { includedPackages } });
-        expect(view.groups.filter(group => !group.isExternal).map(group => group.name)).toEqual(['Employment']);
-        expect(view.groups.filter(group => group.isExternal).map(group => group.name)).toEqual(['Parties']);
+        expect(view.groups.filter(group => !group.isExternal).map(group => group.name)).toEqual(['employment']);
+        expect(view.groups.filter(group => group.isExternal).map(group => group.name)).toEqual(['parties']);
     });
 
     test('draws the opened file or the whole workspace, as the scope says', async () => {
@@ -237,18 +237,18 @@ kind Animal {
         });
 
         const file = viewOf({ scope: 'file' });
-        expect(file.groups.filter(group => !group.isExternal).map(group => group.name)).toEqual(['Employment']);
-        expect(file.groups.filter(group => group.isExternal).map(group => group.name)).toEqual(['Parties']);
+        expect(file.groups.filter(group => !group.isExternal).map(group => group.name)).toEqual(['employment']);
+        expect(file.groups.filter(group => group.isExternal).map(group => group.name)).toEqual(['parties']);
 
         const whole = viewOf({ scope: 'workspace' });
-        expect(whole.groups.map(group => group.name).sort()).toEqual(['Employment', 'Parties']);
+        expect(whole.groups.map(group => group.name).sort()).toEqual(['employment', 'parties']);
         expect(whole.groups.filter(group => group.isExternal)).toEqual([]);
         expect(whole.nodes.filter(node => node.isExternal)).toEqual([]);
         expect(whole.nodes.length).toBeGreaterThan(file.nodes.length);
 
         // Ticking packages by hand outranks either scope.
-        const picked = viewOf({ scope: 'workspace', includedPackages: ['Parties'] });
-        expect(picked.groups.filter(group => !group.isExternal).map(group => group.name)).toEqual(['Parties']);
+        const picked = viewOf({ scope: 'workspace', includedPackages: ['parties'] });
+        expect(picked.groups.filter(group => !group.isExternal).map(group => group.name)).toEqual(['parties']);
     });
 
     test('drops datatype nodes and the attributes typed by them together', async () => {
@@ -258,9 +258,9 @@ kind Animal {
     });
 
     test('hides an element and every edge that touched it', async () => {
-        const view = await viewOfFixture({ hidden: ['Parties::Person'] });
-        expect(view.nodes.map(node => node.id)).not.toContain('Parties::Person');
-        expect(view.edges.some(edge => edge.source === 'Parties::Person' || edge.target === 'Parties::Person')).toBe(false);
+        const view = await viewOfFixture({ hidden: ['parties::Person'] });
+        expect(view.nodes.map(node => node.id)).not.toContain('parties::Person');
+        expect(view.edges.some(edge => edge.source === 'parties::Person' || edge.target === 'parties::Person')).toBe(false);
     });
 
     test('hides an edge without renaming the other edges', async () => {
@@ -294,11 +294,11 @@ role Employee specializes Person
         const uri = pathToFileURL(resolve(parties, 'employment.tonto')).toString();
         const packages = async () => (await session.models())
             .flatMap(model => model.packages.map(one => one.name)).sort();
-        expect(await packages()).toEqual(['Employment', 'Parties']);
-        await session.update(uri, 'package Temporary\nkind Draft\n');
-        expect(await packages()).toEqual(['Parties', 'Temporary']);
+        expect(await packages()).toEqual(['employment', 'parties']);
+        await session.update(uri, 'package temporary\nkind Draft\n');
+        expect(await packages()).toEqual(['parties', 'temporary']);
         await session.revert(uri);
-        expect(await packages()).toEqual(['Employment', 'Parties']);
+        expect(await packages()).toEqual(['employment', 'parties']);
     });
 
     test('keeps view order stable after replacing an editor buffer', async () => {

@@ -8,7 +8,9 @@
 
 import * as vscode from 'vscode';
 import type { ContentOptions, DisplayOptions, ViewConstraints, ViewModel } from 'tonto-view';
-import { contentAfter, derive, expandInverseIds, idsAtSource, packagesInScope, reconcile } from 'tonto-view';
+import {
+    contentAfter, derive, derivePackages, expandInverseIds, idsAtSource, packageName, packagesInScope, reconcile
+} from 'tonto-view';
 import { ViewSession } from 'tonto-view/session';
 import { autoLayout } from 'tonto-canvas';
 import { darkTheme, drawnSizes, lightTheme, movedTo, placeNewNodes, render, sizeOf } from 'tonto-canvas/draw';
@@ -430,11 +432,14 @@ export class DiagramPanel {
             return;
         }
         const focused = await session.modelsOf(document.uri.toString(), models);
+        // A manifest declares no classes to draw: it is drawn as the package
+        // diagram of the ontology it bundles.
+        const outline = await session.outline(document.uri.toString());
         this.availablePackages = [...new Set(models
-            .flatMap(model => model.packages.map(one => one.name))
+            .flatMap(model => model.packages.map(packageName))
             .filter((name): name is string => name !== undefined))].sort();
         this.focusPackages = [...new Set(focused
-            .flatMap(model => model.packages.map(one => one.name))
+            .flatMap(model => model.packages.map(packageName))
             .filter((name): name is string => name !== undefined))];
         // `focusPackages` and `availablePackages` are only good from here on --
         // read before this point (as the scope this file or the whole workspace
@@ -442,7 +447,7 @@ export class DiagramPanel {
         // of a newly opened document is nothing at all: the diagram drew empty
         // until some unrelated change asked for a second one.
         const content = this.effectiveContent(store.state.content);
-        const deriveWith = (options: ContentOptions) => derive({
+        const deriveWith = (options: ContentOptions) => outline ? derivePackages(outline) : derive({
             models,
             ...(this.focusPackages[0] ? { focus: this.focusPackages[0] } : {}),
             documentation: session.documentation(),

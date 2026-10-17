@@ -1,4 +1,5 @@
 import type { EdgeRoute, Placement, ViewModel } from 'tonto-view';
+import { edgeTouches } from 'tonto-view/outline';
 import type { Rect, Size } from 'tonto-canvas/draw';
 import { overlaps, segmentHitsRect } from 'tonto-canvas/draw';
 
@@ -52,7 +53,9 @@ export function routesAffectedBy(
         if (preserve.has(edge.id)) {
             return false;
         }
-        if (changedNodes.has(edge.source) || changedNodes.has(edge.target)) {
+        // Through an ontology frame as well: the frame is drawn round its
+        // packages, so moving one of them moves where the frame's lines start.
+        if (edgeTouches(view, edge, changedNodes)) {
             return true;
         }
         const points = routes[edge.id]?.points;

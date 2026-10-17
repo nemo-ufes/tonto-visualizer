@@ -9,6 +9,11 @@
  * disagrees with the validator is worse than no picture.
  *
  * If that package ever widens its exports, this file is the only one to change.
+ *
+ * The one exception is ontology ownership -- which package a bundle entry
+ * selects, which ontology an import loads -- decided by the language's
+ * publication workspace. That module reads the file system, so it is borrowed
+ * in `session.ts`, which runs only in Node, and not here.
  */
 
 import type { Relation as LanguageRelation } from 'tonto-language';
@@ -33,6 +38,7 @@ export {
     isExternalRelation,
     isGeneralizationSet,
     isModel,
+    isOntologyBody,
     isRelation
 } from 'tonto-language';
 

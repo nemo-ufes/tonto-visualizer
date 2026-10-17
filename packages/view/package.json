@@ -11,6 +11,7 @@
         ".": "./out/index.js",
         "./inverses": "./out/inverses.js",
         "./options": "./out/options.js",
+        "./outline": "./out/outline.js",
         "./palette": "./out/palette.js",
         "./session": "./out/session.js"
     },

@@ -1,0 +1,6 @@
+/// People and organizations, and the contracts that employ them.
+///
+/// @namespace https://example.org/hr#
+ontology hr bundles
+    parties from <parties.tonto>
+    employment from <employment.tonto>

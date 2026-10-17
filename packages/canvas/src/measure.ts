@@ -131,6 +131,25 @@ export const NODE = {
 } as const;
 
 /**
+ * A package card's tab, the lip of the folder UML draws a package as: this
+ * high above the body, and at most this wide.
+ */
+export const PACKAGE_TAB = { height: 12, maxWidth: 72, share: 0.4 } as const;
+
+/** The tab's width on a card this wide. */
+export function packageTabWidth(width: number): number {
+    return Math.round(Math.min(PACKAGE_TAB.maxWidth, width * PACKAGE_TAB.share));
+}
+
+/**
+ * The line under a package's name: the document a manifest bundles it from,
+ * or the location an ontology is imported from, spelled as Tonto spells it.
+ */
+export function packageLocationLine(node: ViewNode): string | undefined {
+    return node.kind === 'package' && node.location ? `<${node.location}>` : undefined;
+}
+
+/**
  * A multiplicity as a diagram writes it, or nothing at all.
  *
  * Brackets are Tonto's textual syntax, where a multiplicity has to be told apart
@@ -240,6 +259,21 @@ export function sizeOf(node: ViewNode, options: DisplayOptions): Size {
     const font = fontMetrics(options);
     const label = nodeLabel(node, options);
     const stereotype = stereotypeLabel(node);
+    if (node.kind === 'package') {
+        const location = packageLocationLine(node);
+        const width = Math.max(
+            font.cardMinWidth,
+            textWidth(label, font.name, true, font.kind) + font.cardPadding * 2,
+            stereotype ? textWidth(stereotype, font.stereotype, false, font.kind) + font.cardPadding * 2 : 0,
+            location ? textWidth(location, font.attribute, false, font.kind) + font.cardPadding * 2 : 0
+        );
+        const height = PACKAGE_TAB.height * font.scale
+            + (stereotype ? NODE.stereotypeHeight * font.scale : 0)
+            + NODE.nameHeight * font.scale
+            + (location ? NODE.lineHeight * font.scale : 0)
+            + NODE.headerGap * 4;
+        return { width: round(width), height: round(height) };
+    }
     const lines = wrappedAttributeLines(node, options, font.attributeWrapWidth);
     const width = Math.max(
         font.cardMinWidth,

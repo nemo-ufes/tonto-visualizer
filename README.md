@@ -38,6 +38,18 @@ Working end to end, and rough in places.
   between the classes it mediates -- it is a reified relationship, and that is
   where a reader looks for it -- and can be told to ignore the packages and lay
   the model out as one graph.
+- Ontology manifests — an entry document with a `bundles` clause — are drawn
+  as UML package diagrams: the ontology is a package frame holding its member
+  packages, inline and bundled, each card saying the document it is read from;
+  `use core` is a «use» dependency between two of them; and every ontology it
+  imports is a package of its own outside the frame, with an «import» from the
+  frame when the manifest declares it and from the package when a package
+  does, under the alias it binds when that differs from the ontology's name.
+  Double-clicking a package opens it, and the panel follows to its class
+  diagram. A monolithic ontology — a header followed by its declarations — is a
+  class diagram named after the ontology. Which package a bundle selects and
+  which ontology an import loads are the language's answers, not this
+  repository's.
 - `packages/cli` — `tonto-view <file-or-directory> [--svg]`.
 - `packages/extension` — the panel: live redraw as the model is typed, the last
   good picture kept while it does not parse, drag to arrange, double-click to

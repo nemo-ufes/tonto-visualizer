@@ -1,10 +1,10 @@
-import Parties
+package employment in hr
 
-package Employment
+use parties
 
 relator EmploymentContract {
-    @mediation [1..*] -- [1] (const) Parties.Employee
-    @mediation [1..*] -- [1] (const) Parties.Organization
+    @mediation [1..*] -- [1] (const) parties.Employee
+    @mediation [1..*] -- [1] (const) parties.Organization
 }
 
 kind Car {

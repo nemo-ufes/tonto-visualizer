@@ -1,36 +1,36 @@
 {
   "groups": [
     {
-      "id": "pkg:Employment",
-      "name": "Employment",
+      "id": "pkg:employment",
+      "name": "employment",
       "isExternal": false,
       "nodes": [
-        "Employment::EmploymentContract",
-        "Employment::Car",
-        "Employment::Wheel",
-        "Employment::Currency"
+        "employment::EmploymentContract",
+        "employment::Car",
+        "employment::Wheel",
+        "employment::Currency"
       ]
     },
     {
-      "id": "pkg:Parties",
-      "name": "Parties",
+      "id": "pkg:parties",
+      "name": "parties",
       "isExternal": false,
       "nodes": [
-        "Parties::Employee",
-        "Parties::Person",
-        "Parties::Organization",
-        "Parties::Child",
-        "Parties::Adult",
-        "Parties::Address"
+        "parties::Employee",
+        "parties::Person",
+        "parties::Organization",
+        "parties::Child",
+        "parties::Adult",
+        "parties::Address"
       ]
     }
   ],
   "nodes": [
     {
-      "id": "Employment::EmploymentContract",
+      "id": "employment::EmploymentContract",
       "kind": "class",
       "name": "EmploymentContract",
-      "package": "Employment",
+      "package": "employment",
       "stereotype": "relator",
       "natures": {
         "natures": [
@@ -43,10 +43,10 @@
       "attributes": []
     },
     {
-      "id": "Employment::Car",
+      "id": "employment::Car",
       "kind": "class",
       "name": "Car",
-      "package": "Employment",
+      "package": "employment",
       "stereotype": "kind",
       "natures": {
         "natures": [
@@ -59,10 +59,10 @@
       "attributes": []
     },
     {
-      "id": "Employment::Wheel",
+      "id": "employment::Wheel",
       "kind": "class",
       "name": "Wheel",
-      "package": "Employment",
+      "package": "employment",
       "stereotype": "kind",
       "natures": {
         "natures": [
@@ -75,10 +75,10 @@
       "attributes": []
     },
     {
-      "id": "Employment::Currency",
+      "id": "employment::Currency",
       "kind": "enumeration",
       "name": "Currency",
-      "package": "Employment",
+      "package": "employment",
       "stereotype": "enum",
       "color": "#FFFFFF",
       "isExternal": false,
@@ -90,10 +90,10 @@
       ]
     },
     {
-      "id": "Parties::Employee",
+      "id": "parties::Employee",
       "kind": "class",
       "name": "Employee",
-      "package": "Parties",
+      "package": "parties",
       "stereotype": "role",
       "natures": {
         "natures": [
@@ -107,10 +107,10 @@
       "attributes": []
     },
     {
-      "id": "Parties::Person",
+      "id": "parties::Person",
       "kind": "class",
       "name": "Person",
-      "package": "Parties",
+      "package": "parties",
       "stereotype": "kind",
       "natures": {
         "natures": [
@@ -146,10 +146,10 @@
       "documentation": "A person, in the everyday sense.\n\nIdentity comes from the individual, not from any role they play."
     },
     {
-      "id": "Parties::Organization",
+      "id": "parties::Organization",
       "kind": "class",
       "name": "Organization",
-      "package": "Parties",
+      "package": "parties",
       "stereotype": "kind",
       "natures": {
         "natures": [
@@ -173,10 +173,10 @@
       ]
     },
     {
-      "id": "Parties::Child",
+      "id": "parties::Child",
       "kind": "class",
       "name": "Child",
-      "package": "Parties",
+      "package": "parties",
       "stereotype": "phase",
       "natures": {
         "natures": [
@@ -190,10 +190,10 @@
       "attributes": []
     },
     {
-      "id": "Parties::Adult",
+      "id": "parties::Adult",
       "kind": "class",
       "name": "Adult",
-      "package": "Parties",
+      "package": "parties",
       "stereotype": "phase",
       "natures": {
         "natures": [
@@ -207,10 +207,10 @@
       "attributes": []
     },
     {
-      "id": "Parties::Address",
+      "id": "parties::Address",
       "kind": "datatype",
       "name": "Address",
-      "package": "Parties",
+      "package": "parties",
       "stereotype": "datatype",
       "color": "#FFFFFF",
       "isExternal": false,
@@ -220,7 +220,7 @@
           "type": "string",
           "stereotypes": [],
           "isOrdered": false,
-          "isConst": false,
+          "isConst": true,
           "isAddOnly": false,
           "isDerived": false
         },
@@ -229,7 +229,7 @@
           "type": "string",
           "stereotypes": [],
           "isOrdered": false,
-          "isConst": false,
+          "isConst": true,
           "isAddOnly": false,
           "isDerived": false
         }
@@ -239,13 +239,13 @@
   "edges": [
     {
       "kind": "generalization",
-      "id": "gen:Parties::Employee->Parties::Person",
-      "target": "Parties::Person"
+      "id": "gen:parties::Employee->parties::Person",
+      "target": "parties::Person"
     },
     {
       "kind": "relation",
-      "id": "rel:Employment::EmploymentContract->Parties::Employee:mediation:",
-      "target": "Parties::Employee",
+      "id": "rel:employment::EmploymentContract->parties::Employee:mediation:",
+      "target": "parties::Employee",
       "stereotype": "mediation",
       "sourceEnd": {
         "cardinality": "1..*",
@@ -260,8 +260,8 @@
     },
     {
       "kind": "relation",
-      "id": "rel:Employment::EmploymentContract->Parties::Organization:mediation:",
-      "target": "Parties::Organization",
+      "id": "rel:employment::EmploymentContract->parties::Organization:mediation:",
+      "target": "parties::Organization",
       "stereotype": "mediation",
       "sourceEnd": {
         "cardinality": "1..*",
@@ -276,8 +276,8 @@
     },
     {
       "kind": "relation",
-      "id": "rel:Employment::Car->Employment::Wheel:componenthood:has",
-      "target": "Employment::Wheel",
+      "id": "rel:employment::Car->employment::Wheel:componenthood:has",
+      "target": "employment::Wheel",
       "stereotype": "componenthood",
       "name": "has",
       "sourceEnd": {
@@ -296,27 +296,27 @@
     },
     {
       "kind": "generalization",
-      "id": "gen:Parties::Child->Parties::Person",
-      "target": "Parties::Person",
-      "genset": "set:Parties::PersonAgePhases"
+      "id": "gen:parties::Child->parties::Person",
+      "target": "parties::Person",
+      "genset": "set:parties::PersonAgePhases"
     },
     {
       "kind": "generalization",
-      "id": "gen:Parties::Adult->Parties::Person",
-      "target": "Parties::Person",
-      "genset": "set:Parties::PersonAgePhases"
+      "id": "gen:parties::Adult->parties::Person",
+      "target": "parties::Person",
+      "genset": "set:parties::PersonAgePhases"
     }
   ],
   "gensets": [
     {
-      "id": "set:Parties::PersonAgePhases",
+      "id": "set:parties::PersonAgePhases",
       "name": "PersonAgePhases",
       "disjoint": true,
       "complete": true,
-      "general": "Parties::Person",
+      "general": "parties::Person",
       "specifics": [
-        "Parties::Child",
-        "Parties::Adult"
+        "parties::Child",
+        "parties::Adult"
       ],
       "categorizers": []
     }

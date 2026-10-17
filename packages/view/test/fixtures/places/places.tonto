@@ -1,0 +1,8 @@
+/// Where things are: the buildings that stand in cities.
+///
+/// @namespace https://example.org/places#
+ontology places
+
+kind City
+
+kind Building

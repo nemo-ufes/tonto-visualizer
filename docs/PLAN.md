@@ -75,8 +75,10 @@ language server. That repository is consumed, never edited.
 
 The reasons, since the alternatives keep looking attractive:
 
-- Cross-file linking comes for free. `import Person` resolves, so a relation to
-  `Person.Employer` is an edge and not a dangling name.
+- Cross-file linking comes for free. `use person` and `import hr from
+  <hr.tonto>` resolve, so a relation to `person.Employer` is an edge and not a
+  dangling name -- and which ontology owns which package, which decides what
+  resolves at all, is the language's answer too.
 - Colors come from `getEffectiveNatures()`, which knows that a `role` under a
   `collective` classifies collectives. Re-deriving that by hand is
   `stereotype-model.ts` + `nature-reasoning.ts` + `generalizations.ts` — about

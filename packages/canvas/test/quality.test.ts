@@ -179,7 +179,9 @@ describe('layout quality benchmarks', () => {
             // the former ceiling counted a diagram that omitted those lines.
             { width: 2200, height: 1750, crossings: 17, labels: 37, total: 13500, longest: 1000 }],
         ['pets', resolve(repository, 'vendor/tontoredesign/examples/pets.tonto'),
-            { width: 1600, height: 1050, crossings: 2, labels: 3, total: 3000, longest: 450 }],
+            // Upstream gave `LegalPosition` an external dependence beside its
+            // characterization: one more line, not a longer arrangement.
+            { width: 1600, height: 1050, crossings: 2, labels: 3, total: 3300, longest: 450 }],
         ['gufo', resolve(repository, 'vendor/tontoredesign/examples/gufo.tonto'),
             { width: 1850, height: 1000, crossings: 17, labels: 46, total: 10500, longest: 600 }],
         ['genealogy', resolve(repository, 'packages/canvas/test/fixtures/genealogy.tonto'),
@@ -187,7 +189,12 @@ describe('layout quality benchmarks', () => {
             // the extra 118px is deliberate decorator clearance, not sprawl.
             { width: 1850, height: 1125, crossings: 6, labels: 1, total: 7350, longest: 560 }],
         ['university', resolve(repository, 'vendor/tontoredesign/examples/university'),
-            { width: 1400, height: 1250, crossings: 4, labels: 6, total: 6000, longest: 900 }],
+            // Its three files are three ontologies now: no manifest bundles
+            // them and no `tonto.json` makes the folder one, so the language
+            // resolves none of their `use`s, and the references across files
+            // are drawn as unresolved cards in a row. A benchmark of that
+            // until upstream gives the example an ontology again.
+            { width: 1550, height: 1250, crossings: 4, labels: 6, total: 6000, longest: 900 }],
         ['parties', resolve(repository, 'packages/view/test/fixtures/parties'),
             { width: 800, height: 750, crossings: 0, labels: 3, total: 900, longest: 400 }]
     ])('keeps the %s benchmark within its quality ceiling', async (_name, target, ceiling) => {

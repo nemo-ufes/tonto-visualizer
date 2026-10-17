@@ -10,14 +10,16 @@ import { statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { DisplayOptions, LayoutOptions } from 'tonto-view';
-import { defaultDisplayOptions, defaultLayoutOptions, derive } from 'tonto-view';
-import { ViewSession } from 'tonto-view/session';
+import { defaultDisplayOptions, defaultLayoutOptions, derive, derivePackages } from 'tonto-view';
+import { modelRoot, ViewSession } from 'tonto-view/session';
 import { autoLayout, darkTheme, placeNewNodes, render, sizeOf } from 'tonto-canvas';
 
 const usage = `tonto-view <file-or-directory> [--package <name>]...
 
 Prints the view model -- the nodes, edges, groups and generalization sets a
-diagram of the model would hold.
+diagram of the model would hold. An ontology manifest -- an "ontology"
+header with a "bundles" clause -- is drawn as a package diagram instead: its
+packages, the ontologies it imports, and the dependencies between them.
 
   --svg              draw it, rather than describing it
   --dark             the dark theme, with --svg
@@ -91,14 +93,16 @@ export async function run(argv: string[]): Promise<number> {
     }
 
     const target = resolve(paths[0] ?? '.');
-    // A model is the directory its files sit in, because half of what a diagram
-    // draws is declared in a neighbouring file.
-    const folder = statSync(target).isDirectory() ? target : resolve(target, '..');
+    // A model is more than the file, because half of what a diagram draws is
+    // declared in a neighbouring one -- or, for a bundled package, in the
+    // manifest a directory up.
+    const folder = statSync(target).isDirectory() ? target : modelRoot(target);
     const session = new ViewSession({ workspace: [folder] });
     const models = await session.models();
     const all = statSync(target).isDirectory() ? models : await session.modelsOf(pathToFileURL(target).toString());
+    const outline = statSync(target).isDirectory() ? undefined : await session.outline(pathToFileURL(target).toString());
 
-    const view = derive({
+    const view = outline ? derivePackages(outline) : derive({
         models: all.length > 0 ? all : models,
         documentation: session.documentation(),
         options: {
