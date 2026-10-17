@@ -286,7 +286,10 @@ class Derivation {
                 ? this.reference(parent.ref)
                 : this.unresolved(parent.$refText);
             if (target) {
-                this.addEdge({ kind: 'generalization', id: generalizationId(id, target), source: id, target });
+                this.addEdge({
+                    kind: 'generalization', id: generalizationId(id, target), source: id, target,
+                    ...this.locatedAtSpecialization(declaration, parent)
+                });
             }
         }
 
@@ -337,7 +340,10 @@ class Derivation {
         for (const parent of declaration.specializes) {
             const target = parent.ref ? this.reference(parent.ref) : this.unresolved(parent.$refText);
             if (target) {
-                this.addEdge({ kind: 'generalization', id: generalizationId(id, target), source: id, target });
+                this.addEdge({
+                    kind: 'generalization', id: generalizationId(id, target), source: id, target,
+                    ...this.locatedAtSpecialization(declaration, parent)
+                });
             }
         }
         return id;
@@ -566,6 +572,32 @@ class Derivation {
         return {
             ...(documentation ? { documentation } : {}),
             ...(location.source ? { source_: location.source } : {})
+        };
+    }
+
+    /**
+     * Where a specialization is written.
+     *
+     * `phase Child specializes Person` declares the class and the
+     * specialization in one line, so a generalization has no declaration of its
+     * own to open. The parent's name inside the child is the narrowest thing to
+     * point at, and the text the reader would change to take the line away.
+     */
+    private locatedAtSpecialization(
+        child: AstNode, parent: Reference<AstNode>
+    ): { source_?: SourceLocation } {
+        const range = parent.$refNode?.range;
+        if (!range) {
+            return {};
+        }
+        return {
+            source_: {
+                uri: AstUtils.getDocument(child).uri.toString(),
+                line: range.start.line,
+                character: range.start.character,
+                endLine: range.end.line,
+                endCharacter: range.end.character
+            }
         };
     }
 

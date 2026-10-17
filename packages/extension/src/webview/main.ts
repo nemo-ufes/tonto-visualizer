@@ -14,11 +14,14 @@ import type {
 import { natureLegend } from 'tonto-view/palette';
 import { edgeTouches } from 'tonto-view/outline';
 import { ASSOCIATION_DISTANCE, clampAssociationDistance, defaultLayoutOptions } from 'tonto-view/options';
+// By subpath, as the canvas imports `inversePairs`: the package's own entry
+// pulls in the derivation, and with it Langium and half of Node.
+import { nodesInSelection } from 'tonto-view/selection';
 import type { Corner, Handle, Point, Rect, Size } from 'tonto-canvas/draw';
 import {
-    CORNERS, cornerOf, curvedRoute, darkTheme, derivationBetween, distanceToPath, drawDerivation, drawNode, dropHandle, edgeEnds,
-    handlesFor, lightTheme, moveHandle, overlaps, pathData, rectBetween, relationSpreads, render, resizeTo, routeEdge, segmentHitsRect, sizeOf,
-    trianglePoints
+    CORNERS, cornerOf, curvedRoute, darkTheme, derivationBetween, distanceToPath, drawDerivation, drawNode, drawTrees,
+    dropHandle, edgeEnds, handlesFor, lightTheme, moveHandle, overlaps, pathData, rectBetween, relationSpreads, render,
+    resizeTo, routeEdge, segmentHitsRect, sizeOf, trianglePoints
 } from 'tonto-canvas/draw';
 import type { FilterItem } from '../protocol.js';
 
@@ -65,6 +68,24 @@ let selectedBend: { edge: string; index: number } | undefined;
 let paths: Record<string, Point[]> = {};
 /** Editable guide polylines; curved paths are rendered and sampled from these. */
 let guides: Record<string, Point[]> = {};
+/**
+ * The set each line drawn as a leg of a shared tree belongs to.
+ *
+ * A leg is chosen and opened like any other line. What it is not is routed: the
+ * tree decides where its branches run, so a handle offering to bend one would
+ * be an offer the drawing cannot keep.
+ */
+let inTree: Record<string, string> = {};
+/**
+ * The stem and bar of each tree, by the set it draws.
+ *
+ * Beside `paths` rather than in it: a set is not an edge -- nothing routed it
+ * and nothing may offer to bend it -- but a pointer near the line it is drawn
+ * as is asking for the set, and a bar is 1.2px wide.
+ */
+let spines: Record<string, Point[]> = {};
+/** Where the last full drawing put each tree's triangle, so a drag redraws it there. */
+let anchors: Record<string, Point> = {};
 /** Where the pointer last was, in diagram coordinates, for a drag that ends. */
 let lastPoint: Point | undefined;
 
@@ -88,7 +109,10 @@ window.addEventListener('message', event => {
         view = message.view;
         const visible = new Set([
             ...view.nodes.map(node => node.id),
-            ...view.edges.map(edge => edge.id)
+            ...view.edges.map(edge => edge.id),
+            // A generalization set is chosen as itself, so it has to survive the
+            // next keystroke as itself.
+            ...view.gensets.map(genset => genset.id)
         ]);
         const pruned = new Set([...selection].filter(id => visible.has(id)));
         const selectionChanged = pruned.size !== selection.size;
@@ -195,6 +219,9 @@ function draw(): void {
     bounds = drawn.bounds;
     paths = drawn.paths;
     guides = drawn.guides;
+    inTree = drawn.trees;
+    spines = drawn.spines;
+    anchors = drawn.anchors;
     canvas.innerHTML = drawn.svg;
     drawHandles();
     if (fitMode) {
@@ -230,7 +257,7 @@ function drawHandles(): void {
     // the diagram is being read whole or a corner of it is filling the panel.
     const radius = 3.5 / scale;
     const rect = positions[id];
-    const points = guides[id];
+    const points = inTree[id] ? undefined : guides[id];
     if (rect) {
         for (const corner of CORNERS) {
             const at = cornerOf(rect, corner);
@@ -318,7 +345,9 @@ function nearestLine(event: { clientX: number; clientY: number }): string | unde
     }
     const reach = 6 / scale;
     let best: { edge: string; distance: number } | undefined;
-    for (const [edge, points] of Object.entries(paths)) {
+    // The trees last, so that a leg wins a tie with the bar it hangs from: the
+    // branch is the more specific answer where both are within reach.
+    for (const [edge, points] of [...Object.entries(spines), ...Object.entries(paths)]) {
         const distance = distanceToPath(at, points);
         if (distance <= reach && (!best || distance < best.distance)) {
             best = { edge, distance };
@@ -520,8 +549,11 @@ viewport.addEventListener('pointerdown', event => {
     const id = nodeGroup?.getAttribute('data-node') ?? undefined;
 
     if (!id) {
-        const edgeGroup = target.closest('[data-edge]');
+        // A tree's stem, bar and triangle are the set: its legs carry their own
+        // id and are found first, being inside it.
+        const edgeGroup = target.closest('[data-edge]') ?? target.closest('[data-genset]');
         const edgeId = edgeGroup?.getAttribute('data-edge')
+            ?? edgeGroup?.getAttribute('data-genset')
             ?? labelOwner(target)
             ?? nearestLine(event);
         // Alt, or the middle button, is what panning is held behind once the
@@ -770,6 +802,11 @@ function redrawIncidentEdges(moved: Set<string>): void {
         if (!edgeTouches(view, edge, moved)) {
             continue;
         }
+        // A leg is not routed between two boxes: the tree it belongs to decides
+        // where it runs, and that is redrawn whole below.
+        if (inTree[edge.id]) {
+            continue;
+        }
         const source = ends[edge.source];
         const target = ends[edge.target];
         const path = canvas.querySelector(`[data-edge="${cssEscape(edge.id)}"] path`) as SVGPathElement | null;
@@ -783,6 +820,42 @@ function redrawIncidentEdges(moved: Set<string>): void {
         repaint(edge.id, points);
     }
     repaintDerivations((client, supplier) => moved.has(client) || moved.has(supplier));
+    redrawTrees(moved);
+}
+
+/**
+ * The trees a drag has changed the shape of.
+ *
+ * A tree is not a line between two boxes but a figure derived from all of them
+ * -- how deep the bar runs, how long each leg is, where the triangle sits on
+ * the parent -- so there is no segment to nudge as there is for an association.
+ * It is drawn again, by the same code that draws it in a full rendering, and
+ * only for the sets a moved class actually belongs to: dragging a class in one
+ * corner of a large model must not redraw the taxonomy in the other.
+ */
+function redrawTrees(moved: Set<string>): void {
+    const affected = view.gensets.filter(genset =>
+        (genset.general !== undefined && moved.has(genset.general))
+        || genset.specifics.some(id => moved.has(id)));
+    if (affected.length === 0) {
+        return;
+    }
+    const drawn = drawTrees({
+        view, positions, theme: dark ? darkTheme : lightTheme, selection: [...selection],
+        ...(display ? { display } : {}),
+        anchors
+    });
+    for (const genset of affected) {
+        const group = canvas.querySelector(`[data-genset="${cssEscape(genset.id)}"]`);
+        const markup = drawn.markup[genset.id];
+        if (group && markup) {
+            group.outerHTML = markup;
+        }
+    }
+    // The lines moved with it, and the pointer is measured against where they
+    // are now rather than where the last full drawing left them.
+    paths = { ...paths, ...drawn.legs };
+    spines = { ...spines, ...drawn.spines };
 }
 
 viewport.addEventListener('dblclick', event => {
@@ -816,9 +889,14 @@ viewport.addEventListener('dblclick', event => {
         keepRoute(held.edge, dropHandle(guides[held.edge]!, held.handle.index));
         return;
     }
-    const target = under.closest('[data-node]') ?? under.closest('[data-edge]');
+    // A tree's stem, bar and triangle are the set itself rather than any one of
+    // its branches, so they open the line the set is declared on. The legs
+    // inside it carry their own id and are found before this.
+    const target = under.closest('[data-node]') ?? under.closest('[data-edge]')
+        ?? under.closest('[data-genset]');
     const id = target?.getAttribute('data-node')
         ?? target?.getAttribute('data-edge')
+        ?? target?.getAttribute('data-genset')
         ?? labelOwner(under)
         ?? held?.edge
         ?? nearestLine(event);
@@ -900,8 +978,9 @@ function hideableSelection(): string[] {
 }
 
 function applySelection(): void {
-    for (const group of Array.from(canvas.querySelectorAll('[data-node], [data-edge]'))) {
-        const id = group.getAttribute('data-node') ?? group.getAttribute('data-edge');
+    for (const group of Array.from(canvas.querySelectorAll('[data-node], [data-edge], [data-genset]'))) {
+        const id = group.getAttribute('data-node') ?? group.getAttribute('data-edge')
+            ?? group.getAttribute('data-genset');
         group.classList.toggle('tv-selected', id !== null && selection.has(id));
     }
     drawHandles();
@@ -915,10 +994,18 @@ function reportSelection(): void {
     }
 }
 
+/**
+ * The cards an arrange would move: what is chosen, with a chosen generalization
+ * set standing for the classes it holds, since the set has no place of its own.
+ */
+function selectedNodes(): string[] {
+    return nodesInSelection(view, selection).filter(id => positions[id] !== undefined);
+}
+
 function updateArrangeTitle(): void {
-    const selectedNodes = [...selection].filter(id => positions[id] !== undefined).length;
-    element('arrange').title = selectedNodes > 0
-        ? `Arrange ${selectedNodes} selected node${selectedNodes === 1 ? '' : 's'} automatically`
+    const count = selectedNodes().length;
+    element('arrange').title = count > 0
+        ? `Arrange ${count} selected node${count === 1 ? '' : 's'} automatically`
         : 'Arrange the whole diagram automatically';
     element('hide').toggleAttribute('disabled', hideableSelection().length === 0);
 }
@@ -953,13 +1040,14 @@ element('newWindow').addEventListener('click', () => {
     host.postMessage({ type: 'moveToNewWindow' });
 });
 element('arrange').addEventListener('click', () => {
-    const selectedNodes = [...selection].filter(id => positions[id] !== undefined);
-    host.postMessage(selectedNodes.length > 0
-        ? { type: 'autoLayout', only: selectedNodes }
-        : { type: 'autoLayout' });
+    const only = selectedNodes();
+    host.postMessage(only.length > 0 ? { type: 'autoLayout', only } : { type: 'autoLayout' });
 });
 element('distanceDown').addEventListener('click', () => changeDistance(-ASSOCIATION_DISTANCE.step));
 element('distanceUp').addEventListener('click', () => changeDistance(ASSOCIATION_DISTANCE.step));
+// The commands are in the palette, which is not where a reader looking at a
+// diagram looks for another arrangement of it.
+element('views').addEventListener('click', () => host.postMessage({ type: 'chooseView' }));
 element('hide').addEventListener('click', hideSelection);
 // No format: the name the modeller gives the file in the dialog decides.
 element('exportButton').addEventListener('click', () => host.postMessage({ type: 'export' }));

@@ -15,7 +15,7 @@ views, navigation and review before it considers drawing-to-edit operations.
 | 5 | Semantic revision diff | Ontology review should show added, removed and changed declarations against a Git revision without throwing away the familiar arrangement. | Planned |
 | 6 | Diagram navigation | A minimap, back/forward history and breadcrumbs keep very large drawings navigable. | Planned |
 | 7 | Documentation inspector | `///` documentation and an element's semantic connections should be readable without crowding the canvas. | Planned |
-| 8 | Generalization-tree interaction | A branch needs selection and source navigation without pretending the shared stem is a generalization set or offering nonsensical route handles. | Design needed |
+| 8 | Generalization-tree interaction | A branch needs selection and source navigation without pretending the shared stem is a generalization set or offering nonsensical route handles. | Delivered |
 
 Editing the Tonto model by drawing is deliberately not on this roadmap. It has
 different semantic, validation and undo requirements; adding it before the
@@ -49,7 +49,7 @@ view are created lazily, only after the modeller changes the automatic result.
 - [x] Show the active view in the panel and canvas titles.
 - [x] Cover filename normalization, discovery and copied state with tests.
 - [x] Keep views under `views/` and create no file for an untouched automatic layout.
-- [ ] Put the view switcher in the panel toolbar as well as the command palette.
+- [x] Put the view switcher in the panel toolbar as well as the command palette.
 - [ ] Create an empty named view as an alternative to copying the current one.
 - [ ] Rename and delete named views with explicit, recoverable file operations.
 - [x] Move a model's default and named views with it when it is renamed or
@@ -57,6 +57,18 @@ view are created lazily, only after the modeller changes the automatic result.
 - [ ] Surface orphaned placements so they can be reassigned after a model rename.
 
 ## Progress log
+
+### 2026-10-17 (merged the September view-switcher and tree work)
+
+- Merged four commits from 2026-09-07 that had stayed on GitHub: choosing a
+  generalization set and a single leg of its tree, a tree that follows a
+  dragged class, named views tied to their model, and the panel title as the
+  view switcher. The toolbar has had no title since it was simplified on
+  2026-09-11, so the switch is a **Views** button there instead.
+- A tree redrawn during a drag reuses where the last full drawing put its
+  triangle; without that it fell back to an even share of the parent's border
+  and jumped sideways as the drag began. Tree legs are left out of the layout
+  benchmarks, which measure routed lines.
 
 ### 2026-10-17 (views follow renames)
 
@@ -103,3 +115,30 @@ view are created lazily, only after the modeller changes the automatic result.
   copy operation that works even when automatic arrangement saving is off.
 - Added four storage-level tests; the repository now runs 154 tests.
 - Kept the existing `.tontoview` schema and default-view behaviour compatible.
+- Closed the toolbar slice of priority 1: the panel title, which already says
+  which view is drawn, is the switch. Clicking it opens the same picker the
+  palette command does, with the open view marked in its own row; it is a
+  button, so it is reachable by keyboard, and styled as the title it is with a
+  caret as the only sign that it does anything.
+- Finished priority 8: the set is now chosen as itself -- clicking its bar,
+  stem or label draws the whole tree chosen, where one leg chosen is one
+  specialization, and the cursor on the `genset` line chooses it in the diagram.
+  A chosen set stands for the classes it holds wherever a selection moves
+  things, so arranging one arranges its taxonomy rather than the whole diagram.
+  A tree also follows a class being dragged now: it is a figure derived from
+  where its classes are rather than a line between two of them, so it is drawn
+  again by the same code a full rendering uses.
+- Took priority 8 while the drawing code was open. A leg of a shared tree
+  carries the id of the generalization it is: clicking one chooses that
+  specialization and draws it chosen, double-clicking one opens the line it is
+  written on, and the stem, bar and triangle open the `genset` declaration
+  instead, since those are the set rather than any one branch of it. A leg is
+  offered no route handle -- the tree decides where its branches run -- and, as
+  no generalization is, it cannot be hidden. Generalizations now carry where
+  they are written, which nothing in the view model had.
+- Corrected two things the first slice got wrong, with two more tests (156):
+  discovery offered the views of a model whose name begins the same way --
+  `employment.v2.roles.tontoview`, and `employment.v2.tontoview` where that
+  model exists -- as views of `employment.tonto`; and the panel remembered a
+  named view only while it stayed on one document, so following the editor to
+  another model and back silently reopened the default arrangement.

@@ -9,7 +9,8 @@
 import * as vscode from 'vscode';
 import type { ContentOptions, DisplayOptions, ViewConstraints, ViewModel } from 'tonto-view';
 import {
-    contentAfter, derive, derivePackages, expandInverseIds, idsAtSource, packageName, packagesInScope, reconcile
+    contentAfter, derive, derivePackages, expandInverseIds, idsAtSource, nodesInSelection, packageName,
+    packagesInScope, reconcile
 } from 'tonto-view';
 import { ViewSession } from 'tonto-view/session';
 import type { ViewMove } from './rename.js';
@@ -19,7 +20,7 @@ import { filterItemsOf, filterView } from './filters.js';
 import type { FilterItem, FromPanel, Rect, ToPanel } from './protocol.js';
 import { routesAffectedBy, safeRestoredPlacements } from './restoration.js';
 import {
-    labelOfView, ViewStore, viewChoicesFor, viewFileExists, viewNameFor, viewNameOf, viewUriFor
+    labelOfView, ViewStore, viewChoicesFor, viewFileExists, viewNameFor, viewNameOf, viewToShow, viewUriFor
 } from './view-store.js';
 
 const DEBOUNCE = 300;
@@ -55,6 +56,14 @@ export class DiagramPanel {
     /** Only the newest arrangement request may replace positions or routes. */
     private layoutRequest = 0;
     private refreshes: Promise<void> = Promise.resolve();
+    /**
+     * The view each document was last shown in.
+     *
+     * The panel follows the editor, so without this a named view lasted only
+     * as long as the modeller stayed in one file: a glance at another model and
+     * back reopened the default arrangement, and nothing said it had.
+     */
+    private readonly viewOfDocument = new Map<string, vscode.Uri>();
     private availablePackages: string[] = [];
     private focusPackages: string[] = [];
     private filters: FilterItem[] = [];
@@ -133,12 +142,14 @@ export class DiagramPanel {
 
     /** Points the diagram at a document, loading its arrangement. */
     async show(document: vscode.TextDocument, requestedView?: vscode.Uri): Promise<void> {
-        // Returning from the webview to the editor fires the active-editor
-        // listener. That must keep a named view open rather than silently
-        // replacing it with the default arrangement for the same document.
-        const viewUri = requestedView
-            ?? (this.document === document ? this.store?.location : undefined)
-            ?? viewUriFor(document.uri);
+        const viewUri = viewToShow(
+            document.uri,
+            requestedView,
+            this.document && this.store
+                ? { document: this.document.uri, view: this.store.location }
+                : undefined,
+            this.viewOfDocument
+        );
         const generation = ++this.generation;
         this.layoutRequest += 1;
         clearTimeout(this.pending);
@@ -161,6 +172,7 @@ export class DiagramPanel {
             return;
         }
         this.document = document;
+        this.viewOfDocument.set(document.uri.toString(), viewUri);
         this.panel.title = this.diagramTitle(document.uri, viewUri);
         this.session = session;
         this.store = store;
@@ -213,7 +225,15 @@ export class DiagramPanel {
         if (!document) {
             return;
         }
-        const picked = await vscode.window.showQuickPick(await viewChoicesFor(document.uri), {
+        const open = this.store?.location.toString();
+        // Which one is open is said in its own row rather than by moving it to
+        // the top: the list is short and in a settled order, and a name a
+        // reader is looking for should be where it was last time.
+        const choices = (await viewChoicesFor(document.uri)).map(choice =>
+            choice.uri.toString() === open
+                ? { ...choice, description: `${choice.description} — open` }
+                : choice);
+        const picked = await vscode.window.showQuickPick(choices, {
             title: 'Open Diagram View',
             placeHolder: 'Choose an arrangement of this model'
         });
@@ -339,7 +359,10 @@ export class DiagramPanel {
     }
 
     async autoLayoutSelectedOrAll(): Promise<void> {
-        const only = [...this.selected].filter(id => this.positions[id] !== undefined);
+        // A chosen generalization set is the classes it holds: it has no place
+        // of its own to arrange, and a taxonomy is what a shared triangle is.
+        const only = nodesInSelection(this.view, this.selected)
+            .filter(id => this.positions[id] !== undefined);
         await this.autoLayoutNow(only.length > 0 ? only : undefined);
     }
 
@@ -678,6 +701,9 @@ export class DiagramPanel {
                 this.panel.reveal(this.panel.viewColumn, false);
                 await vscode.commands.executeCommand('workbench.action.moveEditorToNewWindow');
                 return;
+            case 'chooseView':
+                await this.chooseView();
+                return;
             case 'display':
                 if (store) {
                     store.begin('Display option');
@@ -841,7 +867,13 @@ export class DiagramPanel {
     private async reveal(id: string): Promise<void> {
         const node = this.view.nodes.find(candidate => candidate.id === id);
         const edge = this.view.edges.find(candidate => candidate.id === id);
-        const location = node?.source ?? (edge && 'source_' in edge ? edge.source_ : undefined);
+        // A generalization set is the third thing on the canvas with a
+        // declaration of its own: its triangle and bar are drawn for the line
+        // that says `disjoint complete genset ... where ...`.
+        const genset = this.view.gensets.find(candidate => candidate.id === id);
+        const location = node?.source
+            ?? (edge && 'source_' in edge ? edge.source_ : undefined)
+            ?? genset?.source;
         if (!location) {
             return;
         }
@@ -902,6 +934,7 @@ export class DiagramPanel {
         <button id="hide" title="Hide the selected classes or associations" disabled>Hide</button>
         <button id="optionsButton" title="What is drawn">⚙</button>
         <button id="exportButton" title="Export as SVG or PNG">Export</button>
+        <button id="views" title="Choose a view of this model">Views</button>
         <span class="spacer"></span>
         <span id="stale" class="stale" hidden></span>
     </div>

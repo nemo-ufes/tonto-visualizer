@@ -4,6 +4,7 @@ export * from './viewfile.js';
 export * from './ids.js';
 export * from './inverses.js';
 export * from './palette.js';
+export * from './selection.js';
 export * from './source.js';
 export { colorOf } from './natures.js';
 export { derive, packageName } from './derive.js';

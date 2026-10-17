@@ -4,7 +4,7 @@ import { defaultDisplayOptions } from 'tonto-view';
 import { placeNewNodes } from '../src/place.js';
 import { distanceToPath, segmentHitsRect } from '../src/geometry.js';
 import { handlesFor } from '../src/handles.js';
-import { derivationLine, labelWidth, render } from '../src/render.js';
+import { derivationLine, drawTrees, labelWidth, render } from '../src/render.js';
 import { curvedRoute, pathData, roundedRoute, routeEdge } from '../src/route.js';
 import { FONT, multiplicityLabel, sizeOf, textWidth, wrappedAttributeLines } from '../src/measure.js';
 
@@ -165,6 +165,49 @@ function model(): ViewModel {
         edges: [{ kind: 'generalization', id: 'gen:Sample::Employee->Sample::Person', source: 'Sample::Employee', target: 'Sample::Person' }],
         gensets: []
     };
+}
+
+/**
+ * `Person` with a declared age phase set, and one role outside it: a parent
+ * whose specializations are drawn two ways at once, which is where a shared
+ * tree and an ordinary line have to be told apart.
+ */
+function ageSet() {
+    const set = 'set:Sample::PersonAgePhases';
+    const clazz = (name: string, stereotype: string) => ({
+        id: `Sample::${name}`, kind: 'class' as const, name, package: 'Sample',
+        stereotype, color: '#FF99A3', isExternal: false, attributes: []
+    });
+    const specialization = (name: string, genset?: string) => ({
+        kind: 'generalization' as const,
+        id: `gen:Sample::${name}->Sample::Person`,
+        source: `Sample::${name}`,
+        target: 'Sample::Person',
+        ...(genset ? { genset } : {})
+    });
+    const view: ViewModel = {
+        groups: [],
+        nodes: [
+            clazz('Person', 'kind'), clazz('Child', 'phase'),
+            clazz('Adult', 'phase'), clazz('Employee', 'role')
+        ],
+        edges: [
+            specialization('Child', set), specialization('Adult', set), specialization('Employee')
+        ],
+        gensets: [{
+            id: set, name: 'PersonAgePhases', disjoint: true, complete: true,
+            general: 'Sample::Person', specifics: ['Sample::Child', 'Sample::Adult'], categorizers: []
+        }]
+    };
+    // As `parties` is arranged: the set's two phases to the left, and the role
+    // that is not in the set to the right of them.
+    const positions = {
+        'Sample::Person': { x: 253, y: 525, width: 208, height: 84 },
+        'Sample::Adult': { x: 117, y: 709, width: 120, height: 42 },
+        'Sample::Child': { x: 297, y: 709, width: 120, height: 42 },
+        'Sample::Employee': { x: 477, y: 709, width: 120, height: 42 }
+    };
+    return { set, view, positions };
 }
 
 describe('drawing', () => {
@@ -1014,40 +1057,7 @@ describe('drawing', () => {
      * has nothing but position to tell them otherwise.
      */
     test('writes a generalization set on its own bar, not across a neighbour\'s line', () => {
-        const set = 'set:Sample::PersonAgePhases';
-        const clazz = (name: string, stereotype: string) => ({
-            id: `Sample::${name}`, kind: 'class' as const, name, package: 'Sample',
-            stereotype, color: '#FF99A3', isExternal: false, attributes: []
-        });
-        const specialization = (name: string, genset?: string) => ({
-            kind: 'generalization' as const,
-            id: `gen:Sample::${name}->Sample::Person`,
-            source: `Sample::${name}`,
-            target: 'Sample::Person',
-            ...(genset ? { genset } : {})
-        });
-        const view: ViewModel = {
-            groups: [],
-            nodes: [
-                clazz('Person', 'kind'), clazz('Child', 'phase'),
-                clazz('Adult', 'phase'), clazz('Employee', 'role')
-            ],
-            edges: [
-                specialization('Child', set), specialization('Adult', set), specialization('Employee')
-            ],
-            gensets: [{
-                id: set, name: 'PersonAgePhases', disjoint: true, complete: true,
-                general: 'Sample::Person', specifics: ['Sample::Child', 'Sample::Adult'], categorizers: []
-            }]
-        };
-        // As `parties` is arranged: the set's two phases to the left, and the
-        // role that is not in the set to the right of them.
-        const positions = {
-            'Sample::Person': { x: 253, y: 525, width: 208, height: 84 },
-            'Sample::Adult': { x: 117, y: 709, width: 120, height: 42 },
-            'Sample::Child': { x: 297, y: 709, width: 120, height: 42 },
-            'Sample::Employee': { x: 477, y: 709, width: 120, height: 42 }
-        };
+        const { view, positions } = ageSet();
         const output = render({ view, positions, display });
 
         const tree = /<g class="tv-edge tv-tree"[^>]*>([\s\S]*?)<\/g>/.exec(output.svg)?.[1] ?? '';
@@ -1059,7 +1069,7 @@ describe('drawing', () => {
             { x: horizontal![0], y: horizontal![1] },
             { x: horizontal![2], y: horizontal![3] }
         ];
-        const written = /<text x="([-\d.]+)" y="([-\d.]+)"[^>]*>PersonAgePhases[^<]*<\/text>/.exec(tree);
+        const written = /<text[^>]* x="([-\d.]+)" y="([-\d.]+)"[^>]*>PersonAgePhases[^<]*<\/text>/.exec(tree);
         expect(written).not.toBeNull();
         const at = { x: Number(written![1]), y: Number(written![2]) };
 
@@ -1069,6 +1079,95 @@ describe('drawing', () => {
         expect(at.x).toBeLessThanOrEqual(Math.max(bar[0]!.x, bar[1]!.x));
         expect(distanceToPath(at, bar))
             .toBeLessThan(distanceToPath(at, output.paths['gen:Sample::Employee->Sample::Person']!));
+    });
+
+    /**
+     * The legs of a shared tree were bare paths inside one group carrying the
+     * set's id: no leg said which generalization it was, so clicking a branch
+     * chose nothing and double-clicking it opened nothing, though each has a
+     * line of text behind it. The tree is still the set -- what is drawn is one
+     * triangle, because that is what the model declares -- but a branch of it
+     * is a generalization, and now says so.
+     */
+    test('gives each leg of a shared tree the id of the generalization it is', () => {
+        const { set, view, positions } = ageSet();
+        const output = render({ view, positions, display });
+        const child = 'gen:Sample::Child->Sample::Person';
+        const adult = 'gen:Sample::Adult->Sample::Person';
+
+        const tree = /<g class="tv-edge tv-tree"[^>]*>([\s\S]*?)<\/g>/.exec(output.svg)?.[1] ?? '';
+        // An id holds `->`, which is escaped in the markup and unescaped again
+        // by whatever parses it.
+        const written = (id: string) => id.replaceAll('>', '&gt;');
+        expect(tree).toContain(`<path data-edge="${written(child)}"`);
+        expect(tree).toContain(`<path data-edge="${written(adult)}"`);
+        // The group is still the set: a tree is what the model declares, and no
+        // one branch of it is that.
+        expect(output.svg).toContain(`data-genset="${set}"`);
+
+        // Hit-testing asks `paths`, so a leg has to be in it -- ending on the
+        // subtype it runs to, which is how the reader knows which line it is.
+        expect(output.paths[child]?.at(-1)).toEqual({ x: 357, y: 709 });
+        expect(output.paths[adult]?.at(-1)).toEqual({ x: 177, y: 709 });
+        // And marked as the tree's, since nothing may offer to bend it.
+        expect(output.trees).toEqual({ [child]: set, [adult]: set });
+        // The generalization drawn as an ordinary line is nobody's leg.
+        expect(output.trees['gen:Sample::Employee->Sample::Person']).toBeUndefined();
+
+        // And a chosen branch is drawn chosen, since every keystroke redraws.
+        const chosen = render({ view, positions, display, selection: [child] });
+        expect(chosen.svg).toContain(`<path data-edge="${written(child)}" class="tv-selected"`);
+        expect(chosen.svg).not.toContain(`<path data-edge="${written(adult)}" class="tv-selected"`);
+    });
+
+    /**
+     * The set is a thing the model declares, so it is chosen as itself: the
+     * whole tree is drawn chosen, where one leg chosen is one specialization.
+     * It is also drawn as a line nobody routed, which is why the spine is
+     * reported apart from the paths -- a pointer near the bar is asking for the
+     * set, and a bar is 1.2px wide.
+     */
+    test('draws a generalization set as something that can be chosen and pointed at', () => {
+        const { set, view, positions } = ageSet();
+
+        const plain = render({ view, positions, display });
+        // Down the stem, then the whole bar: every part of it is the set. The
+        // stem stands left of `Person`'s centre, sharing the border with the
+        // line to `Employee`, which is not in the set.
+        expect(plain.spines[set]).toEqual([
+            { x: 330, y: 609 }, { x: 330, y: 666 }, { x: 177, y: 666 }, { x: 357, y: 666 }
+        ]);
+        // The label says whose it is, so clicking it asks for the set.
+        expect(plain.svg).toContain(`<text data-for="${set}"`);
+        expect(plain.svg).toContain('class="tv-edge tv-tree" data-genset=');
+
+        const chosen = render({ view, positions, display, selection: [set] });
+        expect(chosen.svg).toContain('class="tv-edge tv-tree tv-selected" data-genset=');
+        // Choosing the set is not choosing one of its branches.
+        expect(chosen.svg).not.toContain('class="tv-selected" d=');
+    });
+
+    /**
+     * A tree is derived from where its classes are, so a class being dragged
+     * has to redraw it -- and the same code has to do it, or what a drag leaves
+     * behind is not what the next full drawing produces.
+     */
+    test('redraws a tree from the classes it is drawn from', () => {
+        const { set, view, positions } = ageSet();
+        const dragged = { ...positions, 'Sample::Child': { x: 297, y: 809, width: 120, height: 42 } };
+
+        // Seeded with where the full drawing put the triangle, which only it
+        // can work out: it shares the parent's border with `Employee`'s line.
+        const drawn = render({ view, positions, display });
+        const before = drawTrees({ view, positions, anchors: drawn.anchors });
+        const after = drawTrees({ view, positions: dragged, anchors: drawn.anchors });
+
+        expect(before.markup[set]).toBe(/<g class="tv-edge tv-tree"[^>]*>[\s\S]*?<\/g>/.exec(drawn.svg)?.[0]);
+        expect(after.legs['gen:Sample::Child->Sample::Person']?.at(-1)).toEqual({ x: 357, y: 809 });
+        expect(after.markup[set]).not.toBe(before.markup[set]);
+        // The specializations a tree took over, which nothing else may draw.
+        expect([...after.covered].sort())
+            .toEqual(['gen:Sample::Adult->Sample::Person', 'gen:Sample::Child->Sample::Person']);
     });
 
     test('goes monochrome when colours are turned off', () => {
