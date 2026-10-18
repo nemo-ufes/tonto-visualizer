@@ -77,7 +77,9 @@ Working end to end, and rough in places.
 The notation covers classes with stereotypes and attributes, datatypes and
 enumerations, generalizations, generalization sets as one shared triangle with
 `{disjoint, complete}`, relations with their stereotype set over their
-name and smaller, UML's solid reading-direction triangle just after the name,
+name and smaller, UML's solid reading-direction triangle just after the name
+-- or after the stereotype, or alone, when the relation has no name, and on
+every relation but a whole-part one, whose diamond already says which way it reads --
 multiplicities and role names on opposite sides of each end, whole-part diamonds, `instanceOf`, a relation's
 `derivedFrom` as a UML dependency from the middle of its line to the relator or qualities it is
 derived from, a historical role's `derivedFrom` as one from the role to the middle of the

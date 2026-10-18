@@ -1413,6 +1413,7 @@ function renderForLayoutScore(
         // it must not make the optimizer move whole clusters to accommodate a
         // line-style choice that leaves the association's endpoints unchanged.
         repeatedAssociationFans: false,
+        unnamedReadings: false,
         display: { ...defaultDisplayOptions, routing, showPackageGroups: false }
     });
 }
