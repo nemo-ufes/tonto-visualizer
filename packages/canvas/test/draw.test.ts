@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import type { ViewModel, ViewRelationEnd } from 'tonto-view';
+import type { ViewModel, ViewRelation, ViewRelationEnd } from 'tonto-view';
 import { defaultDisplayOptions } from 'tonto-view';
 import { placeNewNodes } from '../src/place.js';
 import { distanceToPath, segmentHitsRect } from '../src/geometry.js';
@@ -900,13 +900,65 @@ describe('drawing', () => {
         expect(Object.keys(drawnPair(view).paths)).toHaveLength(2);
     });
 
-    test('leaves the reading triangle off a relation with no name', () => {
+    /** `related()` without its name, laid out with the relator left of the role. */
+    function unnamed(change: Partial<ViewRelation> = {}, options = display) {
         const view = related();
-        const edge = view.edges[0]!;
-        if (edge.kind === 'relation') {
+        const [edge] = view.edges;
+        if (edge?.kind === 'relation') {
             delete edge.name;
+            Object.assign(edge, change);
         }
-        expect(drawn(view).svg).not.toContain('class="tv-reading"');
+        return render({
+            view,
+            positions: {
+                'Sample::Contract': { x: 0, y: 0, width: 140, height: 42 },
+                'Sample::Employee': { x: 400, y: 0, width: 140, height: 42 }
+            },
+            display: options
+        }).svg;
+    }
+
+    /** The way each reading triangle in a drawing points, as a unit vector. */
+    function triangles(svg: string): Array<{ x: number; y: number }> {
+        return [...svg.matchAll(/<polygon class="tv-reading" points="([-\d.]+),([-\d.]+) ([-\d.]+),([-\d.]+) ([-\d.]+),([-\d.]+)"/g)]
+            .map(match => {
+                const [tipX, tipY, oneX, oneY, twoX, twoY] = match.slice(1).map(Number) as number[];
+                const base = { x: (oneX! + twoX!) / 2, y: (oneY! + twoY!) / 2 };
+                const length = Math.hypot(tipX! - base.x, tipY! - base.y);
+                return { x: Math.round((tipX! - base.x) / length), y: Math.round((tipY! - base.y) / length) };
+            });
+    }
+
+    test('says which way an unnamed relation reads, beside its stereotype', () => {
+        const svg = unnamed();
+        // "Contract ▶ Employee": the mediation reads from the relator.
+        expect(triangles(svg)).toEqual([{ x: 1, y: 0 }]);
+        const stereotype = /<text class="tv-edge-stereotype"[^>]* x="([-\d.]+)" y="([-\d.]+)"[^>]*>«mediation»</.exec(svg);
+        const tip = /<polygon class="tv-reading" points="([-\d.]+),([-\d.]+)/.exec(svg)!;
+        // On the stereotype's own line, after it: no line of its own under it.
+        expect(Math.abs(Number(tip[2]) - (Number(stereotype![2]) - 3))).toBeLessThan(5);
+        expect(Number(tip[1])).toBeGreaterThan(Number(stereotype![1]));
+    });
+
+    test('draws the triangle alone when there is nothing written to put it beside', () => {
+        const svg = unnamed({}, { ...display, showRelationStereotypes: false });
+        expect(triangles(svg)).toEqual([{ x: 1, y: 0 }]);
+    });
+
+    test('leaves the reading triangle off an unnamed whole-part relation', () => {
+        // The diamond already says which end is the whole.
+        expect(unnamed({ stereotype: 'componenthood', whole: 'source' })).not.toContain('class="tv-reading"');
+        // A named one still reads, as before.
+        const view = related();
+        const [edge] = view.edges;
+        if (edge?.kind === 'relation') {
+            Object.assign(edge, { stereotype: 'componenthood', whole: 'source' });
+        }
+        expect(drawn(view).svg).toContain('class="tv-reading"');
+    });
+
+    test('hides the triangle with the relation names', () => {
+        expect(unnamed({}, { ...display, showRelationNames: false })).not.toContain('class="tv-reading"');
     });
 
     test('writes no const, and marks the end that is not const instead', () => {

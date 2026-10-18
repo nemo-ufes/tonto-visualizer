@@ -41,6 +41,13 @@ export interface RenderInput {
     padding?: number;
     /** Internal layout scoring uses direct guides so drawing style cannot move cards. */
     repeatedAssociationFans?: boolean;
+    /**
+     * Reading triangles on unnamed relations. Layout scoring leaves them off
+     * for the same reason as the fans: a 9px mark widened the label beside
+     * it, the label's text moved over, and the arrangement it was scored by
+     * changed with it.
+     */
+    unnamedReadings?: boolean;
 }
 
 export interface Rendered {
@@ -487,7 +494,8 @@ export function render(input: RenderInput): Rendered {
      * struck `wasTerminatedIn` through.
      */
     for (const one of [...lines].sort((a, b) => labelWidth(b.edge, display) - labelWidth(a.edge, display))) {
-        labelMarkup += drawEdgeLabels(one.edge, one.points, display, theme, placer, one.partner);
+        labelMarkup += drawEdgeLabels(
+            one.edge, one.points, display, theme, placer, one.partner, input.unnamedReadings !== false);
     }
 
     // Sized after everything is placed, and around what was placed. A label
@@ -1033,10 +1041,10 @@ export function labelWidth(edge: ViewEdge, display: DisplayOptions): number {
 
 function drawEdgeLabels(
     edge: ViewEdge, points: Point[], display: DisplayOptions, theme: Theme, placer: LabelPlacer,
-    partner?: ViewRelation
+    partner?: ViewRelation, unnamedReadings = true
 ): string {
     if (edge.kind === 'relation') {
-        return relationLabels(edge, points, display, theme, placer, partner);
+        return relationLabels(edge, points, display, theme, placer, partner, unnamedReadings);
     }
     if (edge.kind === 'instantiation') {
         return centreLabel(points, [{ stereotype: '«instanceOf»' }], display, theme, placer, edge.id);
@@ -1331,17 +1339,26 @@ function relationDecoration(edge: ViewRelation, points: Point[], _theme: Theme):
  */
 function relationLabels(
     edge: ViewRelation, points: Point[], display: DisplayOptions, theme: Theme, placer: LabelPlacer,
-    partner?: ViewRelation
+    partner?: ViewRelation, unnamedReadings = true
 ): string {
     const stereotypeOf = (one: ViewRelation): string | undefined =>
         (display.showRelationStereotypes && one.stereotype ? `«${one.stereotype}»` : undefined);
     const nameOf = (one: ViewRelation): string | undefined =>
         (display.showRelationNames && one.name ? one.name : undefined);
 
+    // An unnamed relation still reads one way -- `Contract ▶ Employee` -- and
+    // its triangle says which, as a named one's does. Not a parthood: the
+    // diamond already says which end is the whole, and a triangle beside it
+    // would be a second arrow for one direction. The triangle belongs with
+    // the names, so it goes when they are hidden.
+    const directed = (one: ViewRelation): boolean =>
+        display.showRelationNames && (one.name !== undefined || (unnamedReadings && !one.whole));
     const shared = partner !== undefined && edge.stereotype === partner.stereotype;
-    const readings: Reading[] = [reading(stereotypeOf(edge), nameOf(edge), 'forward')];
+    const readings: Reading[] = [reading(stereotypeOf(edge), nameOf(edge), 'forward', directed(edge))];
     if (partner) {
-        readings.push(reading(shared ? undefined : stereotypeOf(partner), nameOf(partner), 'backward'));
+        readings.push(reading(
+            shared ? undefined : stereotypeOf(partner), nameOf(partner), 'backward', directed(partner)
+        ));
     }
 
     let markup = centreLabel(points, readings, display, theme, placer, edge.id);
@@ -1350,11 +1367,14 @@ function relationLabels(
     return markup;
 }
 
-/** A reading, with its triangle only where there is a name to point away from. */
-function reading(stereotype: string | undefined, name: string | undefined, along: Reading['direction']): Reading {
+/** A reading, with its triangle where the relation is read one way. */
+function reading(
+    stereotype: string | undefined, name: string | undefined, along: Reading['direction'], directed: boolean
+): Reading {
     return {
         ...(stereotype ? { stereotype } : {}),
-        ...(name ? { name, direction: along } : {})
+        ...(name ? { name } : {}),
+        ...(directed ? { direction: along } : {})
     };
 }
 
@@ -1575,18 +1595,26 @@ function centreLabel(
     // name is now on its own, without the guillemets the estimate overshoots on.
     const nameWidth = (one: Reading) => one.name
         ? textWidth(one.name, font.edge, false, font.kind) * 1.02 : 0;
-    const markerOf = (one: Reading) => (one.direction && one.name ? MARKER : 0);
-    const lines = readings.filter(one => one.stereotype !== undefined || one.name !== undefined);
+    const stereotypeWidth = (one: Reading) => one.stereotype
+        ? textWidth(one.stereotype, font.edgeStereotype, false, font.kind) : 0;
+    const markerOf = (one: Reading) => (one.direction ? MARKER : 0);
+    // An unnamed reading's triangle goes beside its stereotype -- `«mediation»
+    // ▶` -- rather than on a line of its own under it; with neither, it is the
+    // whole label.
+    const onStereotype = (one: Reading) => !one.name && one.direction !== undefined && one.stereotype !== undefined;
+    const nameRow = (one: Reading) => one.name !== undefined || (one.direction !== undefined && !one.stereotype);
+    const lines = readings.filter(one =>
+        one.stereotype !== undefined || one.name !== undefined || one.direction !== undefined);
     if (lines.length === 0) {
         return '';
     }
 
     const width = Math.max(...lines.map(one => Math.max(
-        nameWidth(one) + markerOf(one),
-        one.stereotype ? textWidth(one.stereotype, font.edgeStereotype, false, font.kind) : 0
+        nameRow(one) ? nameWidth(one) + markerOf(one) : 0,
+        stereotypeWidth(one) + (onStereotype(one) ? MARKER : 0)
     )));
     const height = lines.reduce((total, one) =>
-        total + (one.stereotype ? line.stereotype : 0) + (one.name ? line.name : 0), 0);
+        total + (one.stereotype ? line.stereotype : 0) + (nameRow(one) ? line.name : 0), 0);
 
     // Outwards from the middle, and step-major: a label that cannot sit at the
     // middle of its line belongs a little further along it, not a label's width
@@ -1597,15 +1625,32 @@ function centreLabel(
         fractions.map(fraction => besideLine(points, length * fraction, { width, height }, [step], font)[0]!));
     const at = placer.placeBox(candidates, width, height, owner);
 
+    // Which way a triangle points and which side of its text it sits on: the
+    // end it points at, or the right for one pointing up or down.
+    const aimOf = (one: Reading) => {
+        const pointing = readingDirection(directionNear(points, at), one.direction === 'backward' ? -1 : 1);
+        return { pointing, side: pointing.x < 0 ? -1 : 1 };
+    };
     let markup = '';
     let top = at.y - height / 2;
     for (const one of lines) {
         if (one.stereotype) {
-            markup += label(
-                at.x, top + line.stereotype - 2 * font.scale, one.stereotype,
-                theme, 'middle', 'tv-edge-stereotype', owner
-            );
+            const baseline = top + line.stereotype - 2 * font.scale;
+            if (onStereotype(one)) {
+                const { pointing, side } = aimOf(one);
+                const centre = at.x - side * MARKER / 2;
+                markup += label(centre, baseline, one.stereotype, theme, 'middle', 'tv-edge-stereotype', owner);
+                markup += readingTriangle(
+                    { x: centre + side * (stereotypeWidth(one) / 2 + MARKER - 3.5), y: baseline - 3 }, pointing);
+            } else {
+                markup += label(at.x, baseline, one.stereotype, theme, 'middle', 'tv-edge-stereotype', owner);
+            }
             top += line.stereotype;
+        }
+        if (!one.name && nameRow(one)) {
+            // Nothing to write: the triangle is the reading.
+            markup += readingTriangle({ x: at.x, y: top + line.name / 2 }, aimOf(one).pointing);
+            top += line.name;
         }
         if (one.name) {
             // The name keeps the middle and the triangle sits just off the end
@@ -1618,9 +1663,7 @@ function centreLabel(
             // points at neither end, and keeps to the right.
             const baseline = top + line.name - 3 * font.scale;
             const marker = markerOf(one);
-            const back = one.direction === 'backward' ? -1 : 1;
-            const pointing = readingDirection(directionNear(points, at), back);
-            const side = pointing.x < 0 ? -1 : 1;
+            const { pointing, side } = aimOf(one);
             const centre = at.x - side * marker / 2;
             markup += label(centre, baseline, one.name, theme, 'middle', undefined, owner);
             if (marker > 0) {
