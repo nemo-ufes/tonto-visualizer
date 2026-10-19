@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+    <!-- The tonto tile, carrying a diagram where the language's icon carries its "t":
+         a general class above two specifics, joined by one generalization tree. -->
+    <rect width="256" height="256" rx="44" fill="#F7B83D"/>
+    <g fill="#111111">
+        <rect x="83" y="46" width="90" height="50" rx="12"/>
+        <rect x="38" y="160" width="80" height="50" rx="12"/>
+        <rect x="138" y="160" width="80" height="50" rx="12"/>
+    </g>
+    <g fill="none" stroke="#111111" stroke-width="10" stroke-linejoin="round">
+        <path d="M78 160 V136 H178 V160 M128 136 V126"/>
+        <path d="M128 100 L146 126 H110 Z" fill="#F7B83D"/>
+    </g>
+</svg>

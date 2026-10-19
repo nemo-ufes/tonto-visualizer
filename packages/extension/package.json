@@ -1,9 +1,9 @@
 {
     "name": "tonto-visualizer",
-    "displayName": "Tonto Visualizer",
-    "version": "0.1.61+20261017105645",
+    "displayName": "tonto visualizer",
+    "version": "0.1.62+20261018204546",
     "private": true,
-    "description": "An OntoUML diagram beside the text: a Tonto model drawn as it is typed, and arranged by hand.",
+    "description": "tonto visualizer: OntoUML diagrams of tonto models, drawn as you type and arranged by hand",
     "license": "MIT",
     "repository": {
         "type": "git",
@@ -11,7 +11,12 @@
         "directory": "packages/extension"
     },
     "type": "module",
-    "publisher": "tonto-redesign",
+    "publisher": "nemo-ufes",
+    "icon": "media/icon.png",
+    "galleryBanner": {
+        "color": "#141414",
+        "theme": "dark"
+    },
     "categories": [
         "Visualization",
         "Programming Languages"
@@ -113,7 +118,7 @@
             ]
         },
         "configuration": {
-            "title": "Tonto Visualizer",
+            "title": "tonto visualizer",
             "properties": {
                 "tonto.viz.update": {
                     "type": "string",
@@ -141,16 +146,17 @@
         }
     },
     "files": [
-        "out",
+        "LICENSE",
         "media",
-        "LICENSE"
+        "out",
+        "README.md"
     ],
     "scripts": {
         "clean": "shx rm -rf out",
         "prebuild": "npm run clean",
         "build": "node esbuild.mjs",
         "watch": "node esbuild.mjs --watch",
-        "package": "node bump-version.mjs && npm run build && vsce package --no-dependencies",
+        "package": "node bump-version.mjs && npm run build && vsce package --no-dependencies --no-rewrite-relative-links",
         "test": "vitest run"
     },
     "dependencies": {
