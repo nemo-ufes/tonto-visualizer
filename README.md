@@ -106,6 +106,11 @@ interaction changes only the persisted view.
 
     node packages/cli/bin/tonto-view.js packages/canvas/test/fixtures/university
 
+    npm run dev:install  # build, package and install a development VSIX
+
+Development builds, versioning and releases follow tonto's own procedure; see
+[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+
 With a diagram open, **Tonto: Save Diagram as Named View** copies its current
 content and arrangement to a named file such as
 `views/employment.core-taxonomy.tontoview`. **Tonto: Open Diagram View**

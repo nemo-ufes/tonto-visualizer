@@ -11,7 +11,11 @@
         "test": "npm run test --workspace=tonto-view --workspace=tonto-canvas --workspace=tonto-visualizer",
         "lint": "npm run lint --workspaces --if-present",
         "typecheck": "tsc -p packages/extension/tsconfig.json --noEmit",
-        "package": "npm run build && npm run package --workspace=tonto-visualizer"
+        "package": "npm run build && npm run package --workspace=tonto-visualizer",
+        "versions:check": "node scripts/versioning.mjs check",
+        "release:prepare": "node scripts/versioning.mjs prepare",
+        "dev:install": "node scripts/dev-install.mjs",
+        "install:local": "npm run dev:install"
     },
     "devDependencies": {
         "typescript": "^5.6.0"

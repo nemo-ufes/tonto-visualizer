@@ -22,6 +22,7 @@ jobs:
           node-version: 22
       - run: npm run language
       - run: npm install
+      - run: npm run versions:check
       - run: npm run build
       - run: npm run typecheck
       - run: npm test
@@ -34,3 +35,14 @@ jobs:
                        packages/view/test/fixtures/*/ vendor/tonto/packages/language/test/fixtures/models/*/; do
             node packages/cli/bin/tonto-view.js "$model" --svg > /dev/null
           done
+      # The .vsix as it would be installed. A file left out of the package, or a
+      # manifest vsce refuses, shows here rather than when someone packages by
+      # hand. Packaged under the tracked version: no development stamp.
+      - name: Package the extension
+        working-directory: packages/extension
+        run: npx vsce package --no-dependencies --no-rewrite-relative-links -o tonto-visualizer.vsix
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tonto-visualizer-vsix
+          path: packages/extension/tonto-visualizer.vsix
+          retention-days: 14

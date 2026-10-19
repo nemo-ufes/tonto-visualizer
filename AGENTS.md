@@ -9,6 +9,7 @@ elsewhere and is read, not reimplemented.
     npm install
     npm run build
     npm test
+    npm run dev:install  # package and install a development build (docs/DEVELOPMENT.md)
 
 ## Layout
 
@@ -19,6 +20,7 @@ elsewhere and is read, not reimplemented.
 | `packages/canvas` | sizes, placement, routing, SVG. Runs in a webview and in Node; `./draw` is the half that does not need ELK. |
 | `packages/extension` | the VS Code panel: host in `src`, the canvas app in `src/webview` |
 | `packages/cli` | `tonto-view`, which prints a view model or draws it |
+| `scripts` | versioning, development installs and releases -- see `docs/DEVELOPMENT.md` |
 | `docs/PLAN.md` | what is being built, and the decisions behind it |
 
 ## The rules this repository is built on
@@ -51,5 +53,9 @@ elsewhere and is read, not reimplemented.
 - 4-space indent, ESM, `tsc -b`, vitest, no default exports.
 - Domain examples must be true. A fixture that says a car is part of an engine
   teaches the wrong thing, and the fixtures are read more often than the code.
+- The tracked version is the last release's, and the workspaces share it:
+  never stamp or bump it by hand. `npm run dev:install` makes a development
+  version without touching it; `npm run release:prepare` is the only way it
+  moves.
 - Verify by running. Every fixture in `packages/view/test/fixtures` validates in
   silence under `tonto check`; keep it that way.

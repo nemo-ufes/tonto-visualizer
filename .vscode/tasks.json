@@ -1,0 +1,38 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            // The whole workspace, in dependency order: the view and canvas
+            // packages through tsc, then the extension host and the webview
+            // through esbuild. The extension bundles those packages from their
+            // compiled output, so bundling alone would launch whatever they
+            // were last built as -- and tsc is what makes F5 refuse to start
+            // when something does not compile. The language is not rebuilt
+            // here; `npm run language` does that after its pin moves.
+            "label": "Build extension",
+            "type": "shell",
+            "command": "npm run build",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": [
+                "$tsc"
+            ],
+            "presentation": {
+                "reveal": "silent",
+                "clear": true
+            }
+        },
+        {
+            "label": "Test",
+            "type": "shell",
+            "command": "npm test",
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            },
+            "problemMatcher": []
+        }
+    ]
+}

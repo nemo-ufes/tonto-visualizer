@@ -58,6 +58,19 @@ view are created lazily, only after the modeller changes the automatic result.
 
 ## Progress log
 
+### 2026-10-19 (development installs and releases)
+
+- Versioning, local installs and releases now follow tonto's procedure. The
+  view, canvas, CLI and extension are one release set at one stable version,
+  `0.1.62` to start, checked by `npm run versions:check` in CI.
+  `npm run dev:install` packages and installs `<next patch>-dev.<ms>.<pid>`
+  without changing the tracked version, which replaces the old bump on every
+  package and its commit of a build timestamp. `npm run release:prepare`,
+  a signed tag and the `Release tonto visualizer` workflow make a release; the
+  Marketplace is optional and off by default.
+- F5 launches the Extension Development Host after a full build, and CI uploads
+  the packaged VSIX.
+
 ### 2026-10-19 (third-party notices)
 
 - The VSIX carried no notice for any package bundled into it: `--no-dependencies`

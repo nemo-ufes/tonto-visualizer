@@ -1,0 +1,86 @@
+name: Release tonto visualizer
+
+# Started by hand, from a signed tag that already exists: pushing a tag does
+# not release anything. Marketplace publication is off unless asked for, so a
+# GitHub-only release needs no registry credentials. See docs/DEVELOPMENT.md.
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing signed release tag, for example v0.2.0
+        required: true
+        type: string
+      publish_marketplace:
+        description: Publish the extension to the VS Code Marketplace
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.release_tag }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Verify, package, and release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      # The language comes from the submodule pinned at the tagged commit, so
+      # a release is built against exactly the tonto it was tested with.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.release_tag }}
+          submodules: recursive
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Verify signed release tag
+        env:
+          RELEASE_SIGNING_PUBLIC_KEY: ${{ secrets.RELEASE_SIGNING_PUBLIC_KEY }}
+          RELEASE_SIGNING_FINGERPRINT: ${{ vars.RELEASE_SIGNING_FINGERPRINT }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          test -n "$RELEASE_SIGNING_PUBLIC_KEY" || { echo "Set the RELEASE_SIGNING_PUBLIC_KEY repository secret."; exit 1; }
+          test -n "$RELEASE_SIGNING_FINGERPRINT" || { echo "Set the RELEASE_SIGNING_FINGERPRINT repository variable."; exit 1; }
+          printf '%s\n' "$RELEASE_SIGNING_PUBLIC_KEY" | gpg --batch --import
+          gpg --batch --with-colons --fingerprint |
+            awk -F: '$1 == "fpr" { print $10 }' |
+            grep -Fx "$RELEASE_SIGNING_FINGERPRINT"
+          git verify-tag "$RELEASE_TAG"
+      - run: npm run language
+      - run: npm ci
+      - name: Check lockstep versions and tag
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: npm run versions:check -- "$RELEASE_TAG"
+      - run: npm run build
+      - run: npm run typecheck
+      - run: npm test
+      - name: Package the VS Code extension
+        run: npm run package --workspace=tonto-visualizer
+      - name: Publish extension to the Visual Studio Marketplace
+        if: ${{ inputs.publish_marketplace }}
+        working-directory: packages/extension
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: npx @vscode/vsce publish --packagePath "tonto-visualizer-${RELEASE_TAG#v}.vsix" --oidc --skip-duplicate
+      - name: Create or update the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          VERSION="${RELEASE_TAG#v}"
+          VSIX="packages/extension/tonto-visualizer-${VERSION}.vsix"
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "$VSIX" --clobber
+          else
+            gh release create "$RELEASE_TAG" "$VSIX" --verify-tag --generate-notes --title "tonto visualizer ${VERSION}"
+          fi
