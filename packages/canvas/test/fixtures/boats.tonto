@@ -1,0 +1,199 @@
+ontology boats
+
+category PhysicalObject of functional-complexes
+mixin ComplexPhysicalObject specializes PhysicalObject {
+    @componenthood (wholes) [0..*] <>-- hasPart -- [2..*] (parts) PhysicalObject
+}
+
+kind Lion specializes ComplexPhysicalObject {
+    @componenthood (whole) <>-- [1] (heart subsets parts) LionHeart specializes hasPart
+    @componenthood (const whole) <>-- [1] (const brain subsets parts) LionBrain specializes hasPart
+}
+
+kind LionHeart specializes PhysicalObject
+kind LionBrain specializes PhysicalObject
+
+kind Statue
+
+subkind SteelStatue specializes Statue {
+    @historicalDependence (addOnly) [*] -- hasAuthor -- [1..*] (const author) Person
+}
+
+subkind WoodenStatue of functional-complexes specializes Statue
+
+kind Node {
+}
+
+subkind ComplexNode specializes Node {
+    @componenthood [0..1] <>-- [2] Node
+}
+
+subkind LeafNode specializes Node
+disjoint complete genset Name where ComplexNode, LeafNode specializes Node
+
+quantity LumpOfSteel {
+    @constitution [1] -- [0..1] SteelStatue
+}
+
+quantity Wood {
+    @constitution [1] -- [0..1] (woodenStatue) WoodenStatue
+}
+
+collective NotFlagging {
+// @membership [*] <>-- [2..*] (const members) Wood
+}
+
+collective StatueCollection {
+// @membership [*] <>-- hasStatues -- [2..*] (statues) Statue
+// @subCollection [*] <>-- [1] SteelStatueCollection
+}
+
+subkind SteelStatueCollection specializes StatueCollection {
+// @membership [*] <>-- hasSteelStatues -- [2..*] (steelStatues subsets StatueCollection.statues) SteelStatue specializes StatueCollection.hasStatues
+}
+
+process PartidaDeFutebol {
+    @constitution (const) [1] -- [1..*] (addOnly) Lance
+}
+event Lance {
+}
+
+role AutorDeLance specializes Person {
+    @participation (const) [*] -- [1..*] (const) Lance
+}
+
+quantity Wine {
+// autocomplete should not add [*]
+// @subQuantity [*] <>-- [1] (const) SubQuantity
+}
+quantity SubQuantity
+
+// extrinsicMode TesteTeste {
+// // @externalDependence [*] -- [1] (const)  // autocomplete com mais dicas da natureza
+// }
+
+type PersonType
+
+kind Person {
+    name: string
+    @componenthood [0..1] <>-- [1..*] Heart
+    @componenthood [0..1] <>-- [1] (const) Brain
+    @material [*] -- worksFor -- [0..*] Company
+    @begin birthDate: const date
+    @end deathDate: const date [0..1]
+    @change (const) [1] -- [0..*] Surgery
+    @material [*] -- supervises -- [*] Person
+    @creation (const) [1..*] -- bornFrom -- [1] (const) Birth
+
+    /// relation between a person and their father
+    @historicalDependence (addOnly children) [*] -- hasFather -- [1] (const father) Man
+    /// relation between a person and their mother
+    @historicalDependence (addOnly children) [*] -- hasMother -- [1] (const mother) Woman
+}
+
+@instantiation relation Person -- [1..*] PersonType
+
+kind Brain
+
+@material relation Person (const) [1] -- hasEmployment -- [0..*] (employments) Employment inverseOf Employment.involvesPerson
+
+kind Heart
+
+quality HeartStrength {
+    @characterization -- (const) Heart
+}
+quality HeartStrengthDeclineRate {
+    @characterization -- (const) HeartStrength
+}
+
+relator Employment {
+    @mediation [0..*] -- involvesPerson -- [1] (const) Person
+    @mediation [*] -- [1] (const) Company
+}
+kind Company
+relator Supervision {
+    @mediation [*] -- [1] (const) Person
+    @mediation [*] -- involvesSupervised -- [1] (const) Person
+}
+event Birth
+event Surgery
+
+subkind Man specializes Person {
+    (const father) [1] -- hasChild -- [*] (addOnly children) Person inverseOf Person.hasFather
+}
+subkind Woman specializes Person {
+    (const mother) [1] -- [*] (addOnly children) Person inverseOf Person.hasMother
+}
+
+disjoint complete genset Sex where Man, Woman specializes Person
+
+//////////////////
+
+event Match {
+    @structural (const match) [1] <>-- [*] (const penalties) Penalty
+    @structural (const match) [1] <>-- [*] (const goals) Goal
+}
+
+event Penalty {
+    @participational (const) <>-- (const) PenaltyTakerParticipation
+    @participational (const) <>-- [0..1] (const) GoaleeParticipation
+}
+event GoaleeParticipation
+event PenaltyTakerParticipation
+
+historicalRole PenaltyTaker specializes Person {
+    @participation (const) -- participatesIn -- PenaltyTakerParticipation
+}
+
+event Goal {
+    @historicalDependence (const goal) [1] -- [1] (const penalty) Penalty
+}
+
+@mediation relation Marriage -- involves -- [2] (const spouses) Spouse
+relator Marriage
+role Spouse specializes Person {
+    @historicalDependence (addOnly) [*] -- [1] (const) Ceremony
+}
+event Ceremony
+
+category Veihicle of objects
+
+kind Boat {
+    @componenthood [0..1] <>-- MainMotor
+}
+role MainMotor specializes Motor
+
+kind Motor {
+    horsePower: number
+}
+disjoint complete genset MotorPhase where FunctionalMotor, BrokenMotor specializes Motor
+phase FunctionalMotor
+phase BrokenMotor
+
+subkind ElectricMotor specializes Motor
+subkind GasMotor specializes Motor
+
+disjoint complete genset MotorType {
+    general Motor
+    specifics ElectricMotor, GasMotor
+}
+
+
+type CarType isPowerType
+subkind CarModel specializes CarType
+kind Car (instanceOf CarType) {
+    @instantiation [*] -- [1..*] CarType
+    @instantiation [*] -- [1] CarModel
+}
+disjoint complete genset CarPhase where BrokenCar, WorkingCar specializes Car
+
+phase BrokenCar specializes Car
+phase WorkingCar specializes Car
+
+disjoint complete genset carModels {
+    general Car
+    categorizer CarModel
+    specifics VWBug, Golf
+}
+subkind VWBug (instanceOf CarModel) specializes Car
+subkind Golf (instanceOf CarModel) specializes Car 

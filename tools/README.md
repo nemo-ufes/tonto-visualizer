@@ -14,7 +14,7 @@ diagram hard to read and that no test catches:
 Run it over the examples after changing anything about routing or labels:
 
     for m in university pets.tonto boats.tonto gufo.tonto showcase.tonto; do
-        node packages/cli/bin/tonto-view.js vendor/tontoredesign/examples/$m --svg > /tmp/$m.svg
+        node packages/cli/bin/tonto-view.js packages/canvas/test/fixtures/$m --svg > /tmp/$m.svg
     done
     python3 tools/readability.py /tmp/*.svg
 

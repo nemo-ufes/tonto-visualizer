@@ -1,0 +1,32 @@
+use person
+package university in academia
+
+category Organization of functional-complexes
+
+kind University specializes Organization {
+  @componenthood [1] <>-- has -- [2..*] Department
+}
+
+relation Department [1] -- [1] Staff
+
+kind Department {
+  [1] -- constitutedBy -- [1] Staff
+}
+
+collective Staff {
+  @membership [1..*] <>-- [2..*] (members) Employee
+}
+
+// SeniorStaff is a *part* of Staff, not a subtype of it, so its `professors`
+// end cannot subset `Staff.members`: UML subsetting requires the subsetting
+// end's owner to specialize the subsetted end's owner. The containment is
+// already carried by the @subCollection parthood relation.
+collective SeniorStaff {
+  @subCollection [1] --<> [1] Staff
+  @membership [1..*] <>-- [2..*] (professors) Professor
+}
+
+relator EmploymentContract {
+  @mediation [*] -- [1] Employee
+  @mediation [1..*] -- [1] person.Employer
+}

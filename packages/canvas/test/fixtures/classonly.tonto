@@ -1,0 +1,29 @@
+ontology classonly
+
+kind Animal
+
+subkind Mammal specializes Animal
+
+subkind Dog specializes Mammal
+
+subkind Cat specializes Mammal
+
+disjoint genset bySpecies 
+    where Dog, Cat specializes Mammal
+
+role Pet specializes Animal
+
+phase DeadAnimal specializes Animal
+
+phase LivingAnimal specializes Animal
+
+disjoint complete genset byLifeStatus where DeadAnimal, LivingAnimal specializes Animal
+
+kind Person
+
+role PetOwner specializes Person
+
+relator PetOwnership {
+    @mediation [1..*] -- [1] (const) Pet
+    @mediation [1..*] -- [1] (const) PetOwner
+}

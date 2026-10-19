@@ -1,0 +1,77 @@
+// A single-file tour of Tonto's concrete syntax, used as a test fixture and
+// as a reference for what the redesigned grammar accepts. Every construct
+// here parses and validates cleanly.
+
+ontology tour
+
+package showcase.common
+datatype Identifier
+
+package showcase
+
+use showcase.common
+
+enum Sex {
+    male, female
+}
+
+datatype FullName {
+    first: string
+    last: string
+}
+
+/// @en A human being.
+/// @pt-br Um ser humano.
+/// @label:en Person
+/// @label:pt-br Pessoa
+kind Person {
+
+    id: Identifier
+    name: FullName
+    sex: Sex [0..1]
+    nicknames: ordered string [*]
+    age: derived number
+}
+
+role Spouse specializes Person {
+    [2] -- isBoundBy -- Marriage inverseOf Marriage.involvesSpouse
+}
+
+category SocialRelator of relators
+
+type MarriageType
+
+relator Marriage (instanceOf MarriageType) specializes SocialRelator {
+    @mediation [1] -- participants -- [2] (const) Spouse
+}
+
+// The inverse of `Spouse.isBoundBy`, so it states the same two ends: a
+// marriage binds exactly the two the mediation names.
+relation Marriage -- involvesSpouse -- [2] Spouse
+
+// A functional complex has *components*, not members: `@membership` requires a
+// collective for its whole, which OntoUML enforces on the natures of the ends.
+kind Organization {
+    @componenthood [1..*] <>-- members -- [2..*] (staff) Person
+}
+
+role Executive specializes Person
+
+subkind PremiumOrganization specializes Organization {
+    @componenthood [1..*] <>-- [2..*] (staff redefines Organization.staff) Executive specializes Organization.members
+}
+
+// Phases partition by an *intrinsic* change, so they specialize the kind and
+// not the relational `Executive` role: OntoUML does not allow a phase to
+// specialize a role.
+phase Junior specializes Person
+phase Senior specializes Person
+
+disjoint complete genset Seniority where Junior, Senior specializes Person
+
+category LegalEntity of functional-complexes
+
+genset OrganizationKinds {
+    general LegalEntity
+    specifics Organization
+}

@@ -26,7 +26,7 @@ import type { OntologyOutline, OutlineImport, OutlinePackage } from './outline.j
 // on the last build. The module reads the file system, which is why it is
 // borrowed here and not in `language.ts` (see the note there).
 // eslint-disable-next-line no-restricted-imports
-import { bundleTargets, publicationWorkspace } from '../../../vendor/tontoredesign/packages/language/out/publication/workspace.js';
+import { bundleTargets, publicationWorkspace } from '../../../vendor/tonto/packages/language/out/publication/workspace.js';
 
 /**
  * Where the model a file belongs to starts, by the language's own rule: the
@@ -35,7 +35,7 @@ import { bundleTargets, publicationWorkspace } from '../../../vendor/tontoredesi
  * manifest a directory up, and a session over the file's folder alone never
  * loaded it.
  */
-export { modelRoot } from 'tonto-language';
+export { workspaceRootOf as modelRoot } from 'tonto-language';
 
 export interface SessionOptions {
     /** Directories whose `.tonto` files are loaded, so imports resolve. */

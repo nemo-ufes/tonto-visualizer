@@ -1,4 +1,4 @@
-[submodule "vendor/tontoredesign"]
-	path = vendor/tontoredesign
-	url = https://github.com/jpalmeida/tontoredesign
+[submodule "vendor/tonto"]
+	path = vendor/tonto
+	url = https://github.com/nemo-ufes/tonto.git
 	branch = main

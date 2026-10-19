@@ -29,7 +29,7 @@
     },
     "dependencies": {
         "langium": "~4.3.1",
-        "tonto-language": "file:../../vendor/tontoredesign/packages/language"
+        "tonto-language": "file:../../vendor/tonto/packages/language"
     },
     "devDependencies": {
         "shx": "^0.3.4",

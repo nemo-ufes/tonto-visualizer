@@ -6,10 +6,14 @@ as the model is typed, and lets the diagram be **arranged by hand** — elements
 dragged where the modeller wants them, and left there.
 
 It is installed next to the language extension from
-[`jpalmeida/tontoredesign`](https://github.com/jpalmeida/tontoredesign), which
-supplies the grammar, the checks and the language server. This one supplies the
-picture. Neither that repository nor
-[`nemo-ufes/Tonto`](https://github.com/nemo-ufes/Tonto) is modified.
+[`nemo-ufes/tonto`](https://github.com/nemo-ufes/tonto), which supplies the
+grammar, the checks and the language server. This one supplies the picture.
+That repository is not modified.
+
+The redesign was developed as `jpalmeida/tontoredesign` and published as
+`nemo-ufes/tonto` 0.9; this repository followed it there on 2026-10-19. Where
+this document says "the redesign" it means that language; where it says
+`nemo-ufes/Tonto` it means the old implementation the redesign replaced.
 
 The functionality being replicated is the PlantUML preview in `nemo-ufes/Tonto`.
 The *feature* carries over; the *engine* does not — see §4.
@@ -66,7 +70,7 @@ format.
 
 ## 3. Where the parsed model comes from
 
-**Decided: depend on `tonto-language` as source.** `jpalmeida/tontoredesign` is
+**Decided: depend on `tonto-language` as source.** `nemo-ufes/tonto` is
 pinned as a git submodule under `vendor/`, and `packages/language` is depended
 on through `file:`. The extension then runs the real grammar, the real scope
 provider and the real nature reasoning in its own process, and esbuild bundles
@@ -89,7 +93,7 @@ The reasons, since the alternatives keep looking attractive:
   file is being typed.
 
 The cost is a submodule to initialise and a pin to bump. CI rebuilds nightly
-against `tontoredesign@main`, so grammar drift arrives as a red build rather
+against `nemo-ufes/tonto@main`, so grammar drift arrives as a red build rather
 than as a wrong diagram. (`tonto-language` is not on npm — `tonto-cli` there is
 the *old* implementation — so `npm install` by name is not available. Publishing
 it would be a change in that repository, and so out of scope.)
@@ -205,7 +209,7 @@ Four packages, npm workspaces, ESM, the conventions of the redesign repo
 (4-space indent, `tsc -b`, vitest, eslint):
 
     tonto-visualizer/
-      vendor/tontoredesign/          git submodule, pinned
+      vendor/tonto/                  git submodule, pinned
       packages/
         view/                        AST → view model. Pure; no DOM, no vscode.
           src/derive.ts              the walk over Package/ClassDeclaration/Relation/GeneralizationSet
@@ -345,7 +349,7 @@ Parity *and* the notation the redesign can express, in the first release:
 | M3 | The extension: panel, live redraw on type, last-good render, follow-active-editor, options panel, legend, package filter, SVG export | done |
 | M4 | Interaction: select, marquee, drag, snap, hide, route handles, resize, undo, auto-layout — and the `.tontoview` file that makes it stick | done |
 | M5 | The rest of the notation: gensets, relation stereotypes, MLT, end decorations, datatypes, documentation | done |
-| M6 | Packaging: bundled `.vsix`, README, CI, nightly build against `tontoredesign@main` | CI and the bundle done; the marketplace listing is not |
+| M6 | Packaging: bundled `.vsix`, README, CI, nightly build against `nemo-ufes/tonto@main` | CI and the bundle done; the marketplace listing is not |
 
 Layout was then studied against four models -- `university`, `pets`, `boats`,
 `gufo` -- by measuring each drawing (area, aspect, crossings, lines through

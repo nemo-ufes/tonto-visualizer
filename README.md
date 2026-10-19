@@ -5,7 +5,7 @@ type it, and **arranged by hand** — elements dragged where you want them, and
 left there when the model changes.
 
 It is used together with the Tonto language extension from
-[`jpalmeida/tontoredesign`](https://github.com/jpalmeida/tontoredesign), which
+[`nemo-ufes/tonto`](https://github.com/nemo-ufes/tonto), which
 supplies the grammar, the checks and the language server. This repository
 supplies the picture, and draws it itself: no PlantUML, no Graphviz, no
 rendering server, nothing sent anywhere.
@@ -104,7 +104,7 @@ interaction changes only the persisted view.
     npm run build
     npm test
 
-    node packages/cli/bin/tonto-view.js vendor/tontoredesign/examples/university
+    node packages/cli/bin/tonto-view.js packages/canvas/test/fixtures/university
 
 With a diagram open, **Tonto: Save Diagram as Named View** copies its current
 content and arrangement to a named file such as
