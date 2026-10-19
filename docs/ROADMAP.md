@@ -58,6 +58,19 @@ view are created lazily, only after the modeller changes the automatic result.
 
 ## Progress log
 
+### 2026-10-19 (third-party notices)
+
+- The VSIX carried no notice for any package bundled into it: `--no-dependencies`
+  leaves their LICENSE files behind and esbuild drops their copyright headers.
+  The build now writes `out/THIRD-PARTY-NOTICES.txt` from what esbuild bundled,
+  as tonto's extension does, with each package's license text and the headers
+  its bundled files carry. A license that is not permissive stops the build.
+- elkjs is the one exception, taken by name under EPL-2.0 (it is offered as
+  EPL-2.0 OR GPL-3.0-or-later): its notices are kept, its license text
+  included, and its section says where its source is available.
+- The language pin moves to tonto's `7cca85f`, which gives `tonto-language`
+  a LICENSE of its own to copy.
+
 ### 2026-10-19 (the language moves to nemo-ufes/tonto)
 
 - The language submodule is now [`nemo-ufes/tonto`](https://github.com/nemo-ufes/tonto)

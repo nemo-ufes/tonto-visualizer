@@ -77,4 +77,8 @@ The language, its validation, and the reasoning about natures that colours the d
 
 ## License
 
-MIT.
+MIT. The extension includes code from other open-source packages; their
+licenses and notices are in `out/THIRD-PARTY-NOTICES.txt` inside the installed
+extension. Among them is the [Eclipse Layout Kernel](https://github.com/kieler/elkjs),
+used for automatic layout, which is distributed under the Eclipse Public
+License 2.0; that file also says where its source is available.
