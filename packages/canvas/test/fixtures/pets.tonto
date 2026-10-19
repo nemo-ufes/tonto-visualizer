@@ -1,0 +1,112 @@
+ontology pets
+
+
+/// A domesticated animal kept for company.
+///
+/// Identity is the animal's own: a pet that changes owner, name or species
+/// classification is the same pet.
+kind Pet specializes NamedEntity {
+	name: string
+	species: string
+	breed: ordered const string [1..2]
+	/// When the animal was born, where it is known.
+	@begin birthDate: const date [0..1]
+	/// Recorded once the animal has died, and not before.
+	@end deathDate: const date [0..1]
+	<>-- (heart) Heart
+}
+kind Heart
+{
+	size : number
+}
+category NamedEntity
+
+
+category SocialObject
+category LegalObject specializes SocialObject
+category LegalAgent of functional-complexes
+kind Person specializes NamedEntity, LegalAgent {
+	name: string
+	phone: string [0..1]
+}
+kind Norm specializes LegalObject
+subkind Rule specializes Norm
+subkind Rule2 specializes Rule
+subkind BindingRule specializes Rule2
+
+category LegalPosition of extrinsic-modes
+{
+	@characterization [*] -- (const) LegalAgent
+	@externalDependence [*] -- (const) LegalAgent
+}
+extrinsicMode Power 
+extrinsicMode Right 
+extrinsicMode Duty 
+disjoint genset __ where Power, Right, Duty specializes LegalPosition
+
+
+
+
+
+
+disjoint complete genset Name where GoodMeeting, BadMeeting specializes Meeting
+event Meeting
+subkind BadMeeting
+subkind TerribleMeeting specializes BadMeeting
+subkind GoodMeeting 
+
+
+kind Carro
+subkind Sedan specializes Carro
+subkind Sedan2 specializes Carro
+subkind Sedan3 specializes Sedan
+
+kind PetClinic {
+	name: string
+	address: string [0..1]
+	phone: string [0..1]
+}
+
+role PetOwner specializes Person
+
+role PetTutor specializes Person {
+	specialty: string [0..1]
+}
+
+role Veterinarian specializes Person {
+	licenseNumber: string
+}
+
+// relator TutoringSession {
+// 	sessionDate: date
+// 	topic: string
+// 	notes: string [0..1]
+// 	@mediation [*] -- [1] Pet
+// 	@mediation [*] -- [1] PetTutor
+// }
+
+relator ClinicVisit {
+	visitDate: date
+	reason: string
+	diagnosis: string [0..1]
+	treatment: string [0..1]
+	// @material [0..*] -- name -- [0..*] (const target) Target
+	@mediation [*] -- [1] (const pet) Pet
+	@mediation [*] -- [1] (const) PetClinic
+	// @mediation [*] -- [1] Veterinarian
+}
+// kind Target
+
+@mediation 
+relation ClinicVisit [*] -- involvesVet -- [1] (const vet) Veterinarian
+
+// relation ClinicVisit : visits [*] -- involvesVet -- const vet [1] : Veterinarian
+
+
+// relator PetOwnership {
+// 	@mediation [*] -- involvesPet -- [1] Pet
+// 	@mediation [*] -- involvesOwner -- [1] PetOwner
+// }
+
+
+

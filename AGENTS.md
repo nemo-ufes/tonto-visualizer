@@ -5,7 +5,7 @@ elsewhere and is read, not reimplemented.
 
 ## Commands
 
-    npm run language     # build vendor/tontoredesign's tonto-language (needed once, and after bumping the pin)
+    npm run language     # build vendor/tonto's tonto-language (needed once, and after bumping the pin)
     npm install
     npm run build
     npm test
@@ -14,7 +14,7 @@ elsewhere and is read, not reimplemented.
 
 | | |
 |---|---|
-| `vendor/tontoredesign` | the language, as a pinned git submodule. **Never edited from here.** |
+| `vendor/tonto` | the language ([`nemo-ufes/tonto`](https://github.com/nemo-ufes/tonto)), as a pinned git submodule. **Never edited from here.** |
 | `packages/view` | the AST read as a diagram: nodes, edges, groups, gensets. No DOM, no `vscode`. |
 | `packages/canvas` | sizes, placement, routing, SVG. Runs in a webview and in Node; `./draw` is the half that does not need ELK. |
 | `packages/extension` | the VS Code panel: host in `src`, the canvas app in `src/webview` |

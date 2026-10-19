@@ -65,7 +65,7 @@ describe('layout quality benchmarks', () => {
     });
 
     test('keeps the class-only taxonomy clear at a crowded generalization head', async () => {
-        const target = resolve(repository, 'vendor/tontoredesign/examples/classonly.tonto');
+        const target = resolve(repository, 'packages/canvas/test/fixtures/classonly.tonto');
         for (const fontFamily of ['sans', 'condensed'] as const) {
             const { rendered, quality } = await benchmark(target, { ...defaultDisplayOptions, fontFamily });
 
@@ -77,7 +77,7 @@ describe('layout quality benchmarks', () => {
     });
 
     test('keeps families declared by generalization sets coupled in pets', async () => {
-        const target = resolve(repository, 'vendor/tontoredesign/examples/pets.tonto');
+        const target = resolve(repository, 'packages/canvas/test/fixtures/pets.tonto');
         const { view, laid } = await benchmark(target);
 
         const family = (name: string) => {
@@ -174,21 +174,21 @@ describe('layout quality benchmarks', () => {
     });
 
     test.each([
-        ['boats', resolve(repository, 'vendor/tontoredesign/examples/boats.tonto'),
+        ['boats', resolve(repository, 'packages/canvas/test/fixtures/boats.tonto'),
             // Genset-declared specializations are now present as real edges;
             // the former ceiling counted a diagram that omitted those lines.
             { width: 2200, height: 1750, crossings: 17, labels: 37, total: 13500, longest: 1000 }],
-        ['pets', resolve(repository, 'vendor/tontoredesign/examples/pets.tonto'),
+        ['pets', resolve(repository, 'packages/canvas/test/fixtures/pets.tonto'),
             // Upstream gave `LegalPosition` an external dependence beside its
             // characterization: one more line, not a longer arrangement.
             { width: 1600, height: 1050, crossings: 2, labels: 3, total: 3300, longest: 450 }],
-        ['gufo', resolve(repository, 'vendor/tontoredesign/examples/gufo.tonto'),
+        ['gufo', resolve(repository, 'packages/canvas/test/fixtures/gufo.tonto'),
             { width: 1850, height: 1000, crossings: 17, labels: 46, total: 10500, longest: 600 }],
         ['genealogy', resolve(repository, 'packages/canvas/test/fixtures/genealogy.tonto'),
             // Crowded generalization heads now use short square approaches;
             // the extra 118px is deliberate decorator clearance, not sprawl.
             { width: 1850, height: 1125, crossings: 6, labels: 1, total: 7350, longest: 560 }],
-        ['university', resolve(repository, 'vendor/tontoredesign/examples/university'),
+        ['university', resolve(repository, 'packages/canvas/test/fixtures/university'),
             { width: 1400, height: 1250, crossings: 4, labels: 6, total: 6000, longest: 900 }],
         ['parties', resolve(repository, 'packages/view/test/fixtures/parties'),
             { width: 800, height: 750, crossings: 0, labels: 3, total: 900, longest: 400 }]

@@ -1,0 +1,434 @@
+ontology gufo
+
+// ============================================================
+// gUFO: A Lightweight Implementation of the Unified Foundational
+// Ontology (UFO).
+//
+// J. P. A. Almeida, G. Guizzardi, T. P. Sales, R. A. Falbo,
+// "gUFO: A Lightweight Implementation of the Unified Foundational
+// Ontology (UFO)", 2019, http://purl.org/nemo/doc/gufo
+//
+// Tonto transcription of gufo.ttl. Descriptions are taken from the
+// source rdfs:comment annotations (gufo: prefix removed). The
+// taxonomy mirrors gUFO closely, but not completely.
+//
+// Manual edits have been made afterwards to remove design decisions
+// influenced by OWL-specific limitations.
+// ============================================================
+
+category Entity {
+    (wholes) [*] <>-- hasProperPart -- [*] (parts) Entity
+}
+
+disjoint complete genset entities {
+    general Entity
+    specifics Individual, Type
+}
+
+// ------------------------------------------------------------
+// Individuals.
+// ------------------------------------------------------------
+
+/// @en An entity that (unlike a Type) cannot be instantiated. Individuals may be either concrete (e.g., the Earth, Mick Jagger, Brazil, the 1985 Mexico City Earthquake) or abstract (e.g., the number two, the proposition that 'three is a prime number'). Also known as 'particular' in the philosophical literature.
+category Individual specializes Entity
+
+disjoint complete genset individuals where AbstractIndividual, ConcreteIndividual 
+    specializes Individual
+
+/// @en An Individual that does not exist in space-time in the same way as a ConcreteIndividual does. An AbstractIndividual has no spatiotemporal qualities in its own right. Hence, it does not make sense to ask how much space it now occupies (Gideon, 2018) and when it was created or destroyed. Examples include the number ten, the null set, and the proposition that 'Obama was the president of the United States'. Rosen, Gideon, 'Abstract Objects', The Stanford Encyclopedia of Philosophy (Winter 2018 Edition), Edward N. Zalta (ed.), <https://plato.stanford.edu/archives/win2018/entries/abstract-objects/>
+category AbstractIndividual of abstract-individuals specializes Individual
+
+
+/// @en An AbstractIndividual that can be associated with a Quality reflecting the perception or conception of the quality in a certain value space. Instances of QualityValue include the rational number 2.5 when used to conceive of the acidity of a portion of wine (in a pH scale), the tuple <38.8897,-77.0089> when used to conceive of the location of a building (in a space formed by latitude and longitude), or the triplet <0,0,0> when used to conceive of the color of a physical object (in a trimensional space formed by red, green and blue color components). Corresponds to 'Quale' in Guizzardi (2005). Use this class only for quality values (qualia) that are to be reified in the A-box and associated with a ConcreteIndividual through the object property hasReifiedQualityValue. Otherwise, use the hasQualityValue data property and a literal to determine the quality value.
+abstractum QualityValue specializes AbstractIndividual {
+
+// A data property used for quality values defined in terms of a
+// multidimensional quality structure (such as color conceived in
+// terms of hue, saturation and brightness). Each value component
+// is determined with this property. It is recommended that
+// subproperties of hasValueComponent are created to indicate
+// values for particular dimensions.
+// (hasValueComponent has no fixed range in gUFO; modelled as a
+// free-form value below.)
+}
+
+/// @en An Individual that exists in space-time. Concrete individuals comprise not only object-like entities (a car, a mountain, a person, a marriage, a belief), but also events (a business meeting, a soccer match) and situations (the situation in which a person weighs 80 kilograms, the situation in which a bank account is overdrawn).
+category ConcreteIndividual specializes Individual {
+
+    // Data properties determining begin/end points
+    @begin beginPoint: const datetime [1..1]
+    @end endPoint: const datetime [0..1]
+
+    // Identifies a ConcreteIndividual that is constituted
+    // (partially) by the constituent individual. For example, the
+    // Collection of persons {John, Paul, George, Ringo} constituted the
+    // Beatles; the Quantity of marble that constitutes Venus de Milo; the
+    // Event of Paul raising his arm that constitutes his voting. 
+    @constitution [*] -- constitutes -- [*] ConcreteIndividual
+
+    // Identifies a ConcreteIndividual on which the
+    // concrete individual depends historically (e.g., a person depends on
+    // his/her ancestors). Between events it encompasses causation but also
+    // other cases of dependence without causation. Transitive.
+    @historicalDependence (addOnly) [*] -- historicallyDependsOn -- [*] (const) ConcreteIndividual
+
+    // Identifies an instance of QualityValue to
+    // reflect the perception or conception of a quality in a certain value
+    // space. Use only for quality values reified in the A-box; otherwise
+    // use the hasQualityValue data property and a literal.
+    (const) [*] -- hasReifiedQualityValue -- [*] QualityValue
+}
+
+disjoint complete genset concreteIndividuals {
+    general ConcreteIndividual
+    specifics Endurant, Event, Situation
+}
+
+
+// ------------------------------------------------------------
+// Endurants.
+// ------------------------------------------------------------
+
+/// @en A ConcreteIndividual that endures in time and may change qualitatively while keeping its identity. Examples include: ordinary objects of everyday experience, such as a person, a house, and a car; reified relationships, such as a marriage, a rental contract, and a person's love for another; and existentially-dependent aspects of objects, such as a car's weight, a person's language skills, and a house's color. Also termed 'continuant' in the philosophical literature.
+category Endurant specializes ConcreteIndividual {
+    @creation (const) [*] -- wasCreatedIn -- (const) Event
+    @termination (const) [*] -- wasTerminatedIn -- Event
+}
+
+disjoint complete genset endurants {
+    general Endurant
+    specifics Aspect, Object
+}
+
+
+// --- Aspects (dependent endurants). ---
+
+/// @en An Endurant that depends on at least one other concrete individual for its existence. An Aspect is a characteristic or trait of a concrete individual that is itself conceived as an individual. Examples include: intrinsic physical aspects, such as the Moon's mass, Lassie's fur color; mental dispositions, such as Bob's math skills, his belief that the number one is odd; as well as relational aspects, such as John's love for Mary and the marriage between John and Mary. The specific sort of existential dependence connecting aspects to their bearers is called characterization. Corresponds to 'Moment' in Guizzardi (2005). Also termed 'property instance', 'particularized property', 'individual accident', or '(variable) trope' in the philosophical literature.
+category Aspect of relators, intrinsic-modes, extrinsic-modes specializes Endurant {
+
+    // Identifies an Aspect that is a proper part of the aspect.
+    // For example, John and Mary's marriage has as an aspect proper part
+    // John's obligations towards Mary in the scope of their marriage.
+    [*] <>-- hasAspectProperPart -- [*] (redefines Entity.parts) Aspect specializes hasProperPart
+        
+    // Identifies the ConcreteIndividual in which the Aspect inheres. 
+    /// inheresIn is a sort of existential dependence. The
+    // identified concrete individual is the 'bearer' of the aspect. For
+    // example, the color of an object inheres in the object and the
+    // average speed of a flight inheres in the flight.
+    @characterization [*] -- inheresIn -- [1] (const bearer) ConcreteIndividual
+    @manifestation (const) [*] -- manifestedIn -- [*] Event
+}
+
+disjoint complete genset aspects {
+    general Aspect
+    specifics IntrinsicAspect, ExtrinsicAspect
+}
+
+/// @en An Aspect that depends on a single concrete individual in which it inheres. Examples include intrinsic physical aspects, such as the Moon's mass, Lassie's fur color; the fragility of John Lennon's glasses; mental dispositions, such as Bob's math skills, his belief that the number one is odd. An IntrinsicAspect is classified as a Quality (e.g., an apple's weight, the height of the Statue of Liberty) if it is measurable by a certain value space, or as an IntrinsicMode (e.g. Bob's belief that the Eiffel Tower is in Paris) otherwise. Corresponds to 'Intrinsic Moment' in Guizzardi (2005). Different from Guizzardi (2005), here we consider that aspects can inhere in concrete individuals in general, and not only in endurants.
+category IntrinsicAspect specializes Aspect
+
+disjoint complete genset intrinsicAspects {
+    general IntrinsicAspect
+    specifics IntrinsicMode, Quality
+}
+
+/// @en An IntrinsicAspect that is not measurable. For example, Bob's belief that the Eiffel Tower is in Paris, his math skills, his headache. Corresponds to 'Mode' in Guizzardi (2005).
+category IntrinsicMode specializes IntrinsicAspect
+
+
+/// @en An IntrinsicAspect that is measurable by some value spaces. A quality may be used to compare individuals, on the basis of the value it takes in a certain quality space (for instance, a position within the RGB spectrum). Examples include the weight of a person, the name of organization, the color of a car, and the duration of a concert.
+category Quality specializes IntrinsicAspect
+
+
+/// @en An Aspect that depends on one or more concrete individuals. Extrinsic (or 'relational') aspects are reified relationships, e.g., John and Mary's marriage, Mary's employment contract at Nasa, or parts of those relationships, e.g., John's obligations towards Mary in the scope of the marriage, Mary's reciprocal claims, Mary's obligations towards John, John's reciprocal claims. Extrinsic aspects can also be reified one-sided relationships, e.g., John's admiration for Obama (which depends on Obama but does not characterize him). Corresponds to 'Extrinsic Moment' in Fonseca et al (2019). Encompasses 'Externally Depedent Mode', 'Qua Individual' and 'Relator' in Guizzardi (2005).
+category ExtrinsicAspect specializes Aspect
+
+disjoint complete genset extrinsicAspects {
+    general ExtrinsicAspect
+    specifics ExtrinsicMode, Relator
+}
+
+/// @en An ExtrinsicAspect that inheres in a concrete individual and depends on others for its existence. An ExtrinsicMode can be understood as a reified one-sided relationship, such as John's admiration for Mary. Corresponds to 'Extrinsic Moment' in Fonseca et al (2019). Encompasses what 'Externally Dependent Mode', 'Qua Individual' and 'Relator' in Guizzardi (2005).
+category ExtrinsicMode specializes ExtrinsicAspect {
+
+    // Identifies an Endurant on which the
+    // ExtrinsicMode depends. For example, John's duty to return the book
+    // he borrowed from Mary depends externally on Mary. The endurant
+    // should be external to the bearer of the extrinsic mode.
+    @externalDependence [*] -- externallyDependsOn -- [1..*] (const) Endurant
+}
+
+/// @en An ExtrinsicAspect that connects (involves, mediates) two or more concrete individuals. Relators are reified relationships composed of reciprocal extrinsic modes. Examples of relators include John and Mary's marriage (composed of John's obligations towards Mary in the scope of the marriage, Mary's reciprocal claims, Mary's obligations towards John, John's reciprocal claims), Mary's employment contract at Nasa, a covalent bond between two atoms.
+category Relator specializes ExtrinsicAspect {
+
+    // Identifies the endurants mediated by a Relator. For
+    // example, John and Mary's marriage mediates John and Mary.
+    @mediation [1] -- mediates -- [2..*] (const) Endurant
+}
+
+
+// --- Objects (independent endurants). ---
+
+/// @en An Endurant that does not depend on another endurant for its existence (excluding its essential parts and aspects). Examples of objects include ordinary physical entities, such as a dog, a house, a tomato, a car, Alan Turing, but also socially-defined entities such as The Rolling Stones, the European Union, the Brazilian 1988 Constitution. Guizzardi (2005) also included the more abstract notion of 'Substantial', which generalizes both objects and amounts of matter. That notion was left out from this implementation, together with the notion of amount of matter. Support for the representation of maximally-self-connected amounts of matter is given by Quantity.
+category Object specializes Endurant {
+
+    // Identifies an Object that is a proper part of the object.
+    // This is a general parthood relation between objects; use the
+    // sub-relations for specific types of parthood. Transitive.
+    [*] <>-- hasObjectProperPart -- [*] (objectParts redefines Entity.parts) Object specializes hasProperPart
+
+    // Object participation in events.
+    @participation (const) [*] -- participatedIn -- [*] Event
+}
+
+// AllDisjoint(Collection, FunctionalComplex, Quantity) — the three sorts of
+// object are mutually disjoint, but Object is not their disjoint union
+// (other objects may exist), so this genset is disjoint but not complete.
+disjoint genset objectSorts {
+    general Object
+    specifics Collection, FunctionalComplex, Quantity
+}
+
+/// @en A complex Object whose parts (the members of the collection) have a uniform structure (i.e., members are conceived as playing the same role in the collection). Collections may have a fixed or variable membership. Examples include a deck of cards, a pile of bricks, a forest (conceived as a collection of trees), and a group of people. Collections in many cases constitute a functional complex. For example, a pile of bricks may constitute a wall, a group of people may constitute a football team. A Collection may be decomposed into 'smaller' collections. For instance, a group of people may be decomposed into a group of English speakers and a group of Italian speakers. Sub collections may or may not share members among them.
+category Collection specializes Object {
+
+    // Identifies an Object that is a member of the
+    // collection (e.g., a group of persons and John, a herd and a cow).
+    // Intransitive.
+    @membership [*] <>-- hasMember -- [*] (redefines Object.objectParts) Object specializes Object.hasObjectProperPart
+
+    // Identifies a Collection that is a sub-collection of the
+    // collection. All members of the sub-collection are members of
+    // this super-collection. Transitive. 
+    @subCollection [*] <>-- hasSubCollection -- [*] (redefines Object.objectParts) Collection specializes Object.hasObjectProperPart
+}
+
+/// @en A complex Object whose parts (components) play different roles in its composition. For example, a person could be considered a FunctionalComplex with the various organs (heart, brain, lungs, etc.) playing different roles. Another example is a scrum team, which is composed by people playing the roles of scrum master, product owner, developer, etc. To explicitly capture temporary components, use TemporaryParthoodSituation.
+category FunctionalComplex specializes Object {
+
+    // Identifies an Object that is a component of the
+    // functional complex. For example, the ISS has as a component the
+    // habitation module; Obama's body has as a component his brain. Not
+    // transitive in the general case.
+    @componenthood [*] <>-- hasComponent -- [*] (redefines Object.objectParts) Object specializes Object.hasObjectProperPart
+}
+
+/// @en A complex Object that is a maximally-connected portion of stuff. A Quantity has a fixed constitution, and thus, removing or adding a sub-quantity would result in a different quantity. Examples include the portion of wine in a wine tank, a lump of clay, the gold that constitutes a wedding ring. Also termed 'quantity of matter', 'objectified portion of matter', 'piece' in the philosophical literature.
+category Quantity specializes Object {
+
+    // Identifies a Quantity that is a sub-quantity of the
+    // quantity. For example, the wine in a glass has as a sub-quantity
+    // any portion of that wine. Transitive. Sub-quantities
+    // are always essential parts.
+    @subQuantity [*] <>-- hasSubQuantity -- [*] (const redefines Object.objectParts) Quantity specializes Object.hasObjectProperPart
+}
+
+
+// ------------------------------------------------------------
+// Events.
+// ------------------------------------------------------------
+
+/// @en A ConcreteIndividual that 'occurs' or 'happens' in time. They may be instantaneous or long-running. Events are those 'things that happen to or are performed by' (Casati and Varzi, 2015) endurants. Examples include actions and processes, such as a business meeting, a communicative act, a soccer match, a goal kick, the clicking of a mouse button; as well as natural occurrences such as an earthquake, the fall of the meteor that caused the extinction of the dinosaurs. Also termed 'happening', 'occurrence', 'perdurant' or 'occurrent' in the philosophical literature. Casati, R. & Varzi, A. (2015). Events. In E.N. Zalta (Ed.), The Stanford Encyclopedia of Philosophy (Winter 2015 ed.). 19 Metaphysics Research Lab, Stanford University. https://plato.stanford.edu/archives/win2015/entries/events/
+category Event of events specializes ConcreteIndividual {
+
+
+    // Identifies an Event in which the Aspect is manifested.
+    // For example, the passing of an electrical current in a conductor is
+    // an event that encompasses the manifestation of an aspect inhering in
+    // a copper wire (the wire's electrical conductivity).
+    
+
+    // Identifies an Event that is a proper part of the event.
+    // For example, the 2016 FIFA Club World Cup Final has as an event proper
+    // part Cristiano Ronaldo's penalty kick. Transitive.
+    (const) [*] <>-- hasEventProperPart -- [*] (const redefines Entity.parts) Event specializes hasProperPart
+    @bringingAbout (const) [*] -- broughtAboutBy -- [*] (addOnly) Situation
+}
+
+/// @en An Event that depends on a single object. Participations can be used to partition an event into portions, each of which depend exclusively on a single object. Consider a business meeting with multiple participants, including John and Mary. John's participation in the meeting encompasses all events that are part of the meeting and that depend solely on him. Likewise, Mary's participation encompasses all events that are part of the meeting and that depend solely on her. Similarly, in Brutus' stabbing of Caesar, we may identify the participations of Brutus, of Caesar, and of the dagger.
+category Participation of events specializes Event
+
+
+
+// ------------------------------------------------------------
+// Situations.
+// ------------------------------------------------------------
+
+/// @en A ConcreteIndividual that is a particular configuration of a part of reality which can be understood as a whole and in which entities stand in relations. A situation may be counterfactual or actual. An actual situation (or in other words, a 'fact') 'obtains' in a certain time instant or during a time interval. Note that, in Guizzardi et al. (2013), situations were considered to obtain at a specific point in time. Here, instead, they obtain in a time interval when begin and end points differ. The various subclasses of Situation in this implementation are used to capture 'mutable' facts which obtain during some time and fail to obtain at other times. This includes the contingent instantiation of non-rigid types (e.g., as someone is a child at one point in time and a teenager later), the attribution of value to mutable qualities (such as a person's weight) and temporary participation in part-whole relations for replaceable parts (such as a car's tires). Other subclasses may be created to capture domain-specific notions such as 'HazardousSituation', 'PersonHasFever'.
+situation Situation specializes ConcreteIndividual {
+
+    // Identifies an Event that the Situation contributed to trigger.
+    // contributedToTrigger can relate more than one
+    // Situation to an Event; each should be understood as an (improper)
+    // part of the situation that triggered the event.
+    @triggering (const) [*] -- contributedToTrigger -- [*] (addOnly) Event
+
+    // Identifies a Situation in which the entity stands. See the
+    // qualified sub-relations on Endurant for value attribution, variable
+    // relationships, instantiation of non-contingent types, temporary
+    // parthood and temporary constitution.
+    @presence (addOnly) [*] -- standsIn -- [*] (const) Situation
+
+    // Identifies a Situation that is a proper part of the situation.
+    [*] <>-- hasSituationProperPart -- [*] (addOnly redefines Entity.parts) Situation specializes hasProperPart
+}
+
+
+// ------------------------------------------------------------
+// Types.
+// ------------------------------------------------------------
+
+/// @en An entity that may be instantiated by (or predicated over) other entities. Types encompass what we often call 'sorts', 'kinds', 'categories', etc. Examples include the kind 'Person', the event type 'Earthquake', and the abstract individual type 'NaturalNumber'. Relations, such as 'marriedTo' and 'olderThan', are also considered as types. Instances of Type are classes, and should specialize the taxonomy of individuals of gUFO. For example, 'Person' is a Type (more specifically a Kind), specializing Object. The mechanism that allows for this is called punning in OWL 2. Encompasses the notion of 'Universal' in Guizzardi (2005).
+category Type of types specializes Entity {
+
+    // Identifies a Type whose instances may be classified by
+    // instances of the categorizing higher-order type. For example,
+    // 'ShipType' categorizes 'Ship'. The general (unspecific) form of
+    // categorization; see partitions for a more specific form. The domain
+    // excludes AbstractIndividualType and ConcreteIndividualType (those are
+    // first-order types).
+    [*] -- categorizes -- [*] Type
+
+    // Identifies a Type whose instances are classified by
+    // exactly one instance of the partitioning higher-order type. For
+    // example, 'AnimalSpecies' partitions 'Animal'. (Specializes
+    // categorizes.)
+    [*] -- partitions -- [*] Type
+}
+
+// Type is disjoint from Individual (top-level), and is partitioned (not
+// exhaustively) into the kinds of type below.
+disjoint genset typeKinds {
+    general Type
+    specifics AbstractIndividualType, ConcreteIndividualType, RelationshipType
+}
+
+/// @en A Type whose instances are abstract individuals. Instances of AbstractIndividualType are subclasses of AbstractIndividual. Examples include the types 'NaturalNumber', 'Set', 'Proposition'.
+category AbstractIndividualType of types specializes Type
+
+
+/// @en A Type whose instances are concrete individuals. Instances of ConcreteIndividualType are subclasses of ConcreteIndividual. Examples include the Kind 'Person', the Category 'Physical Object', the EventType 'Business Meeting'.
+category ConcreteIndividualType of types specializes Type
+
+disjoint genset concreteIndividualTypes {
+    general ConcreteIndividualType
+    specifics EndurantType, EventType, SituationType
+}
+
+/// @en A Type whose instances are events. Instances of EventType are subclasses of Event. Examples include 'Business Meeting', 'Birth', 'Musical Performance'.
+category EventType of types specializes ConcreteIndividualType
+
+
+/// @en A Type whose instances are situations. Instances of SituationType are subclasses of Situation. Examples include 'HazardousSituation', 'PersonHasFever', 'PersonIsStudent'.
+category SituationType of types specializes ConcreteIndividualType
+
+
+
+// --- Endurant types. ---
+
+/// @en A Type whose instances are endurants. Instances of EndurantType are subclasses of Endurant. Examples include the object kind 'Person', the phase 'Child', the relator kind 'Marriage'. See Guizzardi et al. (2018) for details concerning the taxonomy of endurant types included here.
+category EndurantType of types specializes ConcreteIndividualType {
+
+    // Identifies a quality value type to
+    // which the quality type is associated. For example, a 'Color' quality
+    // type may be associated with a 'ColorValueInRGB' quality value type.
+    // To be used only when quality values are reified.
+    [*] -- hasAssociatedQualityValueType -- [*] AbstractIndividualType
+}
+
+disjoint complete genset endurantTypesByRigidity {
+    general EndurantType
+    specifics RigidType, NonRigidType
+}
+
+disjoint complete genset endurantTypesBySortality {
+    general EndurantType
+    specifics Sortal, NonSortal
+}
+
+/// @en An EndurantType which applies necessarily to its instances (see Guizzardi, 2005, chapter 4). Examples include the types 'Agent', 'Person', 'Animal', 'PhysicalObject', 'Car', and 'Tree'.
+category RigidType of types specializes EndurantType
+
+
+/// @en An EndurantType that does not apply necessarily to at least one of its instances (see Guizzardi, 2005, chapter 4). Examples include anti-rigid types, such as the role 'Student' and the phase 'Child', and semi-rigid types, such as the mixin 'MusicalArtist' (which necessarily characterizes bands, but contingently characterizes people) and the mixin 'FemaleAnimal' (which is necessarily characterizes female dogs, but contigently characterizes clownfish).
+category NonRigidType of types specializes EndurantType
+
+disjoint complete genset nonRigidTypes {
+    general NonRigidType
+    specifics AntiRigidType, SemiRigidType
+}
+
+/// @en A NonRigidType that applies contingently to all its instances (see Guizzardi, 2005, chapter 4). Examples include the Phase 'Child', the PhaseMixin 'InfantAnimal', the Role 'Student', and the RoleMixin 'Customer'.
+category AntiRigidType of types specializes NonRigidType
+
+
+/// @en A NonRigidType that applies necessarily to some of its instances and contingently to some others (see Guizzardi, 2005, chapter 4).
+category SemiRigidType of types specializes NonRigidType
+
+
+/// @en An EndurantType which carries (or supplies) a principle of identity for its instances (see Guizzardi, 2005, chapter 4).
+category Sortal of types specializes EndurantType
+
+
+/// @en An EndurantType that applies to individuals of different kinds (see Guizzardi, 2005, chapter 4). Non-sortals do not provide a uniform principle of identity for their instances; instead, they just classify things that share common properties but which obey different principles of identity. Also termed 'dispersive' types in the philosophical literature.
+category NonSortal of types specializes EndurantType
+
+
+/// @en An EndurantType that is both sortal and rigid. It provides a uniform principle of identity for its instances. Every Endurant instantiates one and only one Kind. Examples include kinds of ordinary objects of everyday experience, such as: 'Person', 'House', 'Car'; kinds of relators, such as 'Marriage', 'RentalContract'; kinds of existentially-dependent aspects of objects, such as 'Weight', 'Belief', 'Vulnerability'.
+category Kind of types specializes RigidType, Sortal
+
+
+/// @en An EndurantType that is both sortal and rigid. It specializes a Kind carrying the principle of identity supplied by that kind. Every SubKind should directly or indirectly specialize a Kind. For example, the Kind 'Lion' may be specialized into the 'Lionness' and 'Male Lion' subkinds, while the Kind 'Computer' may be specialized into the 'Laptop' and 'Desktop' subkinds.
+category SubKind of types specializes RigidType, Sortal
+
+
+/// @en An EndurantType that is both sortal and anti-rigid. It is defined by intrinsic but contingent instantiation conditions. Phases are relationally independent types that capturec intrinsic properties shared by instances of a given kind. For example, 'Child' may be considered a Phase as a subclass of the Kind 'Person', instantiated by persons younger than 12. Another example is the type 'IllPerson', which may be considered a Phase that is instantiated whenever an instance of 'Disease' (an IntrinsicMode) inheres in a person.
+category Phase of types specializes AntiRigidType, Sortal
+
+
+/// @en An EndurantType that both sortal and anti-rigid. It is defined by relational instantiation conditions. Roles are relationally dependent types, capturing relational properties shared by instances of a given kind. For example, 'Student' may be considered a Role as a subclass of the Kind 'Person', instantiated by all persons enrolled in a school.
+category Role of types specializes AntiRigidType, Sortal
+
+
+/// @en An EndurantType that is both non-sortal and rigid. It captures essential properties that apply to instances of different kinds. For example, 'PhysicalObject' may be considered a Category, encompassing objects such as cars, planets, trees. 'Agent' may be a Category that classifies both people and organizations.
+category Category of types specializes NonSortal, RigidType
+
+
+/// @en An EndurantType that is both non-sortal and semi-rigid. As a semi-rigid type, it applies necessarily to some of its instances and contingently to some others. As a non-sortal, it captures properties shared by instances of different kinds. For example, the type 'FemaleAnimal' may be considered a Mixin as it applies necessarily to animals of certain species, e.g., lions and sharks, while it applies contingently to animals of other species such as clownfish and mushroom corals (which may change sex given certain conditions).
+category Mixin of types specializes NonSortal, SemiRigidType
+
+
+/// @en An EndurantType that is both non-sortal and anti-rigid. It is defined by intrinsic but contingent instantiation conditions. Phase mixins are relationally independent types that capture intrinsic properties shared by instances of different kinds. For example, 'LivingAnimal' may be considered a PhaseMixin as a superclass of the phases 'LivingPerson' (specializing the Kind 'Person') and 'LivingDog' (specializing the Kind 'Dog').
+category PhaseMixin of types specializes AntiRigidType, NonSortal
+
+
+/// @en An EndurantType that is both non-sortal and anti-rigid. It is defined by relational instantiation conditions. Role mixins are relationally dependent types, capturing relational properties shared by instances of different kinds. For example, 'Customer' may be considered a RoleMixin as a superclass of the roles 'CorporateCustomer' (specializing the Kind 'BusinessOrganization') and 'PersonalCustomer' (specializing the Kind 'Person').
+category RoleMixin of types specializes AntiRigidType, NonSortal
+
+
+
+// --- Relationship types. ---
+
+/// @en A Type whose instances are ordered pairs of related entities. Instances of RelationshipType are object properties in UFO-based ontologies. The object properties 'marriedWith' and 'enrolledIn' are examples of material relationship types. The object properties 'heavierThan', 'olderThan' are examples of comparative relationship types. The use of RelationshipType and its subclasses requires OWL 2 punning. Corresponds to 'Relation' in Guizzardi (2005) and Fonseca et al. (2019).
+category RelationshipType of types specializes Type {
+
+// Identifies an EndurantType from which the material or
+// comparative relation can be derived (a subclass of ExtrinsicAspect
+// for a MaterialRelationshipType, of IntrinsicAspect for a
+// ComparativeRelationshipType). For example, 'marriedWith' can be
+// derived from 'Marriage', 'heavierThan' from 'Weight'.
+// @derivation [*] -- isDerivedFrom -- [*] EndurantType
+}
+
+disjoint genset relationshipTypes {
+    general RelationshipType
+    specifics ComparativeRelationshipType, MaterialRelationshipType
+}
+
+/// @en A RelationshipType derived from intrinsic aspects of the related entities. For example, 'heavierThan', 'olderThan'. For a ComparativeRelationshipType it is recommended to identify the types of intrinsic aspects from which it is derived (see isDerivedFrom). For example 'heavierThan' is derived from the 'Weight' quality type. Note that, in the case of relationships that may change in different circumstances or times, the use of a qualified relation pattern enables indicating the period of time in which the relationship holds. See TemporaryRelationshipSituation. Corresponds to 'comparative formal relation' in Guizzardi (2005) and 'Comparative Relation' in Fonseca et al. (2019).
+category ComparativeRelationshipType of types specializes RelationshipType
+
+
+/// @en A RelationshipType derived from extrinsic aspects of the related entities. For example, 'marriedWith', 'employedBy', 'enrolledIn', 'admires'. For a MaterialRelationshipType it is recommended to identify the type of extrinsic aspect from which the material relationship type is derived (see isDerivedFrom). For example 'marriedWith' can be derived from the 'Marriage' relator type, 'employedBy' can be derived from the 'Employment' relator type. Encompasses 'Material Relation' in Guizzardi (2005) and corresponds to 'Material Relation' in Fonseca et al. (2019).
+category MaterialRelationshipType of types specializes RelationshipType

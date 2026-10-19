@@ -1,0 +1,8 @@
+/// People, the universities they work and study at, and the departments
+/// those are made of.
+///
+/// @namespace https://example.org/academia#
+ontology academia bundles
+    personAndOrganizationDatatypes from <PersonAndOrganizationDatatypes.tonto>
+    person from <Person.tonto>
+    university from <University.tonto>

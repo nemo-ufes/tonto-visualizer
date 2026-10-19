@@ -1,0 +1,30 @@
+use personAndOrganizationDatatypes
+use university
+
+package person in academia
+
+kind Person {
+  age: derived number
+  /// The day the person came into existence.
+  @begin birthDate: const date
+  name: string
+  preferredNames: ordered string [1..*]
+  address: Address [0..1]
+
+  @instantiation
+  [*] -- [1] PersonTypeByAge
+}
+
+type PersonTypeByAge
+
+phase Child specializes Person
+phase Teenager specializes Person
+phase Adult specializes Person
+
+disjoint complete genset PersonAgePhases where person.Child, person.Teenager, person.Adult specializes person.Person
+
+roleMixin Employer specializes university.Organization
+role Employee specializes Person
+role Professor specializes Employee
+
+role PhDCandidate specializes Person

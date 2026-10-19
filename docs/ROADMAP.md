@@ -58,6 +58,20 @@ view are created lazily, only after the modeller changes the automatic result.
 
 ## Progress log
 
+### 2026-10-19 (the language moves to nemo-ufes/tonto)
+
+- The language submodule is now [`nemo-ufes/tonto`](https://github.com/nemo-ufes/tonto)
+  at `vendor/tonto`, where the redesign was published as 0.9.1;
+  `jpalmeida/tontoredesign` is no longer followed. `modelRoot` is the
+  language's `workspaceRootOf` under this repository's name.
+- That repository ships no `examples/`, so the models the layout benchmarks
+  measure -- `boats`, `classonly`, `gufo`, `pets`, `showcase` and the
+  `university` manifest -- are kept in `packages/canvas/test/fixtures`. They
+  parse without errors under 0.9.1, which warns about more of them than the
+  redesign did (lowercase package names, `const` on value attributes); they
+  are left as they were so the benchmark ceilings still measure the same
+  drawings. CI renders the language's own test models as well.
+
 ### 2026-10-17 (merged the September view-switcher and tree work)
 
 - Merged four commits from 2026-09-07 that had stayed on GitHub: choosing a

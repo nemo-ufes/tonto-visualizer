@@ -1,0 +1,6 @@
+package personAndOrganizationDatatypes in academia
+
+datatype Address {
+  country: string
+  firstLine: string
+}

@@ -4,7 +4,7 @@ on:
   push:
   pull_request:
   # The language is a pinned submodule, so drift shows up here rather than in a
-  # wrong diagram: this run builds against whatever tontoredesign's main says now.
+  # wrong diagram: this run builds against whatever nemo-ufes/tonto's main says now.
   schedule:
     - cron: '0 5 * * *'
 
@@ -16,7 +16,7 @@ jobs:
         with:
           submodules: recursive
       - if: github.event_name == 'schedule'
-        run: git -C vendor/tontoredesign fetch origin main && git -C vendor/tontoredesign checkout origin/main
+        run: git -C vendor/tonto fetch origin main && git -C vendor/tonto checkout origin/main
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -25,10 +25,12 @@ jobs:
       - run: npm run build
       - run: npm run typecheck
       - run: npm test
-      # Rendering every example is the cheapest test there is of the whole
+      # Rendering every model is the cheapest test there is of the whole
       # pipeline: a crash in layout or drawing fails the build rather than a
-      # panel someone has open.
+      # panel someone has open. The language's own test models come along
+      # because they follow its grammar wherever it goes next.
       - run: |
-          for model in vendor/tontoredesign/examples/*/ vendor/tontoredesign/examples/*.tonto; do
+          for model in packages/canvas/test/fixtures/*/ packages/canvas/test/fixtures/*.tonto \
+                       packages/view/test/fixtures/*/ vendor/tonto/packages/language/test/fixtures/models/*/; do
             node packages/cli/bin/tonto-view.js "$model" --svg > /dev/null
           done
