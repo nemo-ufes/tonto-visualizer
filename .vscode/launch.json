@@ -1,0 +1,20 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            // F5. Builds everything first, so the panel the host opens draws
+            // with the code currently on disk.
+            "name": "Run Extension",
+            "type": "extensionHost",
+            "request": "launch",
+            "args": [
+                "--extensionDevelopmentPath=${workspaceFolder}/packages/extension"
+            ],
+            "outFiles": [
+                "${workspaceFolder}/packages/extension/out/**/*.cjs",
+                "${workspaceFolder}/packages/extension/out/**/*.js"
+            ],
+            "preLaunchTask": "Build extension"
+        }
+    ]
+}

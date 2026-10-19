@@ -1,6 +1,6 @@
 {
     "name": "tonto-view",
-    "version": "0.1.0",
+    "version": "0.1.62",
     "private": true,
     "description": "The Tonto AST as an explicit diagram: nodes, edges and groups, with stable ids. No DOM, no vscode.",
     "license": "MIT",
