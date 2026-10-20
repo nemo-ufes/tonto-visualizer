@@ -57,7 +57,7 @@ independent repair passes had no common measure of compactness, crossings, edge
 length, displacement or label room. A later pass could therefore undo a useful
 choice made by an earlier one; this is why the pipeline was simplified.
 
-## Quality contract
+## Requirements
 
 Hard requirements:
 
@@ -83,7 +83,7 @@ inheritance, relators and dense whole-part graphs. Tests should assert the hard
 requirements and thresholds or deltas for the quality measures rather than
 exact ELK coordinates.
 
-## Delivery slices
+## Implementation tasks
 
 - [x] Do not make a compound ELK node for the only populated package. Package
   grouping has nothing to separate in that case, and `INCLUDE_CHILDREN` turns
@@ -134,7 +134,7 @@ exact ELK coordinates.
 
 ## Intended architecture
 
-The mature pipeline is component-oriented:
+The proposed pipeline has six stages:
 
 1. derive semantic ranks and weighted constraints from the view model;
 2. choose an initial layout per weakly connected component;
@@ -144,9 +144,8 @@ The mature pipeline is component-oriented:
 6. retain the best deterministic candidate and persist only the resulting
    arrangement.
 
-ELK remains valuable as an initializer and router. The canvas layer owns the
-additional diagram-reading constraints, while the language remains the sole
-authority for what those constraints mean.
+ELK remains useful for initial placement and routing. The canvas applies layout
+constraints; the language supplies the model semantics behind them.
 
 ## Progress log
 

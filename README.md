@@ -10,88 +10,34 @@ supplies the grammar, the checks and the language server. This repository
 supplies the picture, and draws it itself: no PlantUML, no Graphviz, no
 rendering server, nothing sent anywhere.
 
-See [docs/PLAN.md](docs/PLAN.md) for what is being built and why.
-The work after the first complete release is tracked in
+See [docs/PLAN.md](docs/PLAN.md) for the original design notes. Work after the
+first complete release is tracked in
 [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Status
 
 Working end to end.
 
-- `packages/view` — a Tonto model read as an explicit diagram: nodes, edges,
-  package groups and generalization sets, with ids stable across edits, colours
-  from the natures a class actually classifies, and unresolved names drawn
-  rather than dropped.
-- `packages/canvas` — sizes, placement, routing and SVG. Lines are straight by
-  default, each with its own place on the border of the classes it joins, and
-  bent -- twice if it takes twice -- round any class in the way: a line that
-  disappears behind a class it has nothing to do with is read as ending there.
-  Specializations of one class are gathered into a shared tree. A mediation
-  meets a relator on the ray out of its centre, so that the two of them read as
-  one line passing through the relator rather than as two lines meeting at a
-  box. Multiple associations between the same classes fan apart through a real
-  bend instead of running as parallel rails. Curved detours and right angles are
-  available as alternatives; a direct edge remains straight, while a necessary
-  bend is fitted with a Graphviz-style cubic spline and retains
-  sampled geometry for labels, selection and collision checks. Automatic layout
-  uses one PlantUML-like layered graph and places only what has not been placed
-  by hand. It can ignore package grouping and lay the model out as one graph.
-- Ontology manifests — an entry document with a `bundles` clause — are drawn
-  as UML package diagrams: the ontology is a package frame holding its member
-  packages, inline and bundled, each card saying the document it is read from;
-  `use core` is a «use» dependency between two of them; and every ontology it
-  imports is a package of its own outside the frame, with an «import» from the
-  frame when the manifest declares it and from the package when a package
-  does, under the alias it binds when that differs from the ontology's name.
-  Double-clicking a package opens it, and the panel follows to its class
-  diagram. A monolithic ontology — a header followed by its declarations — is a
-  class diagram named after the ontology. Which package a bundle selects and
-  which ontology an import loads are the language's answers, not this
-  repository's.
+- `packages/view` — reads Tonto models into diagram nodes, edges, package groups
+  and generalization sets. It keeps stable ids across edits and draws unresolved
+  names while the model is incomplete.
+- `packages/canvas` — lays out and draws the diagram as SVG. It supports
+  straight, curved and right-angle routes. Automatic layout leaves positioned
+  elements where the modeller put them.
+- Ontology manifests with a `bundles` clause appear as UML package diagrams.
+  Double-click a package to open its class diagram.
 - `packages/cli` — `tonto-view <file-or-directory> [--svg]`.
-- `packages/extension` — the panel: live redraw as the model is typed, the last
-  good picture kept while it does not parse, drag to arrange, double-click to
-  open the declaration, cursor-follows-selection, a scope that is either the
-  opened file's packages or the whole workspace, package, class and association
-  filters, display options, nature legend, SVG export, and default or named
-  `.tontoview` files under the model's `views` folder holding separate
-  arrangements. Typeface presets range from condensed and humanist sans-serif
-  to book serif and monospace, apply to all diagram text, and share their
-  measurements with exported SVG. A persisted **Taxonomy only** setting hides
-  attributes and
-  associations and arranges from inheritance alone. Pins, centre alignment and
-  equal distribution are also persisted and
-  reapplied by Arrange. The toolbar's **Distance −/+** control scales association
-  and neighbor spacing from 60% to 180%, immediately rearranging the diagram so
-  its overall density can be tuned. **Fit** is a viewport toggle that follows
-  panel and window resizing; moving a diagram into a new window enables it
-  automatically. An untouched automatic layout creates no file.
+- `packages/extension` — redraws as you type, keeps the last valid diagram when
+  the model has errors, and supports navigation, filters, manual arrangement,
+  layout constraints, export, and saved named views.
 
-  Selecting an edge reveals its editable guide. Drag a hollow midpoint handle
-  to add a bend or a solid bend handle to move it; with a bend selected, Delete
-  or Backspace removes it. Removing the final bend returns the edge to automatic
-  routing.
+The notation includes stereotypes, attributes, datatypes, enumerations,
+generalizations and generalization sets, relations, cardinalities, role names,
+whole-part diamonds, `instanceOf` and `derivedFrom`. A multiplicity of `1` is
+omitted; other relation-end multiplicities omit brackets, while attribute
+multiplicities keep them.
 
-The notation covers classes with stereotypes and attributes, datatypes and
-enumerations, generalizations, generalization sets as one shared triangle with
-`{disjoint, complete}`, relations with their stereotype set over their
-name and smaller, UML's solid reading-direction triangle just after the name
--- or after the stereotype, or alone, when the relation has no name, and on
-every relation but a whole-part one, whose diamond already says which way it reads --
-multiplicities and role names on opposite sides of each end, whole-part diamonds, `instanceOf`, a relation's
-`derivedFrom` as a UML dependency from the middle of its line to the relator or qualities it is
-derived from, a historical role's `derivedFrom` as one from the role to the middle of the
-participation (or creation, or termination) it names, or to the event type, and an open padlock on an end that
-is not `const` -- an end that cannot change is the ordinary case, so the
-exception is what carries a mark.
-
-Multiplicities are written as a diagram writes them: no brackets, and nothing at
-all where the multiplicity is `1`, which is what an end means when it says
-nothing. Attributes keep their brackets, where UML puts them and where the
-multiplicity has a type beside it to be told apart from.
-
-Editing the model from the diagram is deliberately out of scope; diagram
-interaction changes only the persisted view.
+The diagram edits the saved view, not the `.tonto` model.
 
 ## Getting started
 
@@ -116,9 +62,7 @@ switches between that model's default and named views.
 Renaming or moving a model in VS Code takes its views along, in the same
 edit as the rename, so undoing the rename puts them back too.
 
-The Tonto language itself is consumed as a pinned submodule under `vendor/`,
-never edited from here — one grammar, one set of checks, one answer about what a
-model says.
+The Tonto language is a pinned submodule under `vendor/` and is consumed as-is.
 
 ## Acknowledgements
 
@@ -126,8 +70,9 @@ Matheus Lenke Coutinho and João Paulo A. Almeida are the original designers of 
 
 tonto's language design, concrete syntax, and OntoUML/UFO semantics are the work of the [NEMO Ontology & Conceptual Modeling research group](https://nemo.inf.ufes.br), in cooperation with the [Semantics, Cybersecurity & Services (SCS) group](https://www.utwente.nl/en/eemcs/scs/) throughout various research projects, which have received among others the support of CNPq, CAPES and FAPES over the years.
 
-Giancarlo Guizzardi, Tiago Prince Sales and Claudenir M. Fonseca should be acknowledged for their ongoing contributions, along with the contributors to [OntoUML](https://github.com/OntoUML).
-
+We also acknowledge the ongoing contributions of Giancarlo Guizzardi, Tiago
+Prince Sales, Claudenir M. Fonseca, and the contributors to
+[OntoUML](https://github.com/OntoUML).
 
 ## Licence
 

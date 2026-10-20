@@ -413,11 +413,11 @@ describe('the webview and its host protocol', () => {
         expect(tree.classList.contains('tv-selected')).toBe(true);
         // Nothing to take hold of: a set is not a line anybody routed.
         expect(document.querySelector('.tv-handles')?.children.length).toBe(0);
-        // Arranging it arranges the taxonomy it draws, not the whole diagram.
+        // The toolbar action always arranges the whole diagram, even with a
+        // generalization set selected.
         document.getElementById('arrange')!.click();
-        expect(posted('autoLayout').at(-1)).toEqual({
-            type: 'autoLayout', only: ['Sample::Person', 'Sample::Child', 'Sample::Adult']
-        });
+        expect(posted('autoLayout').at(-1)).toEqual({ type: 'autoLayout' });
+        expect(document.getElementById('arrange')!.title).toBe('Arrange the whole diagram automatically');
     });
 
     /**

@@ -1,9 +1,12 @@
-# A diagram beside the text
+# Original design notes
 
-This repository will hold **`tonto-visualizer`**, a VS Code extension that draws
-a `.tonto` model as an OntoUML class diagram in a panel beside the editor, live
-as the model is typed, and lets the diagram be **arranged by hand** — elements
-dragged where the modeller wants them, and left there.
+This document records the initial design. Some package paths and decisions
+below have since changed; see [README.md](../README.md) for the current feature
+summary and [ROADMAP.md](ROADMAP.md) for planned work.
+
+The initial design was for **`tonto-visualizer`**, a VS Code extension that
+draws a `.tonto` model as an OntoUML class diagram beside the editor and lets
+the modeller arrange the diagram by hand.
 
 It is installed next to the language extension from
 [`nemo-ufes/tonto`](https://github.com/nemo-ufes/tonto), which supplies the
@@ -77,32 +80,29 @@ provider and the real nature reasoning in its own process, and esbuild bundles
 all of it into the `.vsix` — exactly as the redesign extension bundles its own
 language server. That repository is consumed, never edited.
 
-The reasons, since the alternatives keep looking attractive:
+Why this dependency was chosen:
 
 - Cross-file linking comes for free. `use person` and `import hr from
   <hr.tonto>` resolve, so a relation to `person.Employer` is an edge and not a
   dangling name -- and which ontology owns which package, which decides what
   resolves at all, is the language's answer too.
 - Colors come from `getEffectiveNatures()`, which knows that a `role` under a
-  `collective` classifies collectives. Re-deriving that by hand is
-  `stereotype-model.ts` + `nature-reasoning.ts` + `generalizations.ts` — about
-  850 lines of reasoning this repository must not own a second copy of, because
-  a picture that disagrees with the validator is worse than no picture.
+  `collective` classifies collectives. Using it avoids maintaining a second copy
+  of the roughly 850 lines of nature reasoning in the language.
 - `TontoSession` (`packages/language/src/api.ts`) is built for this: `hold()`
   puts an unsaved buffer into the workspace so imports still resolve while the
   file is being typed.
 
-The cost is a submodule to initialise and a pin to bump. CI rebuilds nightly
-against `nemo-ufes/tonto@main`, so grammar drift arrives as a red build rather
-than as a wrong diagram. (`tonto-language` is not on npm — `tonto-cli` there is
+This requires initializing the submodule and updating its pin. CI also builds
+nightly against `nemo-ufes/tonto@main` to catch grammar changes.
+(`tonto-language` is not on npm — `tonto-cli` there is
 the *old* implementation — so `npm install` by name is not available. Publishing
 it would be a change in that repository, and so out of scope.)
 
 ## 4. The engine: drawn here, not by PlantUML
 
-**Decided: this repository renders the diagram itself.** No PlantUML, no
-Graphviz, no external server. The reasons are the same ones that make the old
-feature frustrating to use:
+**Decision: this repository renders the diagram itself.** It does not use
+PlantUML, Graphviz, or an external server. The old preview had four limitations:
 
 - **A PlantUML diagram cannot be rearranged.** The layout is whatever Graphviz
   decides, and it decides differently every time a class is added. Half the old
@@ -138,8 +138,8 @@ PlantUML-like layered graph when a view is first drawn or when an arrangement is
 asked for. Generalizations rank supertypes above subtypes; associations also
 influence ranks and neighbour order. Elements with a saved position are pinned;
 only new and unpositioned ones are placed, near the neighbours they connect to.
-**Adding a class must not rearrange the diagram** — that property is the whole
-point, and it is what a re-render through PlantUML can never offer. An explicit
+**Adding a class must not rearrange the diagram.** PlantUML cannot preserve
+manual positions when it redraws. An explicit
 *Auto-layout* command (all, or selection) is there for when the modeller does
 want it.
 
@@ -200,9 +200,8 @@ tools think of diagrams, and what a large model needs.
   entry is kept, not dropped, and the view reports what it can no longer place,
   so a rename costs a click rather than a layout.
 
-The model text stays the single source of truth. Dragging changes the *view*,
-never the model; this is a visualizer, and editing the ontology from the diagram
-is deliberately out of scope for now (§9).
+Dragging changes the *view*, not the model. Editing the ontology from the
+diagram is outside the initial release (§9).
 
 ## 5. Layout
 
@@ -313,7 +312,7 @@ Parity *and* the notation the redesign can express, in the first release:
 - `///` documentation on hover, and optionally as a note;
 - package boxes, external-reference elements, and the nature legend.
 
-## 9. Deliberately not in the first release
+## 9. Not in the first release
 
 - **Editing the model from the diagram.** Rename, add a class, draw a relation —
   all technically reachable (the language ships the edits its repairs use), and
@@ -466,18 +465,15 @@ a stereotype set over the name it belongs to overlaps by that padding on purpose
 Measured on what the glyphs actually cover it was 13 pairs and a fortieth of the
 area, and is now 14 pairs and a sixtieth -- more collisions, each far smaller.
 
-What is left from this original plan: nothing. Subsequent product work is kept
-in [ROADMAP.md](ROADMAP.md), so this document remains the record of the first
-release and the decisions behind it. The placer still walks its own line and
-settles for the least-bad spot rather than pushing a neighbour aside, which
-would need labels placed before any of them is drawn; ordering them turned out
-to buy most of what that would.
+The initial plan is complete. Subsequent product work is listed in
+[ROADMAP.md](ROADMAP.md). The placer still chooses a label position without
+moving neighboring labels; ordering labels first addressed most of the
+overlap seen in the examples.
 
 ## 12. Risks
 
-- **Layout quality.** A layered algorithm on a dense ontology can still produce
-  a thicket. Mitigation: the modeller can move anything, and what they move
-  stays moved — which is the reason for the rewrite in the first place.
+- **Layout quality.** A layered algorithm can produce crowded diagrams for dense
+  ontologies. Modellers can move elements, and their positions are saved.
 - **Nothing bounds the width.** A rank is as wide as a category has kinds, and
   the drawing is as wide as its widest rank: eight kinds of twelve subkinds each
   come out 17220 across and 664 deep. `elk.aspectRatio` was set for years and

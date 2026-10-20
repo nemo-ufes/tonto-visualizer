@@ -1,15 +1,11 @@
 # Tools
 
-`readability.py` counts, from a rendered SVG, the two things that make a class
-diagram hard to read and that no test catches:
+`readability.py` measures two routing and label problems in a rendered SVG:
 
-- **superimposed lines** — how many pixels two associations run together closely
-  enough to look like one. Two relations drawn as one line is the worst thing a
-  class diagram can do: the reader counts one relationship where the model has
-  two, and both sets of multiplicities land in the same place.
-- **decorators nearer another line than their own** — a multiplicity is read
-  against whichever line it sits closest to, and on a busy diagram that is
-  regularly not the line it belongs to.
+- **Superimposed lines** — pixels where two associations run close enough to
+  look like one.
+- **Misplaced decorators** — multiplicities closer to another association's
+  line than to their own.
 
 Run it over the examples after changing anything about routing or labels:
 
@@ -18,6 +14,5 @@ Run it over the examples after changing anything about routing or labels:
     done
     python3 tools/readability.py /tmp/*.svg
 
-Both numbers should stay at or below what they were. They are not tests: a
-diagram can be worse in ways neither counts, and a number can be improved by
-making the drawing worse in some other way. Look at the pictures too.
+Keep both measurements at or below their previous values, then inspect the
+rendered diagrams. These measurements do not catch every readability problem.
