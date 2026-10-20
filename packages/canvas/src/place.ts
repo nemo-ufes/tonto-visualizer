@@ -13,7 +13,7 @@
  *   ELK's layered algorithm, over everything or over a selection.
  */
 
-import type { ViewModel } from 'tonto-view';
+import type { ViewModel, ViewRelation } from 'tonto-view';
 import type { Placement } from 'tonto-view';
 import type { Rect, Size } from './geometry.js';
 import { boundsOf, centerOf, overlaps } from './geometry.js';
@@ -88,6 +88,54 @@ export function drawnSizes(
         node.id,
         grownTo(sizes[node.id] ?? { width: 160, height: 60 }, saved[node.id])
     ]));
+}
+
+/** Centers selected relators on the material relations that derive from them. */
+export function placeRelatorsAtDerivedMiddles(
+    positions: Positions,
+    relations: readonly ViewRelation[],
+    relatorIds: ReadonlySet<string>
+): Positions {
+    const result = { ...positions };
+    const middles = new Map<string, Array<{ x: number; y: number }>>();
+    for (const relation of relations) {
+        if (relation.stereotype !== 'material' || !relation.derivedFrom) {
+            continue;
+        }
+        const source = positions[relation.source];
+        const target = positions[relation.target];
+        if (!source || !target) {
+            continue;
+        }
+        const middle = {
+            x: (centerOf(source).x + centerOf(target).x) / 2,
+            y: (centerOf(source).y + centerOf(target).y) / 2
+        };
+        for (const id of relation.derivedFrom) {
+            if (!relatorIds.has(id)) {
+                continue;
+            }
+            const points = middles.get(id) ?? [];
+            points.push(middle);
+            middles.set(id, points);
+        }
+    }
+    for (const [id, points] of middles) {
+        const rect = positions[id];
+        if (!rect) {
+            continue;
+        }
+        const middle = points.reduce((sum, point) => ({
+            x: sum.x + point.x / points.length,
+            y: sum.y + point.y / points.length
+        }), { x: 0, y: 0 });
+        result[id] = {
+            ...rect,
+            x: Math.round(middle.x - rect.width / 2),
+            y: Math.round(middle.y - rect.height / 2)
+        };
+    }
+    return result;
 }
 
 /**
