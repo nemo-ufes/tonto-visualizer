@@ -156,7 +156,7 @@
         "prebuild": "npm run clean",
         "build": "node esbuild.mjs",
         "watch": "node esbuild.mjs --watch",
-        "package": "npm run build && vsce package --no-dependencies --no-rewrite-relative-links -o tonto-visualizer.vsix && node name-vsix.mjs",
+        "package": "npm run build && vsce package --no-dependencies --baseImagesUrl https://raw.githubusercontent.com/jpalmeida/tonto-visualizer/main/packages/extension/ -o tonto-visualizer.vsix && node name-vsix.mjs",
         "test": "vitest run"
     },
     "dependencies": {
