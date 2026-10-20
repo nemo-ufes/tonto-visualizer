@@ -30,11 +30,6 @@
     "rankSpacing": 100,
     "groupByPackage": true
   },
-  "constraints": {
-    "pinned": [],
-    "alignments": [],
-    "distributions": []
-  },
   "nodes": {
     "gufo::Entity": {
       "x": 411,

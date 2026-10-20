@@ -36,6 +36,7 @@ packages, the ontologies it imports, and the dependencies between them.
   --package <name>   restrict the view to this package; repeatable
   --no-external      leave out elements from packages outside the view
   --no-datatypes     leave out datatypes and enumerations
+  --hide-derived-relators  hide relators used by derived material relations
 `;
 
 export async function run(argv: string[]): Promise<number> {
@@ -47,6 +48,7 @@ export async function run(argv: string[]): Promise<number> {
     const packages: string[] = [];
     let showExternalReferences = true;
     let showDatatypes = true;
+    let hideDerivedRelators = false;
     let asSvg = false;
     let dark = false;
     let taxonomyOnly = false;
@@ -81,6 +83,8 @@ export async function run(argv: string[]): Promise<number> {
             showExternalReferences = false;
         } else if (argument === '--no-datatypes') {
             showDatatypes = false;
+        } else if (argument === '--hide-derived-relators') {
+            hideDerivedRelators = true;
         } else if (argument === '--svg') {
             asSvg = true;
         } else if (argument === '--dark') {
@@ -141,12 +145,14 @@ export async function run(argv: string[]): Promise<number> {
         ...saved.content,
         ...(showExternalReferences ? {} : { showExternalReferences: false }),
         ...(showDatatypes ? {} : { showDatatypes: false }),
+        ...(hideDerivedRelators ? { hideDerivedRelators: true } : {}),
         ...(packages.length > 0 ? { includedPackages: packages } : {})
     } : {
         scope: 'file',
         showExternalReferences,
         showDatatypes,
         showGensets: true,
+        hideDerivedRelators,
         ...(packages.length > 0 ? { includedPackages: packages } : {})
     };
     const fileModels = all.length > 0 ? all : models;
@@ -198,7 +204,6 @@ export async function run(argv: string[]): Promise<number> {
             taxonomyOnly: display.taxonomyOnly,
             partonomyOnly: display.partonomyOnly,
             packageContainers: display.showPackageGroups,
-            constraints: saved?.constraints,
             only: savedArrangement.unplaced
         })
         : saved ? undefined : await autoLayout(view, sizes, positions, {

@@ -10,7 +10,7 @@
  */
 
 import * as elkModule from 'elkjs/lib/elk.bundled.js';
-import type { LayoutOptions, ViewConstraints, ViewModel } from 'tonto-view';
+import type { LayoutOptions, ViewModel } from 'tonto-view';
 import { clampAssociationDistance, defaultLayoutOptions, inversePairs } from 'tonto-view';
 import type { Point, Rect, Size } from './geometry.js';
 import {
@@ -80,8 +80,6 @@ export interface AutoLayoutRequest extends Partial<LayoutOptions> {
     partonomyOnly?: boolean;
     /** Keep package members inside compound package nodes, not merely nearby. */
     packageContainers?: boolean;
-    /** User-owned constraints retained by an explicit Arrange. */
-    constraints?: ViewConstraints;
 }
 
 export interface AutoLayoutResult {
@@ -258,91 +256,6 @@ function partialRing(ring: number): Point[] {
     return offsets;
 }
 
-/** Applies saved exact constraints without moving pins or breaking taxonomy ranks. */
-export function applyLayoutConstraints(
-    positions: Positions,
-    constraints: ViewConstraints,
-    options: {
-        movable?: ReadonlySet<string>;
-        ranked?: ReadonlySet<string>;
-        direction?: LayoutOptions['direction'];
-    } = {}
-): void {
-    const movable = options.movable ?? new Set(Object.keys(positions));
-    const pinned = new Set(constraints.pinned);
-    const primary = options.direction === 'RIGHT' ? 'x' : 'y';
-    const canMove = (id: string, axis: 'x' | 'y') => movable.has(id) && !pinned.has(id)
-        && !(options.ranked?.has(id) && axis === primary);
-    const centreAt = (rect: Rect, axis: 'x' | 'y') =>
-        rect[axis] + (axis === 'x' ? rect.width : rect.height) / 2;
-    const placeCentre = (rect: Rect, axis: 'x' | 'y', centre: number): Rect => ({
-        ...rect,
-        [axis]: Math.round(centre - (axis === 'x' ? rect.width : rect.height) / 2)
-    });
-    const accept = (candidate: Positions, changed: ReadonlySet<string>): boolean => {
-        for (const id of changed) {
-            const rect = candidate[id];
-            if (!rect) {
-                continue;
-            }
-            for (const [otherId, other] of Object.entries(candidate)) {
-                if (id !== otherId && overlaps(rect, other)) {
-                    return false;
-                }
-            }
-        }
-        for (const id of changed) {
-            positions[id] = candidate[id]!;
-        }
-        return true;
-    };
-
-    for (const constraint of constraints.alignments) {
-        const ids = constraint.nodes.filter(id => positions[id] !== undefined);
-        if (ids.length < 2) {
-            continue;
-        }
-        const fixed = ids.filter(id => !canMove(id, constraint.axis));
-        const targetIds = fixed.length > 0 ? fixed : ids;
-        const target = targetIds.reduce(
-            (sum, id) => sum + centreAt(positions[id]!, constraint.axis), 0) / targetIds.length;
-        const candidate = { ...positions };
-        const changed = new Set<string>();
-        for (const id of ids.filter(id => canMove(id, constraint.axis))) {
-            candidate[id] = placeCentre(positions[id]!, constraint.axis, target);
-            changed.add(id);
-        }
-        accept(candidate, changed);
-    }
-
-    for (const constraint of constraints.distributions) {
-        const ids = constraint.nodes.filter(id => positions[id] !== undefined)
-            .sort((one, other) => centreAt(positions[one]!, constraint.axis)
-                - centreAt(positions[other]!, constraint.axis) || one.localeCompare(other));
-        if (ids.length < 3) {
-            continue;
-        }
-        const low = centreAt(positions[ids[0]!]!, constraint.axis);
-        const high = centreAt(positions[ids.at(-1)!]!, constraint.axis);
-        const step = (high - low) / (ids.length - 1);
-        const candidate = { ...positions };
-        const changed = new Set<string>();
-        let possible = true;
-        for (const [index, id] of ids.entries()) {
-            const target = low + step * index;
-            if (!canMove(id, constraint.axis)) {
-                possible &&= Math.abs(centreAt(positions[id]!, constraint.axis) - target) <= 1;
-                continue;
-            }
-            candidate[id] = placeCentre(positions[id]!, constraint.axis, target);
-            changed.add(id);
-        }
-        if (possible) {
-            accept(candidate, changed);
-        }
-    }
-}
-
 export async function autoLayout(
     view: ViewModel,
     sizes: Record<string, Size>,
@@ -392,8 +305,7 @@ async function layeredPlantUmlLayout(
     partonomy: boolean
 ): Promise<AutoLayoutResult> {
     const routing = request.routing ?? 'straight';
-    const pinned = new Set(request.constraints?.pinned.filter(id => current[id] !== undefined) ?? []);
-    const subject = new Set((request.only ?? view.nodes.map(node => node.id)).filter(id => !pinned.has(id)));
+    const subject = new Set(request.only ?? view.nodes.map(node => node.id));
     if (subject.size === 0) {
         return { positions: current, routes: {} };
     }
@@ -451,11 +363,8 @@ async function layeredPlantUmlLayout(
         }
     };
     walk(laid, 0, 0);
-    if (request.only || pinned.size > 0) {
+    if (request.only) {
         placePartialLayout(view, positions, current, subject);
-    }
-    if (request.constraints) {
-        applyLayoutConstraints(positions, request.constraints, { movable: subject, direction: settings.direction });
     }
     const routes: Record<string, Point[]> = {};
     if (routing === 'orthogonal') {
@@ -505,8 +414,7 @@ async function packageLayout(
         nodeSpacing: Math.round(requestedSettings.nodeSpacing * scale),
         rankSpacing: Math.round(requestedSettings.rankSpacing * scale)
     };
-    const pinned = new Set(request.constraints?.pinned.filter(id => current[id] !== undefined) ?? []);
-    const subject = new Set((request.only ?? view.nodes.map(node => node.id)).filter(id => !pinned.has(id)));
+    const subject = new Set(request.only ?? view.nodes.map(node => node.id));
     if (subject.size === 0) {
         return { positions: current, routes: {} };
     }
@@ -562,11 +470,8 @@ async function packageLayout(
         }
     };
     walk(laid, 0, 0);
-    if (request.only || pinned.size > 0) {
+    if (request.only) {
         placePartialLayout(view, positions, current, subject);
-    }
-    if (request.constraints) {
-        applyLayoutConstraints(positions, request.constraints, { movable: subject, direction: settings.direction });
     }
     // No routes, whatever the routing: ELK's would run to the frame ELK
     // drew, and the frame drawn is the one round the packages where they

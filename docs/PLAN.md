@@ -321,12 +321,11 @@ Parity *and* the notation the redesign can express, in the first release:
 - **Golden view models** — JSON, for the example models in the redesign repo
   (`examples/university`, `boats`, `showcase`, `gufo`). Behaviour becomes a diff.
 - **Unit tests** on the parts that break: id stability under qualification and
-  renaming, view-file merge (pinned, new, orphaned), package filtering, external
+  renaming, view-file position reconciliation (placed, new, orphaned), package filtering, external
   grouping, cardinality and end-decoration rendering, nature color per
   stereotype and per inherited nature.
-- **Layout is not asserted pixel-wise.** What is asserted is that pinned
-  elements do not move, that new ones land inside the viewport, and that no two
-  nodes overlap.
+- **Layout is not asserted pixel-wise.** What is asserted is that new elements
+  land inside the viewport and that no two nodes overlap.
 - **A round-trip check**: every element the model declares appears exactly once,
   unless a filter hides it.
 - The CLI renders the examples to SVG in CI, so a crash in layout or rendering

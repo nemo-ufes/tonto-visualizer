@@ -30,6 +30,8 @@ export interface ContentOptions {
     showDatatypes: boolean;
     /** Draw generalization sets as a shared triangle. */
     showGensets: boolean;
+    /** Omit relators named by `derivedFrom` on material relations. */
+    hideDerivedRelators: boolean;
     /**
      * The packages the modeller ticked by hand, which outrank the scope.
      * Absent while they have not, which is what a scope change goes back to.
@@ -132,7 +134,8 @@ export const defaultContentOptions: ContentOptions = {
     scope: 'file',
     showExternalReferences: true,
     showDatatypes: true,
-    showGensets: true
+    showGensets: true,
+    hideDerivedRelators: false
 };
 
 export const defaultDisplayOptions: DisplayOptions = {

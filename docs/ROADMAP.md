@@ -10,12 +10,11 @@ and review before considering diagram-based editing.
 |---|---|---|---|
 | 1 | Named diagram views | A large model needs several intentional diagrams, each with its own content, arrangement and notation choices. | In progress |
 | 2 | Focus and search | Find a declaration and show the related elements around it. | Planned |
-| 3 | [Layout constraints](AUTOLAYOUT.md) | Pinning, alignment, distribution and bounded taxonomy rows let automatic layout assist rather than replace a hand arrangement. | In progress |
-| 4 | Diagnostics overlay | Errors and warnings belong on the affected card or relation, with a direct route back to the declaration. | Planned |
-| 5 | Revision diff | Compare added, removed and changed declarations with a Git revision while keeping the current arrangement. | Planned |
-| 6 | Diagram navigation | A minimap, back/forward history and breadcrumbs keep very large drawings navigable. | Planned |
-| 7 | Documentation inspector | Read `///` documentation and related elements without crowding the canvas. | Planned |
-| 8 | Generalization-tree interaction | Select a branch to open its declaration; select the shared stem to open its generalization set. | Delivered |
+| 3 | Diagnostics overlay | Errors and warnings belong on the affected card or relation, with a direct route back to the declaration. | Planned |
+| 4 | Revision diff | Compare added, removed and changed declarations with a Git revision while keeping the current arrangement. | Planned |
+| 5 | Diagram navigation | A minimap, back/forward history and breadcrumbs keep very large drawings navigable. | Planned |
+| 6 | Documentation inspector | Read `///` documentation and related elements without crowding the canvas. | Planned |
+| 7 | Generalization-tree interaction | Select a branch to open its declaration; select the shared stem to open its generalization set. | Delivered |
 
 Editing Tonto source in the diagram is outside this roadmap. It needs its own
 validation and undo behavior; this roadmap focuses on reading and reviewing
