@@ -327,6 +327,7 @@ async function layeredPlantUmlLayout(
                 .map(node => ({ id: node.id, ...sizeOf(node.id) }))
         ]
         : view.nodes.filter(node => subject.has(node.id)).map(node => ({ id: node.id, ...sizeOf(node.id) }));
+    const coveredInverseIds = inversePairs(view.edges).covered;
     const algorithmOptions = optionsFor(settings, routing);
     const graph: ElkNode = {
         id: 'root',
@@ -336,7 +337,8 @@ async function layeredPlantUmlLayout(
             'elk.json.edgeCoords': 'ROOT'
         },
         children,
-        edges: view.edges.filter(edge => subject.has(edge.source) && subject.has(edge.target))
+        edges: view.edges.filter(edge => !coveredInverseIds.has(edge.id)
+            && subject.has(edge.source) && subject.has(edge.target))
             .map(edge => {
                 const wholePart = partonomy ? wholePartOf(edge) : undefined;
                 return {
@@ -424,6 +426,7 @@ async function packageLayout(
     const framed = new Set(frames.flatMap(group => group.nodes));
     const nodes = new Set(view.nodes.map(node => node.id));
     const ends = new Set([...nodes, ...frames.map(group => group.id)]);
+    const coveredInverseIds = inversePairs(view.edges).covered;
     const graph: ElkNode = {
         id: 'root',
         layoutOptions: {
@@ -446,6 +449,7 @@ async function packageLayout(
             ...view.nodes.filter(node => !framed.has(node.id)).map(node => ({ id: node.id, ...sizeOf(node.id) }))
         ],
         edges: view.edges
+            .filter(edge => !coveredInverseIds.has(edge.id))
             .filter(edge => ends.has(edge.source) && ends.has(edge.target) && edge.source !== edge.target)
             .map((edge): ElkEdge => ({ id: edge.id, sources: [edge.target], targets: [edge.source] }))
     };

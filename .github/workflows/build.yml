@@ -21,7 +21,7 @@ jobs:
         with:
           node-version: 22
       - run: npm run language
-      - run: npm install
+      - run: npm ci
       - run: npm run versions:check
       - run: npm run build
       - run: npm run typecheck
