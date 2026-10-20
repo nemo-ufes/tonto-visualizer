@@ -1,4 +1,48 @@
-# Automatic layout improvement plan
+# Automatic layout: decision and trials
+
+## Current decision
+
+The only automatic class-diagram strategy is a PlantUML-like directed layered
+graph using ELK's Network Simplex layering and linear-segment node placement.
+Generalizations are directed from supertype to subtype for ranking; association
+edges participate in ranking and within-rank order. Saved positions still
+belong to the modeller and survive ordinary edits. Ontology package diagrams
+use the same layered options.
+
+## Tried and abandoned
+
+- **Semantic ELK post-processing.** The earlier pipeline re-ranked taxonomies,
+  moved relators and whole-part pairs, packed components, then searched local
+  rank and spacing changes using a composite score. On the example renders it
+  did not find consistent improvements over the direct layered result. Its
+  separate repair passes also made the score hard to trust because later moves
+  could undo earlier ones.
+- **Legacy-specific root ordering and hub padding.** The old generator emits
+  taxonomy roots first and widens high-degree labels with non-breaking spaces.
+  Reproducing those cues made hub cards conspicuously wide in the canvas (for
+  example, `Person` in the demo) without a clear readability gain. We keep the
+  useful PlantUML-like graph behavior, not those generator workarounds.
+- **Proxy-metric optimization.** Coverage, approximate path overlap, and
+  label-to-line distance were useful diagnostics, but the examples showed they
+  do not reliably rank human-readable arrangements. Visual comparison with the
+  saved example views remains the deciding check; no score is treated as a
+  substitute for it.
+- **Taxonomy-rank wrapping.** A canvas post-pass used to split broad ranks at a
+  configurable pixel span. It was part of the semantic repair pipeline, not the
+  PlantUML-like layered result, so the control was removed with that pipeline.
+  Older `.tontoview` files may still contain `maxRankSpan`; it is ignored.
+
+The strategy comparison was rendered on `demo-isao` and `palm-oil-supply`.
+No saved manual arrangement is replaced by automatic layout.
+
+---
+
+## Historical improvement notes
+
+The notes below record earlier iterations and are kept as project history; they
+do not describe the current pipeline. Several semantic repair and scoring
+passes documented here were removed after the visual comparison summarized
+above.
 
 Automatic layout should produce a useful first reading of a model and remain a
 good assistant after the modeller has begun arranging it. Semantic correctness
@@ -6,13 +50,12 @@ is a constraint, not one quality measure among others: taxonomy direction,
 mediation and whole-part meaning must continue to come from `tonto-language`
 through the view model.
 
-The current implementation is a hybrid. ELK first arranges the graph, then the
-canvas restores taxonomy ranks, settles relators, orients whole-part pairs,
-places a selected subgraph beside fixed nodes, and routes the final edges. This
-has made the drawing semantically better than an unqualified graph layout, but
-the independent repair passes have no common measure of compactness, crossings,
-edge length, displacement or label room. A later pass can therefore undo a
-useful choice made by an earlier one.
+An earlier implementation was a hybrid. ELK first arranged the graph, then the
+canvas restored taxonomy ranks, settled relators, oriented whole-part pairs,
+placed a selected subgraph beside fixed nodes, and routed the final edges. The
+independent repair passes had no common measure of compactness, crossings, edge
+length, displacement or label room. A later pass could therefore undo a useful
+choice made by an earlier one; this is why the pipeline was simplified.
 
 ## Quality contract
 

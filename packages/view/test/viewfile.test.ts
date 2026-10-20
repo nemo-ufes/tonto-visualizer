@@ -83,7 +83,7 @@ describe('view file options', () => {
         });
         expect(view.layout).toEqual({
             direction: 'RIGHT', associationDistance: 140, nodeSpacing: 0,
-            rankSpacing: 120, maxRankSpan: defaultLayoutOptions.maxRankSpan, groupByPackage: false
+            rankSpacing: 120, groupByPackage: false
         });
         expect(view.constraints).toEqual({
             pinned: ['Sample::Person'],

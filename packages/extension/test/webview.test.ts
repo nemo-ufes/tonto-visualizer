@@ -161,12 +161,11 @@ describe('the webview and its host protocol', () => {
         await import('../src/webview/main.js');
     });
 
-    test('offers taxonomy controls without an arrangement-engine choice', () => {
+    test('offers layout controls without a strategy choice', () => {
         sendModel();
         openOptions();
 
         expect(chooser('Direction').value).toBe('DOWN');
-        expect(chooser('Maximum rank span').value).toBe('2000');
         expect(chooser('Typeface').value).toBe('sans');
         expect(chooser('Text size').value).toBe('medium');
         expect(checkbox('Cluster packages').checked).toBe(true);

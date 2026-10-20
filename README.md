@@ -34,10 +34,8 @@ Working end to end, and rough in places.
   available as alternatives; a direct edge remains straight, while a necessary
   bend is fitted with a Graphviz-style cubic spline and retains
   sampled geometry for labels, selection and collision checks. Automatic layout
-  (ELK, layered) places only what has not been placed by hand, seats a relator
-  between the classes it mediates -- it is a reified relationship, and that is
-  where a reader looks for it -- and can be told to ignore the packages and lay
-  the model out as one graph.
+  uses one PlantUML-like layered graph and places only what has not been placed
+  by hand. It can ignore package grouping and lay the model out as one graph.
 - Ontology manifests — an entry document with a `bundles` clause — are drawn
   as UML package diagrams: the ontology is a package frame holding its member
   packages, inline and bundled, each card saying the document it is read from;
@@ -61,8 +59,8 @@ Working end to end, and rough in places.
   to book serif and monospace, apply to all diagram text, and share their
   measurements with exported SVG. A persisted **Taxonomy only** setting hides
   attributes and
-  associations and arranges from inheritance alone. Pins, centre alignment,
-  equal distribution and a maximum taxonomy-rank span are also persisted and
+  associations and arranges from inheritance alone. Pins, centre alignment and
+  equal distribution are also persisted and
   reapplied by Arrange. The toolbar's **Distance −/+** control scales association
   and neighbor spacing from 60% to 180%, immediately rearranging the diagram so
   its overall density can be tuned. **Fit** is a viewport toggle that follows

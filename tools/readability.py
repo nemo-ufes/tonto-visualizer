@@ -1,8 +1,7 @@
-"""What makes a diagram hard to read, counted from the SVG it produced.
+"""Approximate route and label readability metrics from a rendered SVG.
 
-Two things the eye trips on: lines that lie on top of each other, so two
-associations look like one, and a decorator that sits nearer somebody else's
-line than its own, so it is read against the wrong association.
+These measurements support comparisons; they are not a complete diagram-quality
+score. In particular, semantic grouping and whitespace still need visual review.
 """
 import math, re, sys
 
@@ -23,7 +22,9 @@ def parse(svg):
         labels.append((owner, float(m.group(2)), float(m.group(3)), max(len(text), 1)))
     for m in re.finditer(r'class="tv-lock" data-for="([^"]+)" transform="translate\(([-\d.]+), ([-\d.]+)\)', svg):
         labels.append((m.group(1).replace('&gt;', '>').replace('&amp;', '&'), float(m.group(2)) + 6, float(m.group(3)) + 6, 2))
-    return edges, nodes, labels
+    view_box = re.search(r'<svg[^>]*viewBox="([\-\d.]+) ([\-\d.]+) ([\d.]+) ([\d.]+)"', svg)
+    bounds = tuple(map(float, view_box.groups())) if view_box else None
+    return edges, nodes, labels, bounds
 
 def point_segment_distance(p, seg):
     (x1, y1), (x2, y2) = seg
@@ -40,8 +41,8 @@ def angle(seg):
     (x1, y1), (x2, y2) = seg
     return math.atan2(y2 - y1, x2 - x1) % math.pi
 
-def superimposed(a, b, tolerance=6.0, degrees=10):
-    """Length over which two segments run together close enough to look like one."""
+def directed_overlap(a, b, tolerance=6.0, degrees=10):
+    """Estimate how much of a lies close to a similarly angled segment b."""
     if abs(angle(a) - angle(b)) > math.radians(degrees) and \
        abs(abs(angle(a) - angle(b)) - math.pi) > math.radians(degrees):
         return 0.0
@@ -54,8 +55,13 @@ def superimposed(a, b, tolerance=6.0, degrees=10):
                 if point_segment_distance((x1 + (x2 - x1) * i / steps, y1 + (y2 - y1) * i / steps), b) < tolerance)
     return length * close / (steps + 1)
 
+def superimposed(a, b, tolerance=6.0, degrees=10):
+    """Symmetric estimate of how much two segments visually merge."""
+    return (directed_overlap(a, b, tolerance, degrees)
+            + directed_overlap(b, a, tolerance, degrees)) / 2
+
 def report(name, svg):
-    edges, nodes, labels = parse(svg)
+    edges, nodes, labels, bounds = parse(svg)
     overlap = 0.0
     ids = list(edges)
     for i, one in enumerate(ids):
@@ -63,6 +69,13 @@ def report(name, svg):
             for sa in edges[one]:
                 for sb in edges[other]:
                     overlap += superimposed(sa, sb)
+    line_length = sum(math.hypot(b[0] - a[0], b[1] - a[1])
+                      for segments_for_edge in edges.values()
+                      for a, b in segments_for_edge)
+    overlap_rate = overlap / max(line_length, 1)
+    node_area = sum(width * height for _, _, width, height in nodes)
+    drawing_area = bounds[2] * bounds[3] if bounds else 0
+    node_coverage = node_area / drawing_area if drawing_area else 0
 
     misread = 0
     for owner, x, y, chars in labels:
@@ -74,7 +87,8 @@ def report(name, svg):
         if theirs < mine - 1:
             misread += 1
 
-    print(f'{name:22} superimposed {overlap:7.0f}px   labels nearer another line {misread:3}/{len(labels):3}')
+    print(f'{name:30} node coverage {node_coverage:5.1%}   overlap {overlap:6.0f}px ({overlap_rate:5.1%})'
+          f'   labels nearer another line {misread:3}/{len(labels):3}')
 
 for path in sys.argv[1:]:
     report(path.split('/')[-1], open(path).read())
