@@ -10,7 +10,7 @@ describe('view file options', () => {
                 showExternalReferences: 'yes',
                 showDatatypes: 0,
                 showGensets: null,
-                hideDerivedRelators: 'yes',
+                derivedMaterialMode: 'invalid',
                 includedPackages: ['Package', 1],
                 hidden: 'Sample::Person'
             },
@@ -44,7 +44,7 @@ describe('view file options', () => {
                 showExternalReferences: false,
                 showDatatypes: false,
                 showGensets: false,
-                hideDerivedRelators: true,
+                derivedMaterialMode: 'relators',
                 includedPackages: [],
                 hidden: ['Sample::Person', 'works-for']
             },
@@ -71,7 +71,7 @@ describe('view file options', () => {
             showExternalReferences: false,
             showDatatypes: false,
             showGensets: false,
-            hideDerivedRelators: true,
+            derivedMaterialMode: 'relators',
             includedPackages: [],
             hidden: ['Sample::Person', 'works-for']
         });
@@ -88,6 +88,13 @@ describe('view file options', () => {
             rankSpacing: 120, groupByPackage: false
         });
         expect(view).not.toHaveProperty('constraints');
+    });
+
+    test('migrates the previous hide-relator setting', () => {
+        expect(readViewFile({ content: { hideDerivedRelators: true } }).content.derivedMaterialMode)
+            .toBe('relations');
+        expect(readViewFile({ content: { hideDerivedRelators: false } }).content.derivedMaterialMode)
+            .toBe('both');
     });
 
     test('retains the expanded diagram typeface choices', () => {

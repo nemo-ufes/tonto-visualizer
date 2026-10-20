@@ -9,7 +9,7 @@
 import { readFileSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import type { ContentOptions, DisplayOptions, LayoutOptions, ViewFile } from 'tonto-view';
+import type { ContentOptions, DerivedMaterialMode, DisplayOptions, LayoutOptions, ViewFile } from 'tonto-view';
 import {
     defaultDisplayOptions, defaultLayoutOptions, derive, derivePackages, packageName, packagesInScope,
     readViewFile, reconcile
@@ -36,7 +36,7 @@ packages, the ontologies it imports, and the dependencies between them.
   --package <name>   restrict the view to this package; repeatable
   --no-external      leave out elements from packages outside the view
   --no-datatypes     leave out datatypes and enumerations
-  --hide-derived-relators  hide relators used by derived material relations
+  --derived-material <mode>  both (default), relators, or relations
 `;
 
 export async function run(argv: string[]): Promise<number> {
@@ -48,7 +48,7 @@ export async function run(argv: string[]): Promise<number> {
     const packages: string[] = [];
     let showExternalReferences = true;
     let showDatatypes = true;
-    let hideDerivedRelators = false;
+    let derivedMaterialMode: DerivedMaterialMode | undefined;
     let asSvg = false;
     let dark = false;
     let taxonomyOnly = false;
@@ -83,8 +83,17 @@ export async function run(argv: string[]): Promise<number> {
             showExternalReferences = false;
         } else if (argument === '--no-datatypes') {
             showDatatypes = false;
+        } else if (argument === '--derived-material') {
+            const mode = argv[index + 1];
+            if (mode !== 'both' && mode !== 'relators' && mode !== 'relations') {
+                process.stderr.write('--derived-material needs both, relators, or relations\n');
+                return 2;
+            }
+            derivedMaterialMode = mode;
+            index += 1;
         } else if (argument === '--hide-derived-relators') {
-            hideDerivedRelators = true;
+            // Kept as an alias for views scripted against the earlier option.
+            derivedMaterialMode = 'relations';
         } else if (argument === '--svg') {
             asSvg = true;
         } else if (argument === '--dark') {
@@ -145,14 +154,14 @@ export async function run(argv: string[]): Promise<number> {
         ...saved.content,
         ...(showExternalReferences ? {} : { showExternalReferences: false }),
         ...(showDatatypes ? {} : { showDatatypes: false }),
-        ...(hideDerivedRelators ? { hideDerivedRelators: true } : {}),
+        ...(derivedMaterialMode ? { derivedMaterialMode } : {}),
         ...(packages.length > 0 ? { includedPackages: packages } : {})
     } : {
         scope: 'file',
         showExternalReferences,
         showDatatypes,
         showGensets: true,
-        hideDerivedRelators,
+        derivedMaterialMode: derivedMaterialMode ?? 'both',
         ...(packages.length > 0 ? { includedPackages: packages } : {})
     };
     const fileModels = all.length > 0 ? all : models;

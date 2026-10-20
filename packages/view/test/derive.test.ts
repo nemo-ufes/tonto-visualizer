@@ -179,7 +179,7 @@ kind Animal {
         expect(mediation?.kind === 'relation' ? mediation.derivedFrom : 'unexpected').toBeUndefined();
     });
 
-    test('hides only relators referenced by derived material relations', async () => {
+    test('chooses which side of a derived material relation to show', async () => {
         const text = [
             'package Draft',
             'kind Person',
@@ -197,17 +197,26 @@ kind Animal {
             '}'
         ].join('\n');
         const complete = await viewOfText(text);
-        const hidden = await viewOfText(text, { hideDerivedRelators: true });
+        const relatorsOnly = await viewOfText(text, { derivedMaterialMode: 'relators' });
+        const relationsOnly = await viewOfText(text, { derivedMaterialMode: 'relations' });
+        const material = (view: Awaited<ReturnType<typeof viewOfText>>) => view.edges.find(edge =>
+            edge.kind === 'relation' && edge.stereotype === 'material' && edge.name === 'worksFor');
 
         expect(complete.nodes.map(one => one.id)).toContain('Draft::Employment');
-        expect(hidden.nodes.find(candidate => candidate.id === 'Draft::Employment')).toBeUndefined();
-        expect(node(hidden, 'Draft::Enrollment')?.stereotype).toBe('relator');
-        expect(hidden.edges.some(edge => edge.source === 'Draft::Employment'
+        expect(material(complete)).toBeDefined();
+
+        expect(node(relatorsOnly, 'Draft::Employment')?.stereotype).toBe('relator');
+        expect(node(relatorsOnly, 'Draft::Enrollment')?.stereotype).toBe('relator');
+        expect(material(relatorsOnly)).toBeUndefined();
+        expect(relatorsOnly.edges.some(edge => edge.source === 'Draft::Employment'
+            || edge.target === 'Draft::Employment')).toBe(true);
+
+        expect(relationsOnly.nodes.find(candidate => candidate.id === 'Draft::Employment')).toBeUndefined();
+        expect(node(relationsOnly, 'Draft::Enrollment')?.stereotype).toBe('relator');
+        expect(material(relationsOnly)?.derivedFrom).toBeUndefined();
+        expect(relationsOnly.edges.some(edge => edge.source === 'Draft::Employment'
             || edge.target === 'Draft::Employment')).toBe(false);
-        expect(hidden.edges.some(edge => edge.kind === 'relation'
-            && edge.stereotype === 'material' && edge.name === 'worksFor'
-            && edge.derivedFrom === undefined)).toBe(true);
-        expect(hidden.groups.flatMap(group => group.nodes)).not.toContain('Draft::Employment');
+        expect(relationsOnly.groups.flatMap(group => group.nodes)).not.toContain('Draft::Employment');
     });
 
     test('records what a historical role is derived from', async () => {

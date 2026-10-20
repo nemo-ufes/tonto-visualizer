@@ -11,7 +11,7 @@
  * decides what a file means once it is open.
  */
 
-import type { ContentOptions, DisplayOptions, LayoutOptions } from './options.js';
+import type { ContentOptions, DerivedMaterialMode, DisplayOptions, LayoutOptions } from './options.js';
 import {
     clampAssociationDistance, defaultContentOptions, defaultDisplayOptions, defaultLayoutOptions
 } from './options.js';
@@ -110,12 +110,18 @@ function readContentOptions(value: unknown): ContentOptions {
     const source = recordOf(value);
     const includedPackages = stringArray(source.includedPackages);
     const hidden = stringArray(source.hidden);
+    // Older views had a checkbox which hid the relator while keeping its
+    // derived material relation. Carry that choice into the equivalent mode.
+    const derivedMaterialMode: DerivedMaterialMode = oneOf(source.derivedMaterialMode,
+        ['both', 'relators', 'relations'])
+        ? source.derivedMaterialMode
+        : source.hideDerivedRelators === true ? 'relations' : defaultContentOptions.derivedMaterialMode;
     return {
         scope: oneOf(source.scope, ['file', 'workspace']) ? source.scope : defaultContentOptions.scope,
         showExternalReferences: booleanOr(source.showExternalReferences, defaultContentOptions.showExternalReferences),
         showDatatypes: booleanOr(source.showDatatypes, defaultContentOptions.showDatatypes),
         showGensets: booleanOr(source.showGensets, defaultContentOptions.showGensets),
-        hideDerivedRelators: booleanOr(source.hideDerivedRelators, defaultContentOptions.hideDerivedRelators),
+        derivedMaterialMode,
         ...(includedPackages ? { includedPackages } : {}),
         ...(hidden ? { hidden } : {})
     };

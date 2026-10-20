@@ -128,13 +128,16 @@ class Derivation {
             }
         }
 
-        const hiddenRelators = this.options.hideDerivedRelators
-            ? this.derivedMaterialRelators()
-            : new Set<string>();
+        const material = this.derivedMaterialElements();
+        const hiddenRelators = this.options.derivedMaterialMode === 'relations'
+            ? material.relators : new Set<string>();
+        const hiddenRelations = this.options.derivedMaterialMode === 'relators'
+            ? material.relations : new Set<string>();
         for (const id of hiddenRelators) {
             this.nodes.delete(id);
         }
-        const edges = this.edges.filter(edge => this.nodes.has(edge.source) && this.nodes.has(edge.target));
+        const edges = this.edges.filter(edge => !hiddenRelations.has(edge.id)
+            && this.nodes.has(edge.source) && this.nodes.has(edge.target));
         this.linkInverses(edges);
         this.linkDerivations(edges);
 
@@ -162,9 +165,10 @@ class Derivation {
         };
     }
 
-    /** Relators used as sources of material relations' `derivedFrom` links. */
-    private derivedMaterialRelators(): Set<string> {
-        const ids = new Set<string>();
+    /** The relators and material relations paired by `derivedFrom`. */
+    private derivedMaterialElements(): { relators: Set<string>; relations: Set<string> } {
+        const relators = new Set<string>();
+        const relations = new Set<string>();
         for (const { client, from } of this.derivations) {
             if (client.kind !== 'relation' || client.stereotype !== 'material') {
                 continue;
@@ -172,11 +176,12 @@ class Derivation {
             for (const reference of from) {
                 const id = reference.ref ? this.idOf.get(reference.ref) : undefined;
                 if (id && this.nodes.get(id)?.stereotype === 'relator') {
-                    ids.add(id);
+                    relators.add(id);
+                    relations.add(client.id);
                 }
             }
         }
-        return ids;
+        return { relators, relations };
     }
 
     /**

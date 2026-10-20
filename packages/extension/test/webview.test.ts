@@ -231,6 +231,23 @@ describe('the webview and its host protocol', () => {
         expect(document.getElementById('options')?.textContent).not.toContain('Pin selected');
     });
 
+    test('offers all three derived material display modes', () => {
+        sendModel();
+        openOptions();
+        const row = [...document.querySelectorAll('label.row.choice')]
+            .find(candidate => candidate.textContent?.includes('Derived material'));
+        const select = row?.querySelector('select');
+
+        expect([...select!.options].map(option => option.textContent)).toEqual([
+            'Relator and derived relations', 'Relators only', 'Derived relations only'
+        ]);
+        select!.value = 'relators';
+        select!.dispatchEvent(new Event('change'));
+        expect(posted('content').at(-1)).toEqual({
+            type: 'content', content: { derivedMaterialMode: 'relators' }
+        });
+    });
+
     test('fits a newly opened view once and preserves later viewport changes', () => {
         sendModel([], undefined, true);
         expect(document.getElementById('scale')!.textContent).toBe('200%');

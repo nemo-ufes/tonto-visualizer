@@ -9,7 +9,7 @@
  */
 
 import type {
-    ContentOptions, DisplayOptions, EdgeRoute, LayoutOptions, ViewModel
+    ContentOptions, DerivedMaterialMode, DisplayOptions, EdgeRoute, LayoutOptions, ViewModel
 } from 'tonto-view';
 import { edgeTouches } from 'tonto-view/outline';
 import { ASSOCIATION_DISTANCE, clampAssociationDistance, defaultLayoutOptions } from 'tonto-view/options';
@@ -1183,8 +1183,7 @@ function fillOptions(): void {
     const contentRows: Array<[keyof ContentOptions, string]> = [
         ['showExternalReferences', 'External references'],
         ['showDatatypes', 'Datatypes and enumerations'],
-        ['showGensets', 'Generalization sets'],
-        ['hideDerivedRelators', 'Hide relators behind derived material relations']
+        ['showGensets', 'Generalization sets']
     ];
 
     optionsPanel.replaceChildren();
@@ -1229,8 +1228,19 @@ function fillOptions(): void {
                 : value && key === 'partonomyOnly' ? { partonomyOnly: true, taxonomyOnly: false }
                     : { [key]: value }
         })))));
-    optionsPanel.append(section('Included', contentRows.map(([key, label]) =>
-        toggle(label, Boolean(content?.[key]), value => host.postMessage({ type: 'content', content: { [key]: value } })))));
+    optionsPanel.append(section('Included', [
+        ...contentRows.map(([key, label]) =>
+            toggle(label, Boolean(content?.[key]), value => host.postMessage({
+                type: 'content', content: { [key]: value }
+            }))),
+        choice('Derived material', [
+            ['both', 'Relator and derived relations'],
+            ['relators', 'Relators only'],
+            ['relations', 'Derived relations only']
+        ], content.derivedMaterialMode, value => host.postMessage({
+            type: 'content', content: { derivedMaterialMode: value as DerivedMaterialMode }
+        }))
+    ]));
 
     const hidden = new Set(content.hidden ?? []);
     for (const kind of ['class', 'association'] as const) {
