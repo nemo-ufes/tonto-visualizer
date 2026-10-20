@@ -1,6 +1,6 @@
 {
     "name": "tonto-view-cli",
-    "version": "0.1.63",
+    "version": "0.1.64",
     "private": true,
     "description": "The view model of a Tonto model, from a terminal: what the diagram would draw, before anything draws it.",
     "license": "MIT",
