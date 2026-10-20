@@ -7,6 +7,6 @@ export * from './palette.js';
 export * from './selection.js';
 export * from './source.js';
 export { colorOf } from './natures.js';
-export { derive, packageName } from './derive.js';
+export { derive, filterDerivedMaterial, packageName } from './derive.js';
 export * from './outline.js';
 export type { DeriveInput } from './derive.js';

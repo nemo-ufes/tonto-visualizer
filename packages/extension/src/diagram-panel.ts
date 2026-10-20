@@ -7,14 +7,14 @@
  */
 
 import * as vscode from 'vscode';
-import type { ContentOptions, DisplayOptions, ViewModel } from 'tonto-view';
+import type { ContentOptions, DisplayOptions, ViewModel, ViewRelation } from 'tonto-view';
 import {
-    contentAfter, derive, derivePackages, expandInverseIds, idsAtSource, nodesInSelection, packageName,
-    packagesInScope, reconcile
+    contentAfter, derive, derivePackages, expandInverseIds, filterDerivedMaterial, idsAtSource,
+    nodesInSelection, packageName, packagesInScope, reconcile
 } from 'tonto-view';
 import { ViewSession } from 'tonto-view/session';
 import type { ViewMove } from './rename.js';
-import { autoLayout } from 'tonto-canvas';
+import { autoLayout, placeRelatorsAtDerivedMiddles } from 'tonto-canvas';
 import { darkTheme, drawnSizes, lightTheme, movedTo, placeNewNodes, render, sizeOf } from 'tonto-canvas/draw';
 import { filterItemsOf, filterView } from './filters.js';
 import type { FilterItem, FromPanel, Rect, ToPanel } from './protocol.js';
@@ -49,6 +49,8 @@ export class DiagramPanel {
     private view: ViewModel = { groups: [], nodes: [], edges: [], gensets: [] };
     /** The last successfully derived model, before modeller-owned filters. */
     private catalog: ViewModel = { groups: [], nodes: [], edges: [], gensets: [] };
+    /** The complete model, retained so Arrange can use hidden derived relations. */
+    private completeCatalog: ViewModel = { groups: [], nodes: [], edges: [], gensets: [] };
     private positions: Record<string, Rect> = {};
     private pending: NodeJS.Timeout | undefined;
     private ready = false;
@@ -299,19 +301,32 @@ export class DiagramPanel {
         const request = ++this.layoutRequest;
         const view = this.view;
         const previous = this.positions;
+        const arrangeDerivedRelators = store.state.content.derivedMaterialMode !== 'relations'
+            && view.kind !== 'packages';
+        const layoutView = arrangeDerivedRelators
+            ? filterView(filterDerivedMaterial(this.completeCatalog, 'relations'), store.state.content.hidden ?? [])
+            : view;
+        const layoutNodeIds = new Set(layoutView.nodes.map(node => node.id));
+        const layoutOnly = only?.filter(id => layoutView.nodes.some(node => node.id === id));
         // The size each card is drawn at, not the size its content needs: a card
         // the modeller widened is arranged around at the width they gave it,
         // and its neighbours are placed clear of that rather than under it.
-        const sizes = drawnSizes(view, this.sizes(store.state.display), store.state.nodes);
+        const sizes = drawnSizes(layoutView, this.sizes(store.state.display), store.state.nodes);
+        const layoutCurrent = arrangeDerivedRelators
+            ? Object.fromEntries(Object.entries(this.positions).filter(([id]) => layoutNodeIds.has(id)))
+            : this.positions;
         let laid;
         try {
-            laid = await autoLayout(view, sizes, this.positions, {
+            laid = await autoLayout(layoutView, sizes, layoutCurrent, {
                 ...store.state.layout,
+                ...(arrangeDerivedRelators ? {
+                    associationDistance: Math.min(180, Math.round(store.state.layout.associationDistance * 1.5))
+                } : {}),
                 routing: store.state.display.routing,
                 taxonomyOnly: store.state.display.taxonomyOnly,
                 partonomyOnly: store.state.display.partonomyOnly,
                 packageContainers: store.state.display.showPackageGroups,
-                ...(only ? { only } : {})
+                ...(only ? { only: layoutOnly } : {})
             });
         } catch (error) {
             if (request !== this.layoutRequest || store !== this.store || view !== this.view) {
@@ -327,6 +342,24 @@ export class DiagramPanel {
         if (request !== this.layoutRequest || store !== this.store || view !== this.view) {
             return false;
         }
+        if (arrangeDerivedRelators) {
+            const positions = { ...laid.positions };
+            for (const node of view.nodes) {
+                if (node.stereotype === 'relator' && !layoutNodeIds.has(node.id) && previous[node.id]) {
+                    positions[node.id] = previous[node.id]!;
+                }
+            }
+            const relators = new Set(view.nodes
+                .filter(node => node.stereotype === 'relator' && (!only || only.includes(node.id)))
+                .map(node => node.id));
+            const layoutEdgeIds = new Set(layoutView.edges.map(edge => edge.id));
+            const derivedMaterial = this.completeCatalog.edges.filter((edge): edge is ViewRelation =>
+                edge.kind === 'relation' && edge.stereotype === 'material' && layoutEdgeIds.has(edge.id));
+            laid = {
+                ...laid,
+                positions: placeRelatorsAtDerivedMiddles(positions, derivedMaterial, relators)
+            };
+        }
         this.positions = laid.positions;
         store.move(movedTo(laid.positions, store.state.nodes));
         // Only an orthogonal drawing has routes to keep; a straight one is
@@ -336,7 +369,8 @@ export class DiagramPanel {
         const replaced = new Set<string>();
         for (const edge of view.edges) {
             if (!subject || subject.has(edge.source) || subject.has(edge.target)) {
-                const route = subject && (!subject.has(edge.source) || !subject.has(edge.target))
+                const route = arrangeDerivedRelators
+                    || (subject && (!subject.has(edge.source) || !subject.has(edge.target)))
                     ? undefined
                     : laid.routes[edge.id] ? { points: laid.routes[edge.id]! } : undefined;
                 store.reroute(edge.id, route);
@@ -513,7 +547,9 @@ export class DiagramPanel {
             options
         });
         const { hidden, ...unfiltered } = content;
-        const catalog = deriveWith(unfiltered);
+        const completeCatalog = deriveWith({ ...unfiltered, derivedMaterialMode: 'both' });
+        const catalog = filterDerivedMaterial(completeCatalog, unfiltered.derivedMaterialMode);
+        this.completeCatalog = completeCatalog;
         this.catalog = catalog;
         this.filters = filterItemsOf(catalog);
         const isFirstDraw = this.installView(filterView(catalog, hidden ?? []), store);

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
-import type { ViewModel } from 'tonto-view';
-import { drawnSizes, movedTo, placeNewNodes } from '../src/place.js';
+import type { ViewModel, ViewRelation } from 'tonto-view';
+import { drawnSizes, movedTo, placeNewNodes, placeRelatorsAtDerivedMiddles } from '../src/place.js';
 
 const view = {
     groups: [], edges: [], gensets: [],
@@ -38,6 +38,26 @@ describe('the size a card is drawn at', () => {
         const placed = placeNewNodes(view, natural, saved);
         expect({ width: placed.a!.width, height: placed.a!.height })
             .toEqual(drawnSizes(view, natural, saved).a);
+    });
+});
+
+describe('placing relators on their derived material relations', () => {
+    test('centres the relator on the line between the relation ends', () => {
+        const positions = {
+            A: { x: 0, y: 0, width: 100, height: 60 },
+            B: { x: 400, y: 200, width: 100, height: 80 },
+            R: { x: 20, y: 30, width: 80, height: 40 }
+        };
+        const relation: ViewRelation = {
+            kind: 'relation', id: 'material', stereotype: 'material', source: 'A', target: 'B',
+            sourceEnd: { isConst: false, isAddOnly: false },
+            targetEnd: { isConst: false, isAddOnly: false },
+            derivedFrom: ['R']
+        };
+        const placed = placeRelatorsAtDerivedMiddles(positions, [relation], new Set(['R']));
+
+        expect(placed.R).toEqual({ x: 210, y: 115, width: 80, height: 40 });
+        expect(positions.R).toEqual({ x: 20, y: 30, width: 80, height: 40 });
     });
 });
 

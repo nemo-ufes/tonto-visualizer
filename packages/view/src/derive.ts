@@ -63,7 +63,72 @@ export interface DeriveInput {
 }
 
 export function derive(input: DeriveInput): ViewModel {
-    return new Derivation(input).run();
+    const view = new Derivation(input).run();
+    return filterDerivedMaterial(view, input.options?.derivedMaterialMode ?? defaultContentOptions.derivedMaterialMode);
+}
+
+/** Selects how relators and material relations linked by `derivedFrom` appear. */
+export function filterDerivedMaterial(view: ViewModel, mode: ContentOptions['derivedMaterialMode']): ViewModel {
+    if (mode === 'both') {
+        return view;
+    }
+    const relators = new Set(view.nodes
+        .filter(node => node.stereotype === 'relator').map(node => node.id));
+    const pairedRelators = new Set<string>();
+    const pairedRelations = new Set<string>();
+    for (const edge of view.edges) {
+        if (edge.kind !== 'relation' || edge.stereotype !== 'material') {
+            continue;
+        }
+        const references = edge.derivedFrom?.filter(id => relators.has(id)) ?? [];
+        if (references.length > 0) {
+            pairedRelations.add(edge.id);
+            references.forEach(id => pairedRelators.add(id));
+        }
+    }
+
+    const hiddenNodes = mode === 'relations' ? pairedRelators : new Set<string>();
+    const hiddenEdges = mode === 'relators' ? pairedRelations : new Set<string>();
+    const nodes = view.nodes.filter(node => !hiddenNodes.has(node.id));
+    const edges = view.edges.filter(edge => !hiddenEdges.has(edge.id)
+        && !hiddenNodes.has(edge.source) && !hiddenNodes.has(edge.target));
+    const nodeIds = new Set(nodes.map(node => node.id));
+    const edgeIds = new Set(edges.map(edge => edge.id));
+    const visibleReferences = (references: string[] | undefined) => references?.filter(id =>
+        nodeIds.has(id) || edgeIds.has(id));
+
+    return {
+        ...view,
+        groups: view.groups.map(group => ({
+            ...group, nodes: group.nodes.filter(id => nodeIds.has(id))
+        })).filter(group => group.nodes.length > 0),
+        nodes: nodes.map(node => {
+            const { derivedFrom, ...rest } = node;
+            const references = visibleReferences(derivedFrom);
+            return { ...rest, ...(references?.length ? { derivedFrom: references } : {}) };
+        }),
+        edges: edges.map(edge => {
+            if (edge.kind !== 'relation') {
+                return edge;
+            }
+            const { derivedFrom, inverseOf, ...rest } = edge;
+            const references = visibleReferences(derivedFrom);
+            return {
+                ...rest,
+                ...(inverseOf && edgeIds.has(inverseOf) ? { inverseOf } : {}),
+                ...(references?.length ? { derivedFrom: references } : {})
+            };
+        }),
+        gensets: view.gensets.map(genset => {
+            const { general, ...rest } = genset;
+            return {
+                ...rest,
+                ...(general && nodeIds.has(general) ? { general } : {}),
+                specifics: genset.specifics.filter(id => nodeIds.has(id)),
+                categorizers: genset.categorizers.filter(id => nodeIds.has(id))
+            };
+        })
+    };
 }
 
 /**
@@ -128,60 +193,17 @@ class Derivation {
             }
         }
 
-        const material = this.derivedMaterialElements();
-        const hiddenRelators = this.options.derivedMaterialMode === 'relations'
-            ? material.relators : new Set<string>();
-        const hiddenRelations = this.options.derivedMaterialMode === 'relators'
-            ? material.relations : new Set<string>();
-        for (const id of hiddenRelators) {
-            this.nodes.delete(id);
-        }
-        const edges = this.edges.filter(edge => !hiddenRelations.has(edge.id)
-            && this.nodes.has(edge.source) && this.nodes.has(edge.target));
+        const edges = this.edges.filter(edge => this.nodes.has(edge.source) && this.nodes.has(edge.target));
         this.linkInverses(edges);
         this.linkDerivations(edges);
 
         return {
             ...(this.input.focus ? { focus: this.input.focus } : {}),
-            groups: [...this.groups.values()]
-                .map(group => ({ ...group, nodes: group.nodes.filter(id => this.nodes.has(id)) }))
-                .filter(group => group.nodes.length > 0),
+            groups: [...this.groups.values()],
             nodes: [...this.nodes.values()],
             edges,
-            gensets: this.options.showGensets
-                ? this.gensets.map(genset => {
-                    const general = genset.general;
-                    const filtered = {
-                        ...genset,
-                        specifics: genset.specifics.filter(id => this.nodes.has(id)),
-                        categorizers: genset.categorizers.filter(id => this.nodes.has(id))
-                    };
-                    if (general && !this.nodes.has(general)) {
-                        delete filtered.general;
-                    }
-                    return filtered;
-                })
-                : []
+            gensets: this.options.showGensets ? this.gensets : []
         };
-    }
-
-    /** The relators and material relations paired by `derivedFrom`. */
-    private derivedMaterialElements(): { relators: Set<string>; relations: Set<string> } {
-        const relators = new Set<string>();
-        const relations = new Set<string>();
-        for (const { client, from } of this.derivations) {
-            if (client.kind !== 'relation' || client.stereotype !== 'material') {
-                continue;
-            }
-            for (const reference of from) {
-                const id = reference.ref ? this.idOf.get(reference.ref) : undefined;
-                if (id && this.nodes.get(id)?.stereotype === 'relator') {
-                    relators.add(id);
-                    relations.add(client.id);
-                }
-            }
-        }
-        return { relators, relations };
     }
 
     /**
