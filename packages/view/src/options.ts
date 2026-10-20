@@ -87,8 +87,6 @@ export interface DisplayOptions {
     showPackageGroups: boolean;
     /** Write `University::Room` rather than `Room` on the card. */
     qualifyNames: boolean;
-    /** Show `///` documentation on hover. */
-    showDocumentation: boolean;
 }
 
 /**
@@ -153,7 +151,6 @@ export const defaultDisplayOptions: DisplayOptions = {
     showLegend: false,
     showPackageGroups: true,
     qualifyNames: false,
-    showDocumentation: true
 };
 
 /**

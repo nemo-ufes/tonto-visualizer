@@ -10,6 +10,7 @@
 import type { EdgeRoute, ViewEdge, ViewModel, ViewNode, ViewRelation, ViewRelationEnd } from 'tonto-view';
 import type { DisplayOptions, LayoutOptions } from 'tonto-view';
 import { inversePairs } from 'tonto-view/inverses';
+import { natureLegend } from 'tonto-view/palette';
 import type { Point, Rect, Side } from './geometry.js';
 import {
     alongPath, borderPoint, boundsOf, centerOf, distanceToPath, midpointOf, segmentHitsRect,
@@ -437,7 +438,7 @@ export function render(input: RenderInput): Rendered {
         });
 
     const edgeMarkup = lines
-        .map(one => drawEdge(one.edge, one.points, theme, one.isSelected, display, one.data))
+        .map(one => drawEdge(one.edge, one.points, theme, one.isSelected, one.data))
         .join('');
     // Drawn from the line that is drawn: an inverse pair shows one line, and
     // a derivation either half states belongs to that one.
@@ -504,17 +505,39 @@ export function render(input: RenderInput): Rendered {
     // the left edge, in an export nobody could correct.
     const pathPoints = [...Object.values(paths).flat(), ...derivations.flatMap(one => one.line)]
         .map(point => ({ ...point, width: 0, height: 0 }));
-    const bounds = boundsOf([...rects, ...groups.map(group => group.rect), ...placer.boxes(), ...pathPoints]);
-    const origin = { x: bounds.x - padding, y: bounds.y - padding };
-    const width = Math.max(bounds.width + padding * 2, 1);
-    const height = Math.max(bounds.height + padding * 2, 1);
-
+    const contentBounds = boundsOf([...rects, ...groups.map(group => group.rect), ...placer.boxes(), ...pathPoints]);
+    const origin = { x: contentBounds.x - padding, y: contentBounds.y - padding };
+    const contentWidth = Math.max(contentBounds.width + padding * 2, 1);
+    const contentHeight = Math.max(contentBounds.height + padding * 2, 1);
+    const legendShown = display.showColors && display.showLegend;
+    const legendGap = 24;
+    const legendPadding = 10;
+    const legendRowHeight = Math.max(font.name, 12) + 8;
+    const legendWidth = legendShown
+        ? Math.max(...natureLegend.map(entry => textWidth(entry.label, font.name, false, font.kind))) + 12 + 8 + legendPadding * 2
+        : 0;
+    const width = contentWidth + (legendShown ? legendGap + legendWidth : 0);
+    const height = legendShown
+        ? Math.max(contentHeight, natureLegend.length * legendRowHeight + legendPadding * 2)
+        : contentHeight;
     const nodeMarkup = view.nodes
         .map(node => {
             const rect = positions[node.id];
             return rect ? drawNode(node, rect, display, theme, selected.has(node.id)) : '';
         })
         .join('');
+
+    const legendX = origin.x + contentWidth + legendGap;
+    const legendY = origin.y + legendPadding;
+    const legendMarkup = legendShown
+        ? `<g class="tv-legend" aria-label="Nature colour legend">`
+            + `<rect x="${legendX}" y="${origin.y}" width="${legendWidth}" height="${height}" rx="5" fill="${theme.surface}" stroke="${theme.line}" stroke-opacity="0.45"/>`
+            + natureLegend.map((entry, index) => {
+                const y = legendY + index * legendRowHeight;
+                return `<rect x="${legendX + legendPadding}" y="${y + 3}" width="12" height="12" rx="2" fill="${entry.color}" stroke="${theme.line}" stroke-width="0.6"/>`
+                    + `<text x="${legendX + legendPadding + 20}" y="${y + font.name + 2}">${escape(entry.label)}</text>`;
+            }).join('') + '</g>'
+        : '';
 
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${origin.x} ${origin.y} ${width} ${height}" width="${width}" height="${height}">
 <style>
@@ -534,6 +557,7 @@ text {
 .tv-node rect { stroke: ${theme.line}; stroke-width: 1; }
 .tv-node text { fill: ${theme.onFill}; }
 .tv-name { font-weight: 600; font-size: ${font.name}px; letter-spacing: 0.005em; }
+.tv-legend text { font-size: ${font.name}px; fill: ${theme.text}; }
 .tv-stereotype { font-size: ${font.stereotype}px; fill-opacity: 0.72; letter-spacing: 0.01em; }
 .tv-attribute { font-size: ${font.attribute}px; }
 .tv-edge path { fill: none; stroke: ${theme.line}; stroke-width: 1.2; }
@@ -557,7 +581,7 @@ text {
 .tv-external rect { stroke-dasharray: 2 2; }
 </style>
 <rect x="${origin.x}" y="${origin.y}" width="${width}" height="${height}" fill="${theme.background}"/>
-${groups.map(group => drawGroup(group, font)).join('')}${edgeMarkup}${derivationMarkup}${treeMarkup}${nodeMarkup}<g class="tv-labels">${labelMarkup}</g></svg>`;
+${groups.map(group => drawGroup(group, font)).join('')}${edgeMarkup}${derivationMarkup}${treeMarkup}${nodeMarkup}<g class="tv-labels">${labelMarkup}</g>${legendMarkup}</svg>`;
 
     return {
         svg, bounds: { x: origin.x, y: origin.y, width, height }, paths, guides, headCollisions,
@@ -904,7 +928,7 @@ export function drawNode(
         }
     }
 
-    const title = node.documentation && display.showDocumentation
+    const title = node.documentation
         ? `<title>${escape(node.documentation)}</title>`
         : '';
     return `<g class="${classes}" data-node="${escape(node.id)}">`
@@ -943,7 +967,7 @@ function drawPackage(node: ViewNode, rect: Rect, display: DisplayOptions, theme:
         y += font.attribute;
         text += `<text class="tv-location" x="${middle}" y="${y}" text-anchor="middle">${escape(location)}</text>`;
     }
-    const title = node.documentation && display.showDocumentation
+    const title = node.documentation
         ? `<title>${escape(node.documentation)}</title>`
         : '';
     // The tab first, so the body's top edge is drawn over the seam between them.
@@ -954,13 +978,12 @@ function drawPackage(node: ViewNode, rect: Rect, display: DisplayOptions, theme:
 }
 
 function drawEdge(
-    edge: ViewEdge, points: Point[], theme: Theme, isSelected: boolean, display: DisplayOptions,
-    data = pathData(points)
+    edge: ViewEdge, points: Point[], theme: Theme, isSelected: boolean, data = pathData(points)
 ): string {
     const dashed = edge.kind === 'instantiation' || edge.kind === 'dependency';
     const path = `<path d="${data}"${dashed ? ' stroke-dasharray="6 4"' : ''}/>`;
     const classes = `tv-edge${isSelected ? ' tv-selected' : ''}`;
-    const title = edge.kind === 'relation' && edge.documentation && display.showDocumentation
+    const title = edge.kind === 'relation' && edge.documentation
         ? `<title>${escape(edge.documentation)}</title>`
         : '';
     const decoration = edge.kind === 'generalization'

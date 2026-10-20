@@ -24,6 +24,7 @@ import {
 } from './view-store.js';
 
 const DEBOUNCE = 300;
+const WORKSPACE_CONFIRMATION_CLASS_LIMIT = 100;
 
 /**
  * Busts the webview's cache of its own script and stylesheet.
@@ -65,6 +66,7 @@ export class DiagramPanel {
      */
     private readonly viewOfDocument = new Map<string, vscode.Uri>();
     private availablePackages: string[] = [];
+    private availableClassCount = 0;
     private focusPackages: string[] = [];
     private filters: FilterItem[] = [];
     private visibleNodeIds = new Set<string>();
@@ -488,6 +490,7 @@ export class DiagramPanel {
             || session !== this.session || store !== this.store || document !== this.document) {
             return;
         }
+        this.availableClassCount = session.classCount(models);
         const focused = await session.modelsOf(document.uri.toString(), models);
         // A manifest declares no classes to draw: it is drawn as the package
         // diagram of the ontology it bundles.
@@ -746,6 +749,18 @@ export class DiagramPanel {
                 return;
             case 'content':
                 if (store) {
+                    if (message.content.scope === 'workspace'
+                        && store.state.content.scope !== 'workspace'
+                        && this.availableClassCount > WORKSPACE_CONFIRMATION_CLASS_LIMIT) {
+                        const choice = await vscode.window.showWarningMessage(
+                            `This workspace contains ${this.availableClassCount} classes. Displaying the whole workspace may take some time.`,
+                            { modal: true }, 'Display diagram', 'Cancel'
+                        );
+                        if (choice !== 'Display diagram') {
+                            this.send();
+                            return;
+                        }
+                    }
                     store.begin('Content option');
                     store.update({ content: contentAfter(store.state.content, message.content) });
                     await this.refresh();
@@ -940,7 +955,6 @@ export class DiagramPanel {
         <span id="stale" class="stale" hidden></span>
     </div>
     <div id="options" class="panel" hidden></div>
-    <div id="legend" class="legend" hidden></div>
     <div id="viewport">
         <div id="canvas"></div>
     </div>
