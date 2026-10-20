@@ -13,19 +13,14 @@ It is installed next to the language extension from
 grammar, the checks and the language server. This one supplies the picture.
 That repository is not modified.
 
-The redesign was developed as `jpalmeida/tontoredesign` and published as
-`nemo-ufes/tonto` 0.9; this repository followed it there on 2026-10-19. Where
-this document says "the redesign" it means that language; where it says
-`nemo-ufes/Tonto` it means the old implementation the redesign replaced.
-
 The functionality being replicated is the PlantUML preview in `nemo-ufes/Tonto`.
 The *feature* carries over; the *engine* does not — see §4.
 
 ---
 
-## 1. What the feature is today
+## 1. What the feature was
 
-Three files in `nemo-ufes/Tonto`, about 2,600 lines:
+Three files in `nemo-ufes/tonto-legacy`, about 2,600 lines:
 
 | file | lines | what it does |
 |---|---|---|
@@ -33,8 +28,8 @@ Three files in `nemo-ufes/Tonto`, about 2,600 lines:
 | `packages/extension/src/commands/plantumlCommand.ts` | 500 | commands, option state, Langium workspace loading |
 | `packages/extension/src/diagram/plantuml-webview.ts` | 1180 | the webview: HTML, CSS, zoom/pan, options panel, exports |
 
-What a user gets: a preview of the active file's package or of every package
-under a folder; a package filter; nine display toggles (external references,
+What a user gets in the legacy: a preview of the active file's package or of
+every package under a folder; a package filter; nine display toggles (external references,
 package boxes, package names in cards, external package grouping, attributes,
 cardinalities, relation labels, colors, and a "spread connection points" option
 that pads wide nodes with non-breaking spaces so Graphviz stops piling every
@@ -46,12 +41,12 @@ save. Rendering is done by encoding the diagram into a URL on the public
 The user-facing surface — the scopes, the filter, the toggles, the legend, the
 exports — is the specification for this repository. The rendering path is not.
 
-## 2. Why the generator cannot be copied
+## 2. Why the generator could not be copied
 
 It walks an AST the redesign does not have. Nearly every field it reads has
 moved or split:
 
-| `nemo-ufes/Tonto` | `jpalmeida/tontoredesign` |
+| `nemo-ufes/tonto-legacy` | `nemo-ufes/tonto` |
 |---|---|
 | `Model` → `Statement` → `ContextModule` | `Model.packages: Package[]` (no `Statement` wrapper) |
 | `ClassDeclaration.classElementType.ontologicalCategory` | `ClassDeclaration.stereotype` — a union of the 23 literals, not a wrapper node |
@@ -126,12 +121,10 @@ the qualified name for a declaration, and a derived key for a relation — becau
 that id is what a saved position is keyed by. This layer is pure: no DOM, no
 `vscode`, and it is where the golden tests live.
 
-Packages can be kept together or ignored, and it is a choice because the
-measurements do not settle it: over the five example models, ignoring them
-produced a smaller drawing three times out of five and a much worse one on
-`boats`. A package box is then drawn only where it holds nothing but its own
-classes -- laid out as one graph they interleave, and a box round the classes of
-one package enclosed three from another, which the reader would believe.
+Packages can be kept together or ignored. A package box is then drawn only where
+it holds nothing but its own classes -- laid out as one graph they interleave,
+and a box round the classes of one package enclosed three from another,
+which the reader would believe.
 
 **(b) Layout, only where the modeller has not spoken.** `elkjs` runs a single
 PlantUML-like layered graph when a view is first drawn or when an arrangement is
