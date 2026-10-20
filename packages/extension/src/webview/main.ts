@@ -15,7 +15,6 @@ import { edgeTouches } from 'tonto-view/outline';
 import { ASSOCIATION_DISTANCE, clampAssociationDistance, defaultLayoutOptions } from 'tonto-view/options';
 // By subpath, as the canvas imports `inversePairs`: the package's own entry
 // pulls in the derivation, and with it Langium and half of Node.
-import { nodesInSelection } from 'tonto-view/selection';
 import type { Corner, Handle, Point, Rect, Rendered, RenderInput, Size } from 'tonto-canvas/draw';
 import {
     CORNERS, cornerOf, curvedRoute, darkTheme, derivationBetween, distanceToPath, drawDerivation, drawNode, drawTrees,
@@ -1090,19 +1089,8 @@ function reportSelection(): void {
     }
 }
 
-/**
- * The cards an arrange would move: what is chosen, with a chosen generalization
- * set standing for the classes it holds, since the set has no place of its own.
- */
-function selectedNodes(): string[] {
-    return nodesInSelection(view, selection).filter(id => positions[id] !== undefined);
-}
-
 function updateArrangeTitle(): void {
-    const count = selectedNodes().length;
-    element('arrange').title = count > 0
-        ? `Arrange ${count} selected node${count === 1 ? '' : 's'} automatically`
-        : 'Arrange the whole diagram automatically';
+    element('arrange').title = 'Arrange the whole diagram automatically';
     element('hide').toggleAttribute('disabled', hideableSelection().length === 0);
 }
 
@@ -1136,8 +1124,7 @@ element('newWindow').addEventListener('click', () => {
     host.postMessage({ type: 'moveToNewWindow' });
 });
 element('arrange').addEventListener('click', () => {
-    const only = selectedNodes();
-    host.postMessage(only.length > 0 ? { type: 'autoLayout', only } : { type: 'autoLayout' });
+    host.postMessage({ type: 'autoLayout' });
 });
 element('distanceDown').addEventListener('click', () => changeDistance(-ASSOCIATION_DISTANCE.step));
 element('distanceUp').addEventListener('click', () => changeDistance(ASSOCIATION_DISTANCE.step));

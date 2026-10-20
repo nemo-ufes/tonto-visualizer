@@ -25,11 +25,10 @@ elsewhere and is read, not reimplemented.
 
 ## The rules this repository is built on
 
-- **The language is the authority.** Anything about what a model *means* --
-  which natures a class classifies, whether a relation is a parthood, which end
-  holds the whole -- is asked of `tonto-language` and never re-derived here. A
-  picture that disagrees with the validator is worse than no picture.
-  `packages/view/src/language.ts` is the one file that names the coupling.
+- **Use the language for model semantics.** Ask `tonto-language` which natures
+  a class classifies, whether a relation is a parthood, and which end holds the
+  whole. Do not derive those facts here. `packages/view/src/language.ts` is the
+  one file that names the coupling.
 - **An id is what the model says, not where it is written.** A saved position
   outlives the session and must survive the text moving around it. Ids come from
   `ids.ts`, never from an array index or a line number.

@@ -2,7 +2,10 @@
 
 **tonto visualizer** draws a [tonto](https://github.com/nemo-ufes/tonto) model as an OntoUML class diagram in a panel beside the text. The diagram follows the model as you type it, and you arrange it by hand: drag a class where you want it, and it stays there when the model changes.
 
-The picture is a reading aid for the text, not a second place to edit it. Everything the diagram says about a model — which natures a class classifies, whether a relation is a parthood, which ontology a package belongs to — comes from the tonto language itself, so the diagram never disagrees with the validator. The extension draws the diagram itself: no PlantUML, no Graphviz, no rendering server, and nothing sent anywhere.
+The diagram is a reading aid; it edits the saved view, not the model. The Tonto
+language supplies semantics such as class natures, parthood, and package
+ownership. The extension draws the diagram itself: no PlantUML, no Graphviz, no
+rendering server, and nothing sent anywhere.
 
 ![The people ontology from the tonto README, arranged by hand: two kinds, the roles that specialize them, and the employment relator that mediates both](media/readme/people.png)
 

@@ -1,26 +1,25 @@
 # Product roadmap
 
 Tonto Visualizer should make an ontology easier to read and navigate while the
-Tonto text remains its single source of truth. The next work therefore deepens
-views, navigation and review before it considers drawing-to-edit operations.
+Tonto text remains the model. Planned work focuses on saved views, navigation,
+and review before considering diagram-based editing.
 
 ## Priorities
 
 | Priority | Feature | Why it comes here | Status |
 |---|---|---|---|
 | 1 | Named diagram views | A large model needs several intentional diagrams, each with its own content, arrangement and notation choices. | In progress |
-| 2 | Focus and search | A modeller must be able to find one declaration and see only its immediate semantic neighbourhood. | Planned |
+| 2 | Focus and search | Find a declaration and show the related elements around it. | Planned |
 | 3 | [Layout constraints](AUTOLAYOUT.md) | Pinning, alignment, distribution and bounded taxonomy rows let automatic layout assist rather than replace a hand arrangement. | In progress |
 | 4 | Diagnostics overlay | Errors and warnings belong on the affected card or relation, with a direct route back to the declaration. | Planned |
-| 5 | Semantic revision diff | Ontology review should show added, removed and changed declarations against a Git revision without throwing away the familiar arrangement. | Planned |
+| 5 | Revision diff | Compare added, removed and changed declarations with a Git revision while keeping the current arrangement. | Planned |
 | 6 | Diagram navigation | A minimap, back/forward history and breadcrumbs keep very large drawings navigable. | Planned |
-| 7 | Documentation inspector | `///` documentation and an element's semantic connections should be readable without crowding the canvas. | Planned |
-| 8 | Generalization-tree interaction | A branch needs selection and source navigation without pretending the shared stem is a generalization set or offering nonsensical route handles. | Delivered |
+| 7 | Documentation inspector | Read `///` documentation and related elements without crowding the canvas. | Planned |
+| 8 | Generalization-tree interaction | Select a branch to open its declaration; select the shared stem to open its generalization set. | Delivered |
 
-Editing the Tonto model by drawing is deliberately not on this roadmap. It has
-different semantic, validation and undo requirements; adding it before the
-reading and review workflows are strong would blur the boundary that keeps the
-model authoritative.
+Editing Tonto source in the diagram is outside this roadmap. It needs its own
+validation and undo behavior; this roadmap focuses on reading and reviewing
+diagrams.
 
 ## 1. Named diagram views
 
@@ -41,7 +40,7 @@ filename identifies its model, so version 1 of the file format does not need
 another path that can go stale when a repository moves. The folder and default
 view are created lazily, only after the modeller changes the automatic result.
 
-### Delivery slices
+### Tasks
 
 - [x] Discover the default and named views belonging to a model.
 - [x] Save the current diagram as a named view.
