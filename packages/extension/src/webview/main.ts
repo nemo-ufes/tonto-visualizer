@@ -20,7 +20,7 @@ import { nodesInSelection } from 'tonto-view/selection';
 import type { Corner, Handle, Point, Rect, Size } from 'tonto-canvas/draw';
 import {
     CORNERS, cornerOf, curvedRoute, darkTheme, derivationBetween, distanceToPath, drawDerivation, drawNode, drawTrees,
-    dropHandle, edgeEnds, handlesFor, lightTheme, moveHandle, overlaps, pathData, rectBetween, relationSpreads, render,
+    dropHandle, edgeEnds, fontMetrics, handlesFor, lightTheme, moveHandle, overlaps, pathData, rectBetween, relationSpreads, render,
     resizeTo, routeEdge, segmentHitsRect, sizeOf, trianglePoints
 } from 'tonto-canvas/draw';
 import type { FilterItem } from '../protocol.js';
@@ -1239,6 +1239,11 @@ function filterSection(
 
 function fillLegend(): void {
     legendPanel.hidden = !display?.showColors || !display.showLegend;
+    if (display) {
+        const font = fontMetrics(display);
+        legendPanel.style.fontSize = `${font.name}px`;
+        legendPanel.style.fontFamily = font.family;
+    }
     legendPanel.replaceChildren(...natureLegend.map(entry => {
         const row = document.createElement('div');
         row.className = 'legend-row';

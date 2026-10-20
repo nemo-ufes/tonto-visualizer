@@ -26,7 +26,7 @@ export const COLORS = {
 
 /** The full tone, worn by the ultimate sortals. */
 export const fullTone: Record<string, string> = {
-    objects: COLORS.TEAL,
+    objects: COLORS.PINK,
     'functional-complexes': COLORS.PINK,
     collectives: COLORS.PINK,
     quantities: COLORS.PINK,
@@ -43,7 +43,7 @@ export const fullTone: Record<string, string> = {
 
 /** The same hues, lighter, for everything that is not an ultimate sortal. */
 export const lightTone: Record<string, string> = {
-    objects: COLORS.LIGHT_TEAL,
+    objects: COLORS.LIGHT_PINK,
     'functional-complexes': COLORS.LIGHT_PINK,
     collectives: COLORS.LIGHT_PINK,
     quantities: COLORS.LIGHT_PINK,
@@ -64,8 +64,7 @@ export interface NatureLegendEntry {
 }
 
 export const natureLegend: NatureLegendEntry[] = [
-    { color: COLORS.TEAL, label: 'Object' },
-    { color: COLORS.PINK, label: 'Functional complex · Collective · Quantity' },
+    { color: COLORS.PINK, label: 'Object' },
     { color: COLORS.GREEN, label: 'Relator' },
     { color: COLORS.BLUE, label: 'Quality · Mode' },
     { color: COLORS.YELLOW, label: 'Event · Process' },

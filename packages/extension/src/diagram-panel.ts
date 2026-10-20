@@ -939,10 +939,10 @@ export class DiagramPanel {
         <span id="stale" class="stale" hidden></span>
     </div>
     <div id="options" class="panel" hidden></div>
+    <div id="legend" class="legend" hidden></div>
     <div id="viewport">
         <div id="canvas"></div>
     </div>
-    <div id="legend" class="legend" hidden></div>
 </div>
 <script nonce="${nonce}" src="${script}"></script>
 </body>

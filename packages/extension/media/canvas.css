@@ -29,7 +29,7 @@ body {
 
 #shell {
     display: grid;
-    grid-template-rows: auto 1fr;
+    grid-template-rows: auto auto 1fr;
     height: 100%;
     position: relative;
 }
@@ -306,22 +306,25 @@ summary.section-title {
 }
 
 .legend {
-    position: absolute;
-    left: 10px;
-    bottom: 32px;
-    z-index: 4;
-    padding: 8px 10px;
-    border: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.35));
-    border-radius: 6px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: 12px;
+    row-gap: 2px;
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.35));
     background: var(--vscode-editorWidget-background, var(--vscode-editor-background, #ffffff));
-    opacity: 0.92;
+}
+
+.legend[hidden] {
+    display: none;
 }
 
 .legend-row {
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 1px 0;
+    white-space: nowrap;
 }
 
 .swatch {
