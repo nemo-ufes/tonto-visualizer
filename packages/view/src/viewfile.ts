@@ -47,13 +47,6 @@ export interface EdgeRoute {
     labelOffset?: Point;
 }
 
-export interface ViewConstraints {
-    /** Stable element ids whose current placements automatic layout must retain. */
-    pinned: string[];
-    alignments: Array<{ axis: 'x' | 'y'; nodes: string[] }>;
-    distributions: Array<{ axis: 'x' | 'y'; nodes: string[] }>;
-}
-
 export interface ViewFile {
     version: number;
     /** The package the view is centred on, when it follows one. */
@@ -61,7 +54,6 @@ export interface ViewFile {
     content: ContentOptions;
     display: DisplayOptions;
     layout: LayoutOptions;
-    constraints: ViewConstraints;
     nodes: Record<string, Placement>;
     edges: Record<string, EdgeRoute>;
 }
@@ -73,7 +65,6 @@ export function emptyViewFile(focus?: string): ViewFile {
         content: { ...defaultContentOptions },
         display: { ...defaultDisplayOptions },
         layout: { ...defaultLayoutOptions },
-        constraints: { pinned: [], alignments: [], distributions: [] },
         nodes: {},
         edges: {}
     };
@@ -110,26 +101,8 @@ export function readViewFile(raw: unknown): ViewFile {
         content: readContentOptions(source.content),
         display: readDisplayOptions(source.display),
         layout: readLayoutOptions(source.layout),
-        constraints: readConstraints(source.constraints),
         nodes,
         edges
-    };
-}
-
-function readConstraints(value: unknown): ViewConstraints {
-    const source = recordOf(value);
-    const groups = (value: unknown, minimum: number) => Array.isArray(value)
-        ? value.flatMap(item => {
-            const group = recordOf(item);
-            const nodes = stringArray(group.nodes);
-            return oneOf(group.axis, ['x', 'y']) && nodes && nodes.length >= minimum
-                ? [{ axis: group.axis, nodes }] : [];
-        })
-        : [];
-    return {
-        pinned: stringArray(source.pinned) ?? [],
-        alignments: groups(source.alignments, 2),
-        distributions: groups(source.distributions, 3)
     };
 }
 
@@ -142,6 +115,7 @@ function readContentOptions(value: unknown): ContentOptions {
         showExternalReferences: booleanOr(source.showExternalReferences, defaultContentOptions.showExternalReferences),
         showDatatypes: booleanOr(source.showDatatypes, defaultContentOptions.showDatatypes),
         showGensets: booleanOr(source.showGensets, defaultContentOptions.showGensets),
+        hideDerivedRelators: booleanOr(source.hideDerivedRelators, defaultContentOptions.hideDerivedRelators),
         ...(includedPackages ? { includedPackages } : {}),
         ...(hidden ? { hidden } : {})
     };

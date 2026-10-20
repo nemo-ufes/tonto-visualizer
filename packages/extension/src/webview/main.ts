@@ -9,7 +9,7 @@
  */
 
 import type {
-    ContentOptions, DisplayOptions, EdgeRoute, LayoutOptions, ViewConstraints, ViewModel
+    ContentOptions, DisplayOptions, EdgeRoute, LayoutOptions, ViewModel
 } from 'tonto-view';
 import { edgeTouches } from 'tonto-view/outline';
 import { ASSOCIATION_DISTANCE, clampAssociationDistance, defaultLayoutOptions } from 'tonto-view/options';
@@ -47,7 +47,6 @@ let routes: Record<string, EdgeRoute> = {};
 let display: DisplayOptions | undefined;
 let content: ContentOptions | undefined;
 let layout: LayoutOptions | undefined;
-let constraints: ViewConstraints = { pinned: [], alignments: [], distributions: [] };
 let packages: string[] = [];
 let filters: FilterItem[] = [];
 let dark = false;
@@ -125,7 +124,6 @@ window.addEventListener('message', event => {
         display = message.display;
         content = message.content;
         layout = message.layout;
-        constraints = message.constraints ?? { pinned: [], alignments: [], distributions: [] };
         packages = message.packages;
         filters = message.filters;
         staleLabel.hidden = !message.stale;
@@ -1185,7 +1183,8 @@ function fillOptions(): void {
     const contentRows: Array<[keyof ContentOptions, string]> = [
         ['showExternalReferences', 'External references'],
         ['showDatatypes', 'Datatypes and enumerations'],
-        ['showGensets', 'Generalization sets']
+        ['showGensets', 'Generalization sets'],
+        ['hideDerivedRelators', 'Hide relators behind derived material relations']
     ];
 
     optionsPanel.replaceChildren();
@@ -1220,26 +1219,6 @@ function fillOptions(): void {
             value => host.postMessage({
                 type: 'display', display: { fontSize: value as DisplayOptions['fontSize'] }
             }))
-    ]));
-    const selectedNodes = [...selection].filter(id => positions[id] !== undefined);
-    const pinned = new Set(constraints.pinned);
-    const unpins = selectedNodes.length > 0 && selectedNodes.every(id => pinned.has(id));
-    optionsPanel.append(section('Constraints', [
-        actionButton(
-            unpins ? 'Unpin selected' : 'Pin selected',
-            selectedNodes.length === 0,
-            () => host.postMessage({ type: 'pin', ids: selectedNodes, pinned: !unpins })
-        ),
-        actionButton('Align vertical centres', selectedNodes.length < 2,
-            () => host.postMessage({ type: 'constraint', action: 'align-x', ids: selectedNodes })),
-        actionButton('Align horizontal centres', selectedNodes.length < 2,
-            () => host.postMessage({ type: 'constraint', action: 'align-y', ids: selectedNodes })),
-        actionButton('Distribute horizontally', selectedNodes.length < 3,
-            () => host.postMessage({ type: 'constraint', action: 'distribute-x', ids: selectedNodes })),
-        actionButton('Distribute vertically', selectedNodes.length < 3,
-            () => host.postMessage({ type: 'constraint', action: 'distribute-y', ids: selectedNodes })),
-        actionButton('Clear selected constraints', selectedNodes.length === 0,
-            () => host.postMessage({ type: 'constraint', action: 'clear', ids: selectedNodes }))
     ]));
     optionsPanel.append(section('Drawn', displayRows.map(([key, label]) =>
         toggle(label, Boolean(display?.[key]), value => host.postMessage({

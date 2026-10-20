@@ -9,7 +9,7 @@
  */
 
 import type {
-    ContentOptions, DisplayOptions, EdgeRoute, LayoutOptions, Placement, ViewConstraints, ViewModel
+    ContentOptions, DisplayOptions, EdgeRoute, LayoutOptions, Placement, ViewModel
 } from 'tonto-view';
 
 export interface Rect {
@@ -37,7 +37,6 @@ export type ToPanel =
         display: DisplayOptions;
         content: ContentOptions;
         layout: LayoutOptions;
-        constraints: ViewConstraints;
         packages: string[];
         filters: FilterItem[];
         /** Centre and scale this newly opened view once; later redraws preserve the viewport. */
@@ -76,12 +75,6 @@ export type FromPanel =
     | { type: 'layout'; layout: Partial<LayoutOptions> }
     | { type: 'content'; content: Partial<ContentOptions> }
     | { type: 'autoLayout'; only?: string[] }
-    | { type: 'pin'; ids: string[]; pinned: boolean }
-    | {
-        type: 'constraint';
-        action: 'align-x' | 'align-y' | 'distribute-x' | 'distribute-y' | 'clear';
-        ids: string[];
-    }
     | { type: 'hide'; ids: string[] }
     | { type: 'show'; ids: string[] }
     | { type: 'moveToNewWindow' }

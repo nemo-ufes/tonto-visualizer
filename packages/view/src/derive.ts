@@ -128,17 +128,55 @@ class Derivation {
             }
         }
 
+        const hiddenRelators = this.options.hideDerivedRelators
+            ? this.derivedMaterialRelators()
+            : new Set<string>();
+        for (const id of hiddenRelators) {
+            this.nodes.delete(id);
+        }
         const edges = this.edges.filter(edge => this.nodes.has(edge.source) && this.nodes.has(edge.target));
         this.linkInverses(edges);
         this.linkDerivations(edges);
 
         return {
             ...(this.input.focus ? { focus: this.input.focus } : {}),
-            groups: [...this.groups.values()].filter(group => group.nodes.length > 0),
+            groups: [...this.groups.values()]
+                .map(group => ({ ...group, nodes: group.nodes.filter(id => this.nodes.has(id)) }))
+                .filter(group => group.nodes.length > 0),
             nodes: [...this.nodes.values()],
             edges,
-            gensets: this.options.showGensets ? this.gensets : []
+            gensets: this.options.showGensets
+                ? this.gensets.map(genset => {
+                    const general = genset.general;
+                    const filtered = {
+                        ...genset,
+                        specifics: genset.specifics.filter(id => this.nodes.has(id)),
+                        categorizers: genset.categorizers.filter(id => this.nodes.has(id))
+                    };
+                    if (general && !this.nodes.has(general)) {
+                        delete filtered.general;
+                    }
+                    return filtered;
+                })
+                : []
         };
+    }
+
+    /** Relators used as sources of material relations' `derivedFrom` links. */
+    private derivedMaterialRelators(): Set<string> {
+        const ids = new Set<string>();
+        for (const { client, from } of this.derivations) {
+            if (client.kind !== 'relation' || client.stereotype !== 'material') {
+                continue;
+            }
+            for (const reference of from) {
+                const id = reference.ref ? this.idOf.get(reference.ref) : undefined;
+                if (id && this.nodes.get(id)?.stereotype === 'relator') {
+                    ids.add(id);
+                }
+            }
+        }
+        return ids;
     }
 
     /**

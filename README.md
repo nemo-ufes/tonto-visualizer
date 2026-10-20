@@ -29,7 +29,7 @@ Working end to end.
 - `packages/cli` — `tonto-view <file-or-directory> [--svg]`.
 - `packages/extension` — redraws as you type, keeps the last valid diagram when
   the model has errors, and supports navigation, filters, manual arrangement,
-  layout constraints, export, and saved named views.
+  export, and saved named views.
 
 The notation includes stereotypes, attributes, datatypes, enumerations,
 generalizations and generalization sets, relations, cardinalities, role names,
@@ -66,7 +66,7 @@ The Tonto language is a pinned submodule under `vendor/` and is consumed as-is.
 
 ## Acknowledgements
 
-Matheus Lenke Coutinho and João Paulo A. Almeida are the original designers of tonto. This project reimplements and extends visualization features of the [legacy tonto project](https://github.com/nemo-ufes/tonto-legacy), which was mainly authored by Matheus Lenke Coutinho at the [NEMO Ontology & Conceptual Modeling research group](https://nemo.inf.ufes.br) at the Federal University of Espírito Santo (UFES), Brazil.
+This project reimplements and extends visualization features of the [legacy tonto project](https://github.com/nemo-ufes/tonto-legacy), which was mainly authored by Matheus Lenke Coutinho at the [NEMO Ontology & Conceptual Modeling research group](https://nemo.inf.ufes.br) under supervision of João Paulo A. Almeida at the Federal University of Espírito Santo (UFES), Brazil.
 
 tonto's language design, concrete syntax, and OntoUML/UFO semantics are the work of the [NEMO Ontology & Conceptual Modeling research group](https://nemo.inf.ufes.br), in cooperation with the [Semantics, Cybersecurity & Services (SCS) group](https://www.utwente.nl/en/eemcs/scs/) throughout various research projects, which have received among others the support of CNPq, CAPES and FAPES over the years.
 

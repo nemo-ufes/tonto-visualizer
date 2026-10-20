@@ -68,7 +68,6 @@ function sendModel(hidden: string[] = [], stale?: string, fit = false): void {
         display: defaultDisplayOptions,
         content: { ...defaultContentOptions, hidden },
         layout: defaultLayoutOptions,
-        constraints: { pinned: [], alignments: [], distributions: [] },
         packages: ['Sample'],
         filters: [
             { kind: 'class', ids: ['Sample::Person'], label: 'Sample::Person' },
@@ -225,37 +224,11 @@ describe('the webview and its host protocol', () => {
         });
     });
 
-    test('offers to pin the selected classifiers', () => {
+    test('does not show layout constraints in settings', () => {
         sendModel();
-        window.dispatchEvent(new MessageEvent('message', {
-            data: { type: 'select', ids: ['Sample::Person'] }
-        }));
         openOptions();
-        const button = [...document.querySelectorAll('button')]
-            .find(candidate => candidate.textContent === 'Pin selected') as HTMLButtonElement | undefined;
-
-        expect(button?.disabled).toBe(false);
-        button?.click();
-        expect(posted('pin').at(-1)).toEqual({
-            type: 'pin', ids: ['Sample::Person'], pinned: true
-        });
-    });
-
-    test('offers alignment constraints for a classifier selection', () => {
-        sendModel();
-        window.dispatchEvent(new MessageEvent('message', {
-            data: { type: 'select', ids: ['Sample::Person', 'Sample::Organization'] }
-        }));
-        openOptions();
-        const button = [...document.querySelectorAll('button')]
-            .find(candidate => candidate.textContent === 'Align vertical centres') as HTMLButtonElement | undefined;
-
-        expect(button?.disabled).toBe(false);
-        button?.click();
-        expect(posted('constraint').at(-1)).toEqual({
-            type: 'constraint', action: 'align-x',
-            ids: ['Sample::Person', 'Sample::Organization']
-        });
+        expect(document.getElementById('options')?.textContent).not.toContain('Constraints');
+        expect(document.getElementById('options')?.textContent).not.toContain('Pin selected');
     });
 
     test('fits a newly opened view once and preserves later viewport changes', () => {
@@ -515,7 +488,6 @@ describe('the webview and its host protocol', () => {
             },
             routes: {}, display: defaultDisplayOptions,
             content: defaultContentOptions, layout: defaultLayoutOptions,
-            constraints: { pinned: [], alignments: [], distributions: [] },
             packages: ['Sample'], filters: []
         } }));
 
@@ -557,7 +529,6 @@ describe('the webview and its host protocol', () => {
             },
             routes: {}, display: defaultDisplayOptions,
             content: defaultContentOptions, layout: defaultLayoutOptions,
-            constraints: { pinned: [], alignments: [], distributions: [] },
             packages: ['Sample'], filters: []
         } }));
 
@@ -594,7 +565,6 @@ describe('the webview and its host protocol', () => {
             },
             routes: {}, display: { ...defaultDisplayOptions, routing: 'curved' },
             content: defaultContentOptions, layout: defaultLayoutOptions,
-            constraints: { pinned: [], alignments: [], distributions: [] },
             packages: ['Sample'], filters: []
         } }));
         window.dispatchEvent(new MessageEvent('message', { data: { type: 'select', ids: [edge] } }));
@@ -633,7 +603,6 @@ describe('the webview and its host protocol', () => {
             },
             routes: {}, display: { ...defaultDisplayOptions, routing: 'curved' },
             content: defaultContentOptions, layout: defaultLayoutOptions,
-            constraints: { pinned: [], alignments: [], distributions: [] },
             packages: ['Sample'], filters: []
         } }));
         window.dispatchEvent(new MessageEvent('message', { data: { type: 'select', ids: [edge] } }));

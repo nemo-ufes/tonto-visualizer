@@ -129,8 +129,7 @@ exact ELK coordinates.
 - [x] Keep a hierarchy-only appendix off the hierarchy's rows in package
   containers: under its package while that box can still be drawn, else in one
   block after the model.
-- [x] Add persistent pin, alignment and distribution constraints, followed by a
-  bounded-rank policy whose wrapping remains stable by element id.
+- [x] Add a bounded-rank policy whose wrapping remains stable by element id.
 
 ## Intended architecture
 
@@ -144,5 +143,5 @@ The proposed pipeline has six stages:
 6. retain the best deterministic candidate and persist only the resulting
    arrangement.
 
-ELK remains useful for initial placement and routing. The canvas applies layout
-constraints; the language supplies the model semantics behind them.
+ELK remains useful for initial placement and routing. The canvas enforces the
+semantic rank and package rules; the language supplies their model semantics.

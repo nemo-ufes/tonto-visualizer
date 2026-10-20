@@ -179,6 +179,37 @@ kind Animal {
         expect(mediation?.kind === 'relation' ? mediation.derivedFrom : 'unexpected').toBeUndefined();
     });
 
+    test('hides only relators referenced by derived material relations', async () => {
+        const text = [
+            'package Draft',
+            'kind Person',
+            'kind Organization',
+            'kind Student',
+            'kind Course',
+            '@material relation Person [1..*] -- worksFor -- [1..*] Organization derivedFrom Employment',
+            'relator Employment {',
+            '    @mediation [1..*] -- [1] Person',
+            '    @mediation [1..*] -- [1] Organization',
+            '}',
+            'relator Enrollment {',
+            '    @mediation [1..*] -- [1] Student',
+            '    @mediation [1..*] -- [1] Course',
+            '}'
+        ].join('\n');
+        const complete = await viewOfText(text);
+        const hidden = await viewOfText(text, { hideDerivedRelators: true });
+
+        expect(complete.nodes.map(one => one.id)).toContain('Draft::Employment');
+        expect(hidden.nodes.find(candidate => candidate.id === 'Draft::Employment')).toBeUndefined();
+        expect(node(hidden, 'Draft::Enrollment')?.stereotype).toBe('relator');
+        expect(hidden.edges.some(edge => edge.source === 'Draft::Employment'
+            || edge.target === 'Draft::Employment')).toBe(false);
+        expect(hidden.edges.some(edge => edge.kind === 'relation'
+            && edge.stereotype === 'material' && edge.name === 'worksFor'
+            && edge.derivedFrom === undefined)).toBe(true);
+        expect(hidden.groups.flatMap(group => group.nodes)).not.toContain('Draft::Employment');
+    });
+
     test('records what a historical role is derived from', async () => {
         const view = await viewOfText([
             'package graduates',

@@ -48,7 +48,7 @@ Each class is coloured by the nature its instances have, as the language works i
 |---|---|
 | **Live redraw** | The diagram follows each keystroke. While the model does not parse, the last good picture stays up and the problem is reported beside it, not across it. |
 | **Navigation** | Double-click a class to open its declaration; moving the cursor in the text selects the element it is on. Double-click a package in an ontology diagram to open that package's class diagram. |
-| **Scope and filters** | Draw the open file's packages or the whole workspace, and filter by package, class or association. **Taxonomy only** hides attributes and associations and arranges from inheritance alone. |
+| **Scope and filters** | Draw the open file's packages or the whole workspace, filter by package, class or association, and hide relators used by derived material relations. **Taxonomy only** hides attributes and associations and arranges from inheritance alone. |
 | **Display** | Choose straight, curved or right-angled lines, the typeface, and how much space associations get, with **Distance −/+**. **Fit** keeps the whole diagram in view as the panel is resized. |
 | **Ontologies** | An ontology file with a `bundles` clause is drawn as a package diagram: its member packages, the ontologies it imports, and the dependencies between them. |
 
