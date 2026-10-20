@@ -41,7 +41,7 @@ The diagram edits the saved view, not the `.tonto` model.
 
 ## Getting started
 
-    git clone --recurse-submodules https://github.com/jpalmeida/tonto-visualizer
+    git clone --recurse-submodules https://github.com/nemo-ufes/tonto-visualizer
     cd tonto-visualizer
     npm run language     # builds tonto-language, in vendor/
     npm install
