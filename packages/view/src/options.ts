@@ -107,8 +107,6 @@ export interface LayoutOptions {
     nodeSpacing: number;
     /** Between one rank and the next -- a supertype and its subtypes. */
     rankSpacing: number;
-    /** Wrap a taxonomy level wider than this many pixels; zero leaves it unbounded. */
-    maxRankSpan: number;
     /**
      * Prefer classes from one package beside one another while sharing the
      * taxonomy's ranks across packages. Turning it off lets association and
@@ -122,7 +120,6 @@ export const defaultLayoutOptions: LayoutOptions = {
     associationDistance: 100,
     nodeSpacing: 60,
     rankSpacing: 100,
-    maxRankSpan: 2000,
     groupByPackage: true
 };
 

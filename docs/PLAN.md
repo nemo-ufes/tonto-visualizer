@@ -133,14 +133,15 @@ produced a smaller drawing three times out of five and a much worse one on
 classes -- laid out as one graph they interleave, and a box round the classes of
 one package enclosed three from another, which the reader would believe.
 
-**(b) Layout, only where the modeller has not spoken.** `elkjs` (layered
-taxonomy, with multiple packages as compound nodes) runs when a view is first
-drawn or when an arrangement is asked for. Elements with a saved position are
-pinned; only new and unpositioned ones are placed, near the neighbours they
-connect to. **Adding a
-class must not rearrange the diagram** — that property is the whole point, and
-it is what a re-render through PlantUML can never offer. An explicit *Auto-layout*
-command (all, or selection) is there for when the modeller does want it.
+**(b) Layout, only where the modeller has not spoken.** `elkjs` runs a single
+PlantUML-like layered graph when a view is first drawn or when an arrangement is
+asked for. Generalizations rank supertypes above subtypes; associations also
+influence ranks and neighbour order. Elements with a saved position are pinned;
+only new and unpositioned ones are placed, near the neighbours they connect to.
+**Adding a class must not rearrange the diagram** — that property is the whole
+point, and it is what a re-render through PlantUML can never offer. An explicit
+*Auto-layout* command (all, or selection) is there for when the modeller does
+want it.
 
   ELK is EPL-2.0. Bundling it in an MIT project is fine and is what the Sprotty
   and GLSP ecosystems do; modifications to ELK itself would stay EPL. `dagre`
@@ -351,7 +352,7 @@ Parity *and* the notation the redesign can express, in the first release:
 | M5 | The rest of the notation: gensets, relation stereotypes, MLT, end decorations, datatypes, documentation | done |
 | M6 | Packaging: bundled `.vsix`, README, CI, nightly build against `nemo-ufes/tonto@main` | CI and the bundle done; the marketplace listing is not |
 
-Layout was then studied against four models -- `university`, `pets`, `boats`,
+The initial ELK configuration was studied against four models -- `university`, `pets`, `boats`,
 `gufo` -- by measuring each drawing (area, aspect, crossings, lines through
 unrelated boxes, overlaps, taxonomy direction) and looking at it. What came out
 of it: straight lines by default, with the two rules above; `layered` as the
