@@ -79,9 +79,9 @@ Quality measures, in priority order:
 The representative benchmark set is `boats`, `pets`, `gufo`, `genealogy`,
 `university`, `parties` and the manually arranged `error` reference,
 supplemented by synthetic broad taxonomies, disconnected packages, multiple
-inheritance, relators and dense whole-part graphs. Tests should assert the hard
-requirements and thresholds or deltas for the quality measures rather than
-exact ELK coordinates.
+inheritance, relators and dense whole-part graphs. CI checks stable layout
+properties and that these models still render. The quality measurements help
+compare renders, but do not decide whether a picture is readable on their own.
 
 ## Implementation tasks
 

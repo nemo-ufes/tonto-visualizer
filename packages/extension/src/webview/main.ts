@@ -1352,14 +1352,6 @@ function toggle(label: string, value: boolean, onChange: (value: boolean) => voi
     return row;
 }
 
-function actionButton(label: string, disabled: boolean, onClick: () => void): HTMLElement {
-    const button = document.createElement('button');
-    button.textContent = label;
-    button.disabled = disabled;
-    button.addEventListener('click', onClick);
-    return button;
-}
-
 function element(id: string): HTMLElement {
     const found = document.getElementById(id);
     if (!found) {
