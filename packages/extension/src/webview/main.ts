@@ -17,13 +17,14 @@ import { ASSOCIATION_DISTANCE, clampAssociationDistance, defaultLayoutOptions } 
 // By subpath, as the canvas imports `inversePairs`: the package's own entry
 // pulls in the derivation, and with it Langium and half of Node.
 import { nodesInSelection } from 'tonto-view/selection';
-import type { Corner, Handle, Point, Rect, Size } from 'tonto-canvas/draw';
+import type { Corner, Handle, Point, Rect, Rendered, RenderInput, Size } from 'tonto-canvas/draw';
 import {
     CORNERS, cornerOf, curvedRoute, darkTheme, derivationBetween, distanceToPath, drawDerivation, drawNode, drawTrees,
     dropHandle, edgeEnds, fontMetrics, handlesFor, lightTheme, moveHandle, overlaps, pathData, rectBetween, relationSpreads, render,
     resizeTo, routeEdge, segmentHitsRect, sizeOf, trianglePoints
 } from 'tonto-canvas/draw';
 import type { FilterItem } from '../protocol.js';
+import { BackgroundRenderer } from './background.js';
 
 interface HostApi {
     postMessage(message: unknown): void;
@@ -40,6 +41,8 @@ const scaleLabel = element('scale');
 const optionsPanel = element('options');
 const legendPanel = element('legend');
 const staleLabel = element('stale');
+// Looked up rather than required: a page without it -- the tests' -- still draws.
+const busyLabel = document.getElementById('busy');
 
 let view: ViewModel = { groups: [], nodes: [], edges: [], gensets: [] };
 let positions: Record<string, Rect> = {};
@@ -203,19 +206,97 @@ async function rasterise(id: number, svg: string, scale: number): Promise<void> 
     }
 }
 
+/**
+ * How big a diagram is drawn in the worker rather than at once, in classes and
+ * lines together. Below it a drawing takes a few tens of milliseconds, and
+ * drawing at once keeps every redraw in step with the pointer.
+ */
+const BACKGROUND_FROM = 300;
+
+/** A drawing that took longer than this, wherever it was drawn, sends the next one to the worker. */
+const SLOW_DRAW_MS = 60;
+
+/** How long a drawing runs before the toolbar says so; a quick one should not flash a message. */
+const BUSY_AFTER_MS = 250;
+
+let lastDrawCost = 0;
+/** Counts requests to draw, so a drawing finished after a newer one was shown is dropped. */
+let drawRequested = 0;
+let drawShown = 0;
+/** Where the cards were in the drawing on screen, which a dragged card is moved relative to. */
+let drawnPositions: Record<string, Rect> = {};
+let busyTimer: ReturnType<typeof setTimeout> | undefined;
+
+const background = new BackgroundRenderer(
+    result => {
+        lastDrawCost = result.took;
+        show(result.drawn, result.input, result.generation, true);
+    },
+    job => drawNow(job.input, job.generation)
+);
+
+/**
+ * Draws the diagram from what the panel holds.
+ *
+ * A large diagram is drawn in a worker, because the panel's thread is the
+ * editor window's: a drawing of a whole workspace that took seconds here took
+ * VS Code with it. Until it is done the previous drawing stays up, and the
+ * pointer, the toolbar and the editor all go on working.
+ */
 function draw(): void {
     if (!display) {
         return;
     }
-    const drawn = render({
+    const input: RenderInput = {
         view,
-        positions,
+        // A copy: a drag replaces cards in `positions` as the pointer moves, and
+        // the drawing has to be moved relative to where it put them.
+        positions: { ...positions },
         routes,
         display,
         direction: layout?.direction,
         theme: dark ? darkTheme : lightTheme,
         selection: [...selection]
-    });
+    };
+    const generation = ++drawRequested;
+    if (background.usable && (view.nodes.length + view.edges.length > BACKGROUND_FROM || lastDrawCost > SLOW_DRAW_MS)) {
+        // Mid-drag, a drawing a moment behind the pointer beats abandoning
+        // each one for the next and showing none until the drop.
+        background.request(input, generation, !dragging);
+        busyTimer ??= setTimeout(showBusy, BUSY_AFTER_MS);
+        return;
+    }
+    drawNow(input, generation);
+}
+
+function drawNow(input: RenderInput, generation: number): void {
+    const started = performance.now();
+    const drawn = render(input);
+    lastDrawCost = performance.now() - started;
+    show(drawn, input, generation, false);
+}
+
+function showBusy(): void {
+    busyTimer = undefined;
+    if (busyLabel && drawShown < drawRequested) {
+        busyLabel.textContent = `Drawing ${view.nodes.length} classes…`;
+        busyLabel.hidden = false;
+    }
+}
+
+function show(drawn: Rendered, input: RenderInput, generation: number, late: boolean): void {
+    if (generation < drawShown) {
+        return;
+    }
+    drawShown = generation;
+    if (generation === drawRequested) {
+        clearTimeout(busyTimer);
+        busyTimer = undefined;
+        if (busyLabel) {
+            busyLabel.hidden = true;
+        }
+    }
+    drawnPositions = input.positions;
     bounds = drawn.bounds;
     paths = drawn.paths;
     guides = drawn.guides;
@@ -223,7 +304,22 @@ function draw(): void {
     spines = drawn.spines;
     anchors = drawn.anchors;
     canvas.innerHTML = drawn.svg;
-    drawHandles();
+    // A drawing that arrives mid-drag put the dragged cards where they were
+    // when it was asked for, and the pointer has gone on since.
+    for (const id of dragging?.ids ?? []) {
+        const at = positions[id];
+        const drawnAt = drawnPositions[id];
+        if (at && drawnAt && (at.x !== drawnAt.x || at.y !== drawnAt.y)) {
+            canvas.querySelector(`[data-node="${cssEscape(id)}"]`)
+                ?.setAttribute('transform', `translate(${at.x - drawnAt.x}, ${at.y - drawnAt.y})`);
+        }
+    }
+    if (late) {
+        // Drawn with the selection as it was when asked for.
+        applySelection();
+    } else {
+        drawHandles();
+    }
     if (fitMode) {
         fitViewport();
     } else {
@@ -662,8 +758,11 @@ viewport.addEventListener('pointermove', event => {
         // Snapped to an 8px grid, so two boxes dragged to the same height line
         // up rather than nearly lining up.
         positions[id] = { ...origin, x: snap(origin.x + dx), y: snap(origin.y + dy) };
+        // Relative to where the drawing on screen put the card, which is where
+        // the drag began unless the diagram was redrawn during it.
+        const drawnAt = drawnPositions[id] ?? origin;
         const group = canvas.querySelector(`[data-node="${cssEscape(id)}"]`) as SVGGElement | null;
-        group?.setAttribute('transform', `translate(${positions[id]!.x - origin.x}, ${positions[id]!.y - origin.y})`);
+        group?.setAttribute('transform', `translate(${positions[id]!.x - drawnAt.x}, ${positions[id]!.y - drawnAt.y})`);
     }
     const moved = new Set(dragging.ids);
     if (touchesGenset(moved)) {

@@ -909,7 +909,7 @@ export class DiagramPanel {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; worker-src blob:;">
 <link href="${style}" rel="stylesheet">
 <title>Tonto diagram</title>
 </head>
@@ -936,6 +936,7 @@ export class DiagramPanel {
         <button id="exportButton" title="Export as SVG or PNG">Export</button>
         <button id="views" title="Choose a view of this model">Views</button>
         <span class="spacer"></span>
+        <span id="busy" class="busy" hidden></span>
         <span id="stale" class="stale" hidden></span>
     </div>
     <div id="options" class="panel" hidden></div>

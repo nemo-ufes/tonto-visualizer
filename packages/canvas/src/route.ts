@@ -666,12 +666,20 @@ function detour(
         length: Math.hypot(end.x - start.x, end.y - start.y),
         bends: 0
     };
+    // Whatever blocks a one-bend attempt, in the order it was met: if one bend
+    // is not enough, these are the boxes a second bend has to get round.
+    const alsoBlocking = new Set<Rect>();
     for (const via of candidates) {
         const first = keepEnds ? start : borderPoint(source, via);
         const last = keepEnds ? end : borderPoint(target, via);
-        const hits = others.filter(rect => segmentHitsRect(first, via, rect, 4)
-            || segmentHitsRect(via, last, rect, 4)).length
-            + (avoid.some(point => Math.hypot(point.x - via.x, point.y - via.y) < CLEARANCE) ? 1 : 0);
+        let hits = 0;
+        for (const rect of others) {
+            if (segmentHitsRect(first, via, rect, 4) || segmentHitsRect(via, last, rect, 4)) {
+                hits += 1;
+                alsoBlocking.add(rect);
+            }
+        }
+        hits += avoid.some(point => Math.hypot(point.x - via.x, point.y - via.y) < CLEARANCE) ? 1 : 0;
         const length = Math.hypot(via.x - first.x, via.y - first.y) + Math.hypot(last.x - via.x, last.y - via.y);
         if (hits < best.hits || (hits === best.hits && best.bends > 0 && length < best.length)) {
             best = { points: [round(first), round(via), round(last)], hits, length, bends: 1 };
@@ -685,36 +693,46 @@ function detour(
     // crossing something: a line that disappears behind a class it has nothing
     // to do with is read as ending there. The corners of whatever blocked the
     // one-bend attempts join the search, since those are the boxes to get round.
-    const alsoBlocking = new Set<Rect>();
-    for (const via of candidates) {
-        const first = keepEnds ? start : borderPoint(source, via);
-        const last = keepEnds ? end : borderPoint(target, via);
-        for (const rect of others) {
-            if (segmentHitsRect(first, via, rect, 4) || segmentHitsRect(via, last, rect, 4)) {
-                alsoBlocking.add(rect);
-            }
-        }
-    }
+    //
+    // Every pair of corners is a candidate, and a long line across a large
+    // diagram has hundreds of corners: this search, done naively, was what froze
+    // a whole-workspace view for minutes. The pairs are still all considered,
+    // in the same order and with the same tie-break, so the route chosen is the
+    // one it always was. What is skipped is only work whose answer cannot
+    // matter: a pair longer than a clear route already found, a leg already
+    // known to be blocked, and the rest of the boxes once one is hit.
     const wider = [...candidates, ...cornersOf([...alsoBlocking])];
-    for (const first of wider) {
-        for (const second of wider) {
-            if (first === second) {
+    const froms = wider.map(corner => keepEnds ? start : borderPoint(source, corner));
+    const tos = wider.map(corner => keepEnds ? end : borderPoint(target, corner));
+    const leaves: Array<boolean | undefined> = [];
+    const arrives: Array<boolean | undefined> = [];
+    const clear = (from: Point, to: Point) => !others.some(rect => segmentHitsRect(from, to, rect, 4));
+    for (let one = 0; one < wider.length; one += 1) {
+        const first = wider[one]!;
+        const from = froms[one]!;
+        const out = Math.hypot(first.x - from.x, first.y - from.y);
+        if (best.hits === 0 && !(out < best.length)) {
+            continue;
+        }
+        if (!(leaves[one] ??= clear(from, first))) {
+            continue;
+        }
+        for (let other = 0; other < wider.length; other += 1) {
+            if (other === one) {
                 continue;
             }
-            const from = keepEnds ? start : borderPoint(source, first);
-            const to = keepEnds ? end : borderPoint(target, second);
-            const hits = others.filter(rect => segmentHitsRect(from, first, rect, 4)
-                || segmentHitsRect(first, second, rect, 4)
-                || segmentHitsRect(second, to, rect, 4)).length;
-            if (hits > 0) {
-                continue;
-            }
-            const length = Math.hypot(first.x - from.x, first.y - from.y)
+            const second = wider[other]!;
+            const to = tos[other]!;
+            const length = out
                 + Math.hypot(second.x - first.x, second.y - first.y)
                 + Math.hypot(to.x - second.x, to.y - second.y);
-            if (best.hits > 0 || length < best.length) {
-                best = { points: [round(from), round(first), round(second), round(to)], hits: 0, length, bends: 2 };
+            if (best.hits === 0 && !(length < best.length)) {
+                continue;
             }
+            if (!(arrives[other] ??= clear(second, to)) || !clear(first, second)) {
+                continue;
+            }
+            best = { points: [round(from), round(first), round(second), round(to)], hits: 0, length, bends: 2 };
         }
     }
     return best.points;
