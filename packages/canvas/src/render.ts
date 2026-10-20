@@ -437,7 +437,7 @@ export function render(input: RenderInput): Rendered {
         });
 
     const edgeMarkup = lines
-        .map(one => drawEdge(one.edge, one.points, theme, one.isSelected, one.data))
+        .map(one => drawEdge(one.edge, one.points, theme, one.isSelected, display, one.data))
         .join('');
     // Drawn from the line that is drawn: an inverse pair shows one line, and
     // a derivation either half states belongs to that one.
@@ -865,8 +865,8 @@ export function drawNode(
         ? `<title>${escape(node.documentation)}</title>`
         : '';
     return `<g class="${classes}" data-node="${escape(node.id)}">`
-        + `<rect x="${rect.x}" y="${rect.y}" width="${rect.width}" height="${rect.height}" rx="3" fill="${fill}"/>`
-        + title + text + compartment + '</g>';
+        + title + `<rect x="${rect.x}" y="${rect.y}" width="${rect.width}" height="${rect.height}" rx="3" fill="${fill}"/>`
+        + text + compartment + '</g>';
 }
 
 /**
@@ -905,23 +905,27 @@ function drawPackage(node: ViewNode, rect: Rect, display: DisplayOptions, theme:
         : '';
     // The tab first, so the body's top edge is drawn over the seam between them.
     return `<g class="${classes}" data-node="${escape(node.id)}">`
-        + `<rect x="${rect.x}" y="${rect.y}" width="${packageTabWidth(rect.width)}" height="${tab + 1}" rx="2" fill="${fill}"/>`
+        + title + `<rect x="${rect.x}" y="${rect.y}" width="${packageTabWidth(rect.width)}" height="${tab + 1}" rx="2" fill="${fill}"/>`
         + `<rect x="${body.x}" y="${body.y}" width="${body.width}" height="${body.height}" rx="2" fill="${fill}"/>`
-        + title + text + '</g>';
+        + text + '</g>';
 }
 
 function drawEdge(
-    edge: ViewEdge, points: Point[], theme: Theme, isSelected: boolean, data = pathData(points)
+    edge: ViewEdge, points: Point[], theme: Theme, isSelected: boolean, display: DisplayOptions,
+    data = pathData(points)
 ): string {
     const dashed = edge.kind === 'instantiation' || edge.kind === 'dependency';
     const path = `<path d="${data}"${dashed ? ' stroke-dasharray="6 4"' : ''}/>`;
     const classes = `tv-edge${isSelected ? ' tv-selected' : ''}`;
+    const title = edge.kind === 'relation' && edge.documentation && display.showDocumentation
+        ? `<title>${escape(edge.documentation)}</title>`
+        : '';
     const decoration = edge.kind === 'generalization'
         ? triangleAt(points[points.length - 1]!, points[points.length - 2] ?? points[0]!)
         : edge.kind === 'instantiation' || edge.kind === 'dependency'
             ? arrowAt(points[points.length - 1]!, points[points.length - 2] ?? points[0]!)
             : relationDecoration(edge, points, theme);
-    return `<g class="${classes}" data-edge="${escape(edge.id)}">${path}${decoration}</g>`;
+    return `<g class="${classes}" data-edge="${escape(edge.id)}">${title}${path}${decoration}</g>`;
 }
 
 /**
