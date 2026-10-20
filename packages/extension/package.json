@@ -7,7 +7,7 @@
     "license": "MIT",
     "repository": {
         "type": "git",
-        "url": "https://github.com/jpalmeida/tonto-visualizer.git",
+        "url": "https://github.com/nemo-ufes/tonto-visualizer.git",
         "directory": "packages/extension"
     },
     "type": "module",
@@ -156,7 +156,7 @@
         "prebuild": "npm run clean",
         "build": "node esbuild.mjs",
         "watch": "node esbuild.mjs --watch",
-        "package": "npm run build && vsce package --no-dependencies --baseImagesUrl https://raw.githubusercontent.com/jpalmeida/tonto-visualizer/main/packages/extension/ -o tonto-visualizer.vsix && node name-vsix.mjs",
+        "package": "npm run build && vsce package --no-dependencies --baseImagesUrl https://raw.githubusercontent.com/nemo-ufes/tonto-visualizer/main/packages/extension/ -o tonto-visualizer.vsix && node name-vsix.mjs",
         "test": "vitest run"
     },
     "dependencies": {
