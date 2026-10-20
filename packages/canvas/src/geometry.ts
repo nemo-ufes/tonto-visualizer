@@ -96,33 +96,46 @@ export function sideOf(rect: Rect, point: Point): Side {
  * route that goes round a box rather than through it.
  */
 export function segmentHitsRect(from: Point, to: Point, rect: Rect, margin = 0): boolean {
+    const left = rect.x - margin;
+    const right = rect.x + rect.width + margin;
+    const top = rect.y - margin;
+    const bottom = rect.y + rect.height + margin;
+    // Most boxes are nowhere near the segment, and a router asks this of every
+    // box for every candidate bend -- tens of millions of times on a workspace
+    // of a few hundred classes. Strict, so a segment that only touches the box
+    // still goes on to the exact test below and gets the same answer as before.
+    if (Math.max(from.x, to.x) < left || Math.min(from.x, to.x) > right
+        || Math.max(from.y, to.y) < top || Math.min(from.y, to.y) > bottom) {
+        return false;
+    }
     const dx = to.x - from.x;
     const dy = to.y - from.y;
-    let enter = 0;
-    let leave = 1;
-    const clip = (direction: number, distance: number): boolean => {
-        if (direction === 0) {
-            // Parallel to this pair of edges: outside them means never inside.
-            return distance >= 0;
+    const range = { enter: 0, leave: 1 };
+    return clip(range, -dx, from.x - left)
+        && clip(range, dx, right - from.x)
+        && clip(range, -dy, from.y - top)
+        && clip(range, dy, bottom - from.y);
+}
+
+/** One edge of the Liang-Barsky clip: narrows the part of the segment still inside. */
+function clip(range: { enter: number; leave: number }, direction: number, distance: number): boolean {
+    if (direction === 0) {
+        // Parallel to this pair of edges: outside them means never inside.
+        return distance >= 0;
+    }
+    const ratio = distance / direction;
+    if (direction < 0) {
+        if (ratio > range.leave) {
+            return false;
         }
-        const ratio = distance / direction;
-        if (direction < 0) {
-            if (ratio > leave) {
-                return false;
-            }
-            enter = Math.max(enter, ratio);
-        } else {
-            if (ratio < enter) {
-                return false;
-            }
-            leave = Math.min(leave, ratio);
+        range.enter = Math.max(range.enter, ratio);
+    } else {
+        if (ratio < range.enter) {
+            return false;
         }
-        return true;
-    };
-    return clip(-dx, from.x - (rect.x - margin))
-        && clip(dx, rect.x + rect.width + margin - from.x)
-        && clip(-dy, from.y - (rect.y - margin))
-        && clip(dy, rect.y + rect.height + margin - from.y);
+        range.leave = Math.min(range.leave, ratio);
+    }
+    return true;
 }
 
 /** How far a point is from a segment, measuring to its nearest point. */

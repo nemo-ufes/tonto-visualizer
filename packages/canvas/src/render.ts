@@ -739,30 +739,73 @@ function routeFaults(
 ): RouteFaults {
     const edgeById = new Map(edges.map(edge => [edge.id, edge]));
     const routed = Object.entries(paths);
+    // Every line against every box and every other line: on a workspace of a
+    // couple of thousand classes these two loops were the slowest part of a
+    // draw. A line whose box is clear of a class, or of another line's box,
+    // cannot hit it or cross it, so the segments are only compared when the
+    // boxes overlap. Strictly clear, so touching boxes are still compared.
+    const extents = routed.map(([, points]) => extentOf(points));
+    const nodes = Object.entries(positions);
     let intersections = 0;
-    for (const [id, points] of routed) {
+    for (let index = 0; index < routed.length; index += 1) {
+        const [id, points] = routed[index]!;
         const edge = edgeById.get(id);
-        for (const [node, rect] of Object.entries(positions)) {
-            if (node === edge?.source || node === edge?.target) {
+        const extent = extents[index]!;
+        for (const [node, rect] of nodes) {
+            if (node === edge?.source || node === edge?.target
+                || extent.right < rect.x - 2 || extent.left > rect.x + rect.width + 2
+                || extent.bottom < rect.y - 2 || extent.top > rect.y + rect.height + 2) {
                 continue;
             }
-            if (points.slice(1).some((to, index) => segmentHitsRect(points[index]!, to, rect, 2))) {
-                intersections += 1;
+            for (let at = 1; at < points.length; at += 1) {
+                if (segmentHitsRect(points[at - 1]!, points[at]!, rect, 2)) {
+                    intersections += 1;
+                    break;
+                }
             }
         }
     }
     let crossings = 0;
     for (let one = 0; one < routed.length; one += 1) {
+        const first = routed[one]![1];
+        const near = extents[one]!;
         for (let two = one + 1; two < routed.length; two += 1) {
-            const first = routed[one]![1];
+            const far = extents[two]!;
+            if (near.right < far.left || far.right < near.left || near.bottom < far.top || far.bottom < near.top) {
+                continue;
+            }
             const second = routed[two]![1];
-            if (first.slice(1).some((to, index) => second.slice(1).some((otherTo, otherIndex) =>
-                segmentsProperlyCross(first[index]!, to, second[otherIndex]!, otherTo)))) {
+            if (pathsProperlyCross(first, second)) {
                 crossings += 1;
             }
         }
     }
     return { intersections, crossings };
+}
+
+function extentOf(points: Point[]): { left: number; top: number; right: number; bottom: number } {
+    let left = Infinity;
+    let top = Infinity;
+    let right = -Infinity;
+    let bottom = -Infinity;
+    for (const point of points) {
+        left = Math.min(left, point.x);
+        top = Math.min(top, point.y);
+        right = Math.max(right, point.x);
+        bottom = Math.max(bottom, point.y);
+    }
+    return { left, top, right, bottom };
+}
+
+function pathsProperlyCross(first: Point[], second: Point[]): boolean {
+    for (let one = 1; one < first.length; one += 1) {
+        for (let two = 1; two < second.length; two += 1) {
+            if (segmentsProperlyCross(first[one - 1]!, first[one]!, second[two - 1]!, second[two]!)) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 /** Whether a candidate is strictly safer than the preferred ray-anchored one. */
@@ -1203,6 +1246,7 @@ class LabelPlacer {
      */
     carry(id: string, points: Point[]): void {
         this.lines[id] = points;
+        this.grid = undefined;
     }
 
     /** Claims a box, so whatever is placed next avoids it. */
@@ -1283,12 +1327,119 @@ class LabelPlacer {
         const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
         const mine = distanceToPath(centre, own);
         let nearest = Infinity;
-        for (const [id, path] of Object.entries(this.lines)) {
-            if (id !== owner) {
+        // Every candidate of every label against every line was most of the time
+        // spent drawing a large workspace. Only a line nearer than this label's
+        // own can change the answer, and no line is nearer than its bounding
+        // box, so a line whose box is farther away is passed over. The margin
+        // keeps rounding from passing over one that is exactly as near.
+        const reach = mine + 0.001;
+        this.grid ??= new LineGrid(this.lines);
+        this.grid.near(centre, reach, ({ id, path, bounds }) => {
+            if (id === owner) {
+                return;
+            }
+            const outside = Math.hypot(
+                Math.max(bounds.x - centre.x, 0, centre.x - bounds.x - bounds.width),
+                Math.max(bounds.y - centre.y, 0, centre.y - bounds.y - bounds.height));
+            if (outside <= reach) {
                 nearest = Math.min(nearest, distanceToPath(centre, path));
             }
-        }
+        });
         return nearest < mine ? 260 + (mine - nearest) * 14 : 0;
+    }
+
+    /** The lines by where they are, built on first use and again after `carry`. */
+    private grid: LineGrid | undefined;
+}
+
+interface PlacedLine {
+    id: string;
+    path: Point[];
+    bounds: Rect;
+}
+
+/**
+ * The routed lines filed by the coarse cells their boxes cover, so that asking
+ * which lines come near one spot reads the lines near it rather than all of
+ * them. A line long enough to cover many cells is kept apart and always read:
+ * filing it everywhere it passes would cost more than reading it.
+ */
+class LineGrid {
+    private static readonly CELL = 256;
+    private static readonly MOST_CELLS = 64;
+    private readonly lines: PlacedLine[];
+    private readonly cells = new Map<number, number[]>();
+    private readonly wide: number[] = [];
+    private readonly seen: number[];
+    private stamp = 0;
+
+    constructor(lines: Record<string, Point[]>) {
+        this.lines = Object.entries(lines).map(([id, path]) => ({
+            id, path, bounds: boundsOf(path.map(point => ({ ...point, width: 0, height: 0 })))
+        }));
+        this.seen = this.lines.map(() => 0);
+        this.lines.forEach((line, index) => {
+            const span = LineGrid.span(line.bounds.x, line.bounds.y,
+                line.bounds.x + line.bounds.width, line.bounds.y + line.bounds.height);
+            if (!span) {
+                this.wide.push(index);
+                return;
+            }
+            for (let x = span.left; x <= span.right; x += 1) {
+                for (let y = span.top; y <= span.bottom; y += 1) {
+                    const key = LineGrid.key(x, y);
+                    const cell = this.cells.get(key);
+                    if (cell) {
+                        cell.push(index);
+                    } else {
+                        this.cells.set(key, [index]);
+                    }
+                }
+            }
+        });
+    }
+
+    /** Calls `visit` once for every line whose box could lie within `reach` of `centre`, and perhaps a few more. */
+    near(centre: Point, reach: number, visit: (line: PlacedLine) => void): void {
+        const span = LineGrid.span(centre.x - reach, centre.y - reach, centre.x + reach, centre.y + reach);
+        if (!span) {
+            this.lines.forEach(visit);
+            return;
+        }
+        this.stamp += 1;
+        for (const index of this.wide) {
+            visit(this.lines[index]!);
+        }
+        for (let x = span.left; x <= span.right; x += 1) {
+            for (let y = span.top; y <= span.bottom; y += 1) {
+                for (const index of this.cells.get(LineGrid.key(x, y)) ?? []) {
+                    if (this.seen[index] !== this.stamp) {
+                        this.seen[index] = this.stamp;
+                        visit(this.lines[index]!);
+                    }
+                }
+            }
+        }
+    }
+
+    /** The cells a box covers, or nothing when that is too many to be worth filing. */
+    private static span(
+        left: number, top: number, right: number, bottom: number
+    ): { left: number; top: number; right: number; bottom: number } | undefined {
+        if (![left, top, right, bottom].every(Number.isFinite)) {
+            return undefined;
+        }
+        const span = {
+            left: Math.floor(left / LineGrid.CELL), top: Math.floor(top / LineGrid.CELL),
+            right: Math.floor(right / LineGrid.CELL), bottom: Math.floor(bottom / LineGrid.CELL)
+        };
+        const cells = (span.right - span.left + 1) * (span.bottom - span.top + 1);
+        return cells <= LineGrid.MOST_CELLS ? span : undefined;
+    }
+
+    private static key(x: number, y: number): number {
+        // Exact while a diagram stays within a few million pixels of the origin.
+        return (x + 0x8000) * 0x10000 + (y + 0x8000);
     }
 }
 

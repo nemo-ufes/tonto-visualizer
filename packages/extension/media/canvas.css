@@ -48,6 +48,11 @@ body {
     white-space: nowrap;
 }
 
+.busy {
+    color: var(--vscode-descriptionForeground, var(--chrome-muted));
+    white-space: nowrap;
+}
+
 .spacer {
     flex: 1;
 }
