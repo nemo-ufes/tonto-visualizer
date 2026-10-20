@@ -1,0 +1,213 @@
+{
+  "version": 1,
+  "content": {
+    "scope": "file",
+    "showExternalReferences": true,
+    "showDatatypes": true,
+    "showGensets": true
+  },
+  "display": {
+    "taxonomyOnly": false,
+    "partonomyOnly": false,
+    "routing": "straight",
+    "fontFamily": "sans",
+    "fontSize": "medium",
+    "showAttributes": true,
+    "showCardinalities": true,
+    "showRelationNames": true,
+    "showRelationStereotypes": true,
+    "showEndDecorations": true,
+    "showRoleNames": true,
+    "showColors": true,
+    "showLegend": false,
+    "showPackageGroups": true,
+    "qualifyNames": false
+  },
+  "layout": {
+    "direction": "DOWN",
+    "associationDistance": 100,
+    "nodeSpacing": 60,
+    "rankSpacing": 100,
+    "groupByPackage": true
+  },
+  "constraints": {
+    "pinned": [],
+    "alignments": [],
+    "distributions": []
+  },
+  "nodes": {
+    "gufo::Entity": {
+      "x": 411,
+      "y": 12
+    },
+    "gufo::Individual": {
+      "x": 878,
+      "y": 172
+    },
+    "gufo::AbstractIndividual": {
+      "x": 847,
+      "y": 348
+    },
+    "gufo::QualityValue": {
+      "x": 1168,
+      "y": 496
+    },
+    "gufo::ConcreteIndividual": {
+      "x": 1736,
+      "y": 336
+    },
+    "gufo::Endurant": {
+      "x": 1676,
+      "y": 530
+    },
+    "gufo::Aspect": {
+      "x": 2360,
+      "y": 664
+    },
+    "gufo::IntrinsicAspect": {
+      "x": 2200,
+      "y": 824
+    },
+    "gufo::IntrinsicMode": {
+      "x": 2216,
+      "y": 976
+    },
+    "gufo::Quality": {
+      "x": 2384,
+      "y": 976
+    },
+    "gufo::ExtrinsicAspect": {
+      "x": 2376,
+      "y": 824
+    },
+    "gufo::ExtrinsicMode": {
+      "x": 2552,
+      "y": 1000
+    },
+    "gufo::Relator": {
+      "x": 2720,
+      "y": 1000
+    },
+    "gufo::Object": {
+      "x": 1424,
+      "y": 681
+    },
+    "gufo::Collection": {
+      "x": 1383,
+      "y": 840
+    },
+    "gufo::FunctionalComplex": {
+      "x": 1729,
+      "y": 840
+    },
+    "gufo::Quantity": {
+      "x": 1561,
+      "y": 840
+    },
+    "gufo::Event": {
+      "x": 1937,
+      "y": 840
+    },
+    "gufo::Participation": {
+      "x": 1710,
+      "y": 1009
+    },
+    "gufo::Situation": {
+      "x": 1937,
+      "y": 1009
+    },
+    "gufo::Type": {
+      "x": 393,
+      "y": 172
+    },
+    "gufo::AbstractIndividualType": {
+      "x": 203,
+      "y": 681
+    },
+    "gufo::ConcreteIndividualType": {
+      "x": 287,
+      "y": 359
+    },
+    "gufo::EventType": {
+      "x": 148,
+      "y": 530
+    },
+    "gufo::SituationType": {
+      "x": 316,
+      "y": 530
+    },
+    "gufo::EndurantType": {
+      "x": 484,
+      "y": 530
+    },
+    "gufo::RigidType": {
+      "x": 211,
+      "y": 840
+    },
+    "gufo::NonRigidType": {
+      "x": 714,
+      "y": 681
+    },
+    "gufo::AntiRigidType": {
+      "x": 696,
+      "y": 840
+    },
+    "gufo::SemiRigidType": {
+      "x": 1049,
+      "y": 840
+    },
+    "gufo::Sortal": {
+      "x": 433,
+      "y": 840
+    },
+    "gufo::NonSortal": {
+      "x": 881,
+      "y": 840
+    },
+    "gufo::Kind": {
+      "x": 12,
+      "y": 1009
+    },
+    "gufo::SubKind": {
+      "x": 180,
+      "y": 1009
+    },
+    "gufo::Phase": {
+      "x": 516,
+      "y": 1009
+    },
+    "gufo::Role": {
+      "x": 684,
+      "y": 1009
+    },
+    "gufo::Category": {
+      "x": 348,
+      "y": 1009
+    },
+    "gufo::Mixin": {
+      "x": 1188,
+      "y": 1009
+    },
+    "gufo::PhaseMixin": {
+      "x": 852,
+      "y": 1009
+    },
+    "gufo::RoleMixin": {
+      "x": 1020,
+      "y": 1009
+    },
+    "gufo::RelationshipType": {
+      "x": 660,
+      "y": 355
+    },
+    "gufo::ComparativeRelationshipType": {
+      "x": 652,
+      "y": 530
+    },
+    "gufo::MaterialRelationshipType": {
+      "x": 918,
+      "y": 530
+    }
+  },
+  "edges": {}
+}

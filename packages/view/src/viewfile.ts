@@ -172,8 +172,7 @@ function readDisplayOptions(value: unknown): DisplayOptions {
         showColors: booleanOr(source.showColors, defaultDisplayOptions.showColors),
         showLegend: booleanOr(source.showLegend, defaultDisplayOptions.showLegend),
         showPackageGroups: booleanOr(source.showPackageGroups, defaultDisplayOptions.showPackageGroups),
-        qualifyNames: booleanOr(source.qualifyNames, defaultDisplayOptions.qualifyNames),
-        showDocumentation: booleanOr(source.showDocumentation, defaultDisplayOptions.showDocumentation)
+        qualifyNames: booleanOr(source.qualifyNames, defaultDisplayOptions.qualifyNames)
     };
 }
 

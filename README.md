@@ -16,7 +16,7 @@ The work after the first complete release is tracked in
 
 ## Status
 
-Working end to end, and rough in places.
+Working end to end.
 
 - `packages/view` — a Tonto model read as an explicit diagram: nodes, edges,
   package groups and generalization sets, with ids stable across edits, colours
@@ -119,6 +119,15 @@ edit as the rename, so undoing the rename puts them back too.
 The Tonto language itself is consumed as a pinned submodule under `vendor/`,
 never edited from here — one grammar, one set of checks, one answer about what a
 model says.
+
+## Acknowledgements
+
+Matheus Lenke Coutinho and João Paulo A. Almeida are the original designers of tonto. This project reimplements and extends visualization features of the [legacy tonto project](https://github.com/nemo-ufes/tonto-legacy), which was mainly authored by Matheus Lenke Coutinho at the [NEMO Ontology & Conceptual Modeling research group](https://nemo.inf.ufes.br) at the Federal University of Espírito Santo (UFES), Brazil.
+
+tonto's language design, concrete syntax, and OntoUML/UFO semantics are the work of the [NEMO Ontology & Conceptual Modeling research group](https://nemo.inf.ufes.br), in cooperation with the [Semantics, Cybersecurity & Services (SCS) group](https://www.utwente.nl/en/eemcs/scs/) throughout various research projects, which have received among others the support of CNPq, CAPES and FAPES over the years.
+
+Giancarlo Guizzardi, Tiago Prince Sales and Claudenir M. Fonseca should be acknowledged for their ongoing contributions, along with the contributors to [OntoUML](https://github.com/OntoUML).
+
 
 ## Licence
 

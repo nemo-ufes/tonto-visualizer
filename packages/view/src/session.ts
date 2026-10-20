@@ -16,7 +16,7 @@ import type { AstNode, LangiumDocument } from 'langium';
 import { AstUtils, DocumentState, URI } from 'langium';
 import { NodeFileSystem } from 'langium/node';
 import type { Import, Package } from 'tonto-language';
-import { createTontoServices, isModel, isOntologyBody } from 'tonto-language';
+import { createTontoServices, isClassDeclaration, isModel, isOntologyBody } from 'tonto-language';
 import type { Model } from './language.js';
 import type { SourceLocation } from './model.js';
 import type { OntologyOutline, OutlineImport, OutlinePackage } from './outline.js';
@@ -132,6 +132,14 @@ export class ViewSession {
                 || roots.some(root => document.uri.fsPath === root || document.uri.fsPath.startsWith(root + sep)))
             .map(document => document.parseResult.value)
             .filter((value): value is Model => isModel(value));
+    }
+
+    /** Count declarations the language identifies as classes, before deriving a view. */
+    classCount(models: readonly Model[]): number {
+        return models.reduce((count, model) => count + model.packages.reduce(
+            (packageCount, pkg) => packageCount + pkg.declarations.filter(isClassDeclaration).length,
+            0
+        ), 0);
     }
 
     /**

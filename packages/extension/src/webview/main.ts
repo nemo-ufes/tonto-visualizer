@@ -11,7 +11,6 @@
 import type {
     ContentOptions, DisplayOptions, EdgeRoute, LayoutOptions, ViewConstraints, ViewModel
 } from 'tonto-view';
-import { natureLegend } from 'tonto-view/palette';
 import { edgeTouches } from 'tonto-view/outline';
 import { ASSOCIATION_DISTANCE, clampAssociationDistance, defaultLayoutOptions } from 'tonto-view/options';
 // By subpath, as the canvas imports `inversePairs`: the package's own entry
@@ -20,7 +19,7 @@ import { nodesInSelection } from 'tonto-view/selection';
 import type { Corner, Handle, Point, Rect, Rendered, RenderInput, Size } from 'tonto-canvas/draw';
 import {
     CORNERS, cornerOf, curvedRoute, darkTheme, derivationBetween, distanceToPath, drawDerivation, drawNode, drawTrees,
-    dropHandle, edgeEnds, fontMetrics, handlesFor, lightTheme, moveHandle, overlaps, pathData, rectBetween, relationSpreads, render,
+    dropHandle, edgeEnds, handlesFor, lightTheme, moveHandle, overlaps, pathData, rectBetween, relationSpreads, render,
     resizeTo, routeEdge, segmentHitsRect, sizeOf, trianglePoints
 } from 'tonto-canvas/draw';
 import type { FilterItem } from '../protocol.js';
@@ -39,7 +38,6 @@ const viewport = element('viewport');
 const canvas = element('canvas');
 const scaleLabel = element('scale');
 const optionsPanel = element('options');
-const legendPanel = element('legend');
 const staleLabel = element('stale');
 // Looked up rather than required: a page without it -- the tests' -- still draws.
 const busyLabel = document.getElementById('busy');
@@ -150,7 +148,6 @@ window.addEventListener('message', event => {
         if (optionsPanel.hidden === false) {
             fillOptions();
         }
-        fillLegend();
     } else if (message.type === 'select') {
         selection = new Set(message.ids);
         if (selectedBend && !selection.has(selectedBend.edge)) {
@@ -1196,8 +1193,7 @@ function fillOptions(): void {
         ['showColors', 'Nature colours'],
         ['showLegend', 'Nature colour legend'],
         ['showPackageGroups', 'Package boxes'],
-        ['qualifyNames', 'Qualified names'],
-        ['showDocumentation', 'Documentation on hover']
+        ['qualifyNames', 'Qualified names']
     ];
     const contentRows: Array<[keyof ContentOptions, string]> = [
         ['showExternalReferences', 'External references'],
@@ -1334,26 +1330,6 @@ function filterSection(
         return row;
     }));
     return wrapper;
-}
-
-function fillLegend(): void {
-    legendPanel.hidden = !display?.showColors || !display.showLegend;
-    if (display) {
-        const font = fontMetrics(display);
-        legendPanel.style.fontSize = `${font.name}px`;
-        legendPanel.style.fontFamily = font.family;
-    }
-    legendPanel.replaceChildren(...natureLegend.map(entry => {
-        const row = document.createElement('div');
-        row.className = 'legend-row';
-        const swatch = document.createElement('span');
-        swatch.className = 'swatch';
-        swatch.style.background = entry.color;
-        const text = document.createElement('span');
-        text.textContent = entry.label;
-        row.append(swatch, text);
-        return row;
-    }));
 }
 
 function section(title: string, rows: HTMLElement[]): HTMLElement {
