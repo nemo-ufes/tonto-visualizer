@@ -314,11 +314,13 @@ async function layeredPlantUmlLayout(
         ? view.groups.filter(group => group.nodes.some(id => subject.has(id))) : [];
     const grouped = groups.length > 1;
     const included = new Set(groups.flatMap(group => group.nodes));
+    const algorithmOptions = optionsFor(settings, routing);
     const children: ElkNode[] = grouped
         ? [
             ...groups.map(group => ({
                 id: group.id,
                 layoutOptions: {
+                    ...algorithmOptions,
                     'elk.padding': `[top=${GROUP_PADDING + GROUP_HEADER},left=${GROUP_PADDING},bottom=${GROUP_PADDING},right=${GROUP_PADDING}]`
                 },
                 children: group.nodes.filter(id => subject.has(id)).map(id => ({ id, ...sizeOf(id) }))
@@ -328,7 +330,6 @@ async function layeredPlantUmlLayout(
         ]
         : view.nodes.filter(node => subject.has(node.id)).map(node => ({ id: node.id, ...sizeOf(node.id) }));
     const coveredInverseIds = inversePairs(view.edges).covered;
-    const algorithmOptions = optionsFor(settings, routing);
     const graph: ElkNode = {
         id: 'root',
         layoutOptions: {

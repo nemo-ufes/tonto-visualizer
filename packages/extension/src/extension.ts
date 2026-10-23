@@ -43,6 +43,14 @@ export function activate(context: vscode.ExtensionContext): void {
             }
             await DiagramPanel.open(context.extensionUri, document);
         }),
+        vscode.commands.registerCommand('tonto.viz.openWorkspace', async () => {
+            const folders = vscode.workspace.workspaceFolders;
+            if (!folders?.length) {
+                vscode.window.showErrorMessage('Open a workspace folder to draw its ontologies.');
+                return;
+            }
+            await DiagramPanel.openWorkspace(context.extensionUri, folders);
+        }),
         vscode.commands.registerCommand('tonto.viz.autoLayout', async () => {
             await DiagramPanel.current?.autoLayoutSelectedOrAll();
         }),

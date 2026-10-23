@@ -9,7 +9,7 @@
 import * as vscode from 'vscode';
 import type { ContentOptions, DisplayOptions, ViewModel, ViewRelation } from 'tonto-view';
 import {
-    contentAfter, derive, derivePackages, expandInverseIds, filterDerivedMaterial, idsAtSource,
+    contentAfter, derive, derivePackages, deriveWorkspacePackages, expandInverseIds, filterDerivedMaterial, idsAtSource,
     nodesInSelection, packageName, packagesInScope, reconcile
 } from 'tonto-view';
 import { ViewSession } from 'tonto-view/session';
@@ -46,6 +46,9 @@ export class DiagramPanel {
     private session: ViewSession | undefined;
     private store: ViewStore | undefined;
     private document: vscode.TextDocument | undefined;
+    private workspaceFolders: string[] | undefined;
+    private workspaceFolderItems: readonly vscode.WorkspaceFolder[] | undefined;
+    private workspaceDiagram: 'packages' | 'classes' = 'packages';
     private view: ViewModel = { groups: [], nodes: [], edges: [], gensets: [] };
     /** The last successfully derived model, before modeller-owned filters. */
     private catalog: ViewModel = { groups: [], nodes: [], edges: [], gensets: [] };
@@ -70,6 +73,9 @@ export class DiagramPanel {
     private availablePackages: string[] = [];
     private availableClassCount = 0;
     private focusPackages: string[] = [];
+    private ontologyName: string | undefined;
+    private ontologyPackages: string[] | undefined;
+    private ontologyDiagram: 'packages' | 'classes' = 'packages';
     private filters: FilterItem[] = [];
     private visibleNodeIds = new Set<string>();
     private hasPresentedView = false;
@@ -94,17 +100,17 @@ export class DiagramPanel {
             (message: FromPanel) => void this.receive(message), undefined, this.disposables);
 
         this.disposables.push(vscode.workspace.onDidChangeTextDocument(event => {
-            if (event.document === this.document && updateMode() === 'onType') {
+            if ((event.document === this.document || this.inWorkspace(event.document.uri)) && updateMode() === 'onType') {
                 this.schedule();
             }
         }));
         this.disposables.push(vscode.workspace.onDidSaveTextDocument(document => {
-            if (document === this.document && updateMode() === 'onSave') {
+            if ((document === this.document || this.inWorkspace(document.uri)) && updateMode() === 'onSave') {
                 this.schedule();
             }
         }));
         this.disposables.push(vscode.window.onDidChangeActiveTextEditor(editor => {
-            if (editor?.document.languageId === 'tonto' && followsEditor()) {
+            if (!this.workspaceFolders && editor?.document.languageId === 'tonto' && followsEditor()) {
                 void this.show(editor.document);
             }
         }));
@@ -112,7 +118,7 @@ export class DiagramPanel {
         // the cheap half of side-by-side: the reader never has to hunt for the box
         // that goes with the line they are on.
         this.disposables.push(vscode.window.onDidChangeTextEditorSelection(event => {
-            if (event.textEditor.document === this.document) {
+            if (!this.workspaceFolders && event.textEditor.document === this.document) {
                 this.selectAt(event.selections[0]?.active);
             }
         }));
@@ -144,8 +150,74 @@ export class DiagramPanel {
         await DiagramPanel.current.show(document, viewUri);
     }
 
+    /** Opens a workspace-scoped diagram, independent of the active editor. */
+    static async openWorkspace(extensionUri: vscode.Uri, folders: readonly vscode.WorkspaceFolder[]): Promise<void> {
+        if (DiagramPanel.current) {
+            DiagramPanel.current.panel.reveal(vscode.ViewColumn.Beside, true);
+            await DiagramPanel.current.showWorkspace(folders);
+            return;
+        }
+        const panel = vscode.window.createWebviewPanel(
+            'tontoDiagram', 'Tonto workspace diagram', { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
+            {
+                enableScripts: true,
+                retainContextWhenHidden: true,
+                localResourceRoots: [vscode.Uri.joinPath(extensionUri, 'out'), vscode.Uri.joinPath(extensionUri, 'media')]
+            }
+        );
+        DiagramPanel.current = new DiagramPanel(panel, extensionUri);
+        vscode.commands.executeCommand('setContext', 'tontoVizOpen', true);
+        await DiagramPanel.current.showWorkspace(folders);
+    }
+
+    private async showWorkspace(
+        folders: readonly vscode.WorkspaceFolder[], diagram: 'packages' | 'classes' = 'packages'
+    ): Promise<void> {
+        const paths = folders.map(folder => folder.uri.fsPath);
+        const base = workspaceViewBase(folders);
+        const modelUri = vscode.Uri.joinPath(base, '.workspace.tonto');
+        const uri = workspaceViewUri(base, diagram);
+        const generation = ++this.generation;
+        this.layoutRequest += 1;
+        clearTimeout(this.pending);
+        this.pending = undefined;
+        this.fitNextView = true;
+        const session = new ViewSession({ workspace: paths });
+        const store = await ViewStore.open(modelUri, undefined, saveArrangement(), uri);
+        if (generation !== this.generation) {
+            await store.dispose();
+            return;
+        }
+        await this.store?.dispose();
+        if (generation !== this.generation) {
+            await store.dispose();
+            return;
+        }
+        this.document = undefined;
+        this.workspaceFolders = paths;
+        this.workspaceFolderItems = [...folders];
+        this.workspaceDiagram = diagram;
+        this.ontologyDiagram = diagram;
+        this.ontologyName = undefined;
+        this.ontologyPackages = undefined;
+        this.panel.title = `Tonto workspace diagram — ${diagram}`;
+        this.session = session;
+        this.store = store;
+        this.view = { groups: [], nodes: [], edges: [], gensets: [] };
+        this.catalog = { groups: [], nodes: [], edges: [], gensets: [] };
+        this.completeCatalog = { groups: [], nodes: [], edges: [], gensets: [] };
+        this.positions = {};
+        this.filters = [];
+        this.visibleNodeIds = new Set();
+        this.selected = new Set();
+        this.hasPresentedView = false;
+        await this.refresh();
+    }
+
     /** Points the diagram at a document, loading its arrangement. */
     async show(document: vscode.TextDocument, requestedView?: vscode.Uri): Promise<void> {
+        this.workspaceFolders = undefined;
+        this.workspaceFolderItems = undefined;
         const viewUri = viewToShow(
             document.uri,
             requestedView,
@@ -154,6 +226,7 @@ export class DiagramPanel {
                 : undefined,
             this.viewOfDocument
         );
+        this.ontologyDiagram = viewNameFor(document.uri, viewUri) === 'classes' ? 'classes' : 'packages';
         const generation = ++this.generation;
         this.layoutRequest += 1;
         clearTimeout(this.pending);
@@ -502,16 +575,30 @@ export class DiagramPanel {
         const session = this.session;
         const store = this.store;
         const document = this.document;
-        if (!session || !store || !document) {
+        const workspaceFolders = this.workspaceFolders;
+        if (!session || !store || (!document && !workspaceFolders)) {
             return;
         }
 
-        await session.update(document.uri.toString(), document.getText());
+        if (document) {
+            await session.update(document.uri.toString(), document.getText());
+        } else {
+            for (const open of vscode.workspace.textDocuments) {
+                if (open.languageId === 'tonto' && this.inWorkspace(open.uri)) {
+                    await session.update(open.uri.toString(), open.getText());
+                }
+            }
+        }
         if (generation !== this.generation
-            || session !== this.session || store !== this.store || document !== this.document) {
+            || session !== this.session || store !== this.store || document !== this.document
+            || workspaceFolders !== this.workspaceFolders) {
             return;
         }
-        const errors = await session.parseErrors(document.uri.toString());
+        const errors = document
+            ? await session.parseErrors(document.uri.toString())
+            : workspaceFolders ? (await Promise.all(vscode.workspace.textDocuments
+                .filter(open => open.languageId === 'tonto' && this.inWorkspace(open.uri))
+                .map(open => session.parseErrors(open.uri.toString())))).flat() : [];
         if (errors.length > 0 && this.catalog.nodes.length > 0) {
             this.installView(filterView(this.catalog, store.state.content.hidden ?? []), store);
             this.send(errors[0]);
@@ -520,14 +607,16 @@ export class DiagramPanel {
 
         const models = await session.models();
         if (generation !== this.generation
-            || session !== this.session || store !== this.store || document !== this.document) {
+            || session !== this.session || store !== this.store || document !== this.document
+            || workspaceFolders !== this.workspaceFolders) {
             return;
         }
         this.availableClassCount = session.classCount(models);
-        const focused = await session.modelsOf(document.uri.toString(), models);
+        const focused = document ? await session.modelsOf(document.uri.toString(), models) : models;
         // A manifest declares no classes to draw: it is drawn as the package
         // diagram of the ontology it bundles.
-        const outline = await session.outline(document.uri.toString());
+        const outline = document ? await session.outline(document.uri.toString()) : undefined;
+        const workspaceOntologies = workspaceFolders ? await session.workspaceOntologies(models) : undefined;
         this.availablePackages = [...new Set(models
             .flatMap(model => model.packages.map(packageName))
             .filter((name): name is string => name !== undefined))].sort();
@@ -539,12 +628,29 @@ export class DiagramPanel {
         // resolves to) they are last refresh's, which on the very first refresh
         // of a newly opened document is nothing at all: the diagram drew empty
         // until some unrelated change asked for a second one.
+        this.ontologyName = outline?.name;
+        this.ontologyPackages = outline?.packages.filter(one => one.available).map(one => one.name);
+        if (workspaceFolders) {
+            this.ontologyName = undefined;
+            this.ontologyPackages = undefined;
+            this.availablePackages = [...new Set(models
+                .flatMap(model => model.packages.map(packageName))
+                .filter((name): name is string => name !== undefined))].sort();
+        }
+        if (this.ontologyPackages) {
+            this.availablePackages = this.ontologyPackages;
+        }
         const content = this.effectiveContent(store.state.content);
-        const deriveWith = (options: ContentOptions) => outline ? derivePackages(outline) : derive({
+        const ontologyPackages = this.ontologyPackages;
+        const deriveWith = (options: ContentOptions) => workspaceFolders && this.workspaceDiagram === 'packages'
+            ? deriveWorkspacePackages(workspaceOntologies ?? [])
+            : outline && this.ontologyDiagram === 'packages' ? derivePackages(outline) : derive({
             models,
             ...(this.focusPackages[0] ? { focus: this.focusPackages[0] } : {}),
             documentation: session.documentation(),
-            options
+            options: outline && ontologyPackages
+                ? { ...options, includedPackages: options.includedPackages ?? ontologyPackages }
+                : options
         });
         const { hidden, ...unfiltered } = content;
         const completeCatalog = deriveWith({ ...unfiltered, derivedMaterialMode: 'both' });
@@ -617,6 +723,10 @@ export class DiagramPanel {
         return Object.fromEntries(this.view.nodes.map(node => [node.id, sizeOf(node, display)]));
     }
 
+    private inWorkspace(uri: vscode.Uri): boolean {
+        return this.workspaceFolders?.some(folder => uri.fsPath === folder || uri.fsPath.startsWith(`${folder}/`)) ?? false;
+    }
+
     /**
      * The content options with the packages named, since the view is derived
      * from names and the stored options hold a scope.
@@ -626,10 +736,11 @@ export class DiagramPanel {
      * says `file` or `workspace` rather than listing them.
      */
     private effectiveContent(content: ContentOptions): ContentOptions {
+        const filePackages = this.ontologyPackages ?? this.focusPackages;
         return {
             ...content,
             includedPackages: packagesInScope(content, {
-                file: this.focusPackages,
+                file: filePackages,
                 workspace: this.availablePackages
             })
         };
@@ -664,7 +775,10 @@ export class DiagramPanel {
             display: store.state.display,
             content: this.effectiveContent(store.state.content),
             layout: store.state.layout,
-            packages: this.availablePackages,
+            packages: this.workspaceFolders && this.workspaceDiagram === 'packages' ? [] : this.availablePackages,
+            ...(this.ontologyName ? { ontologyName: this.ontologyName } : {}),
+            ...(this.ontologyName ? { ontologyDiagram: this.ontologyDiagram } : {}),
+            ...(this.workspaceFolders ? { workspaceDiagram: this.workspaceDiagram } : {}),
             filters: this.filters,
             ...(this.fitNextView ? { fit: true } : {}),
             ...(stale ? { stale } : {})
@@ -798,6 +912,16 @@ export class DiagramPanel {
                     store.begin('Content option');
                     store.update({ content: contentAfter(store.state.content, message.content) });
                     await this.refresh();
+                }
+                return;
+            case 'switchOntologyDiagram':
+                if (this.workspaceFolders && this.workspaceFolderItems) {
+                    await this.showWorkspace(this.workspaceFolderItems, message.diagram);
+                } else if (this.document && this.ontologyName) {
+                    const target = message.diagram === 'classes'
+                        ? viewUriFor(this.document.uri, 'classes')
+                        : viewUriFor(this.document.uri);
+                    await this.show(this.document, target);
                 }
                 return;
             case 'hide':
@@ -958,6 +1082,7 @@ export class DiagramPanel {
         <button id="optionsButton" title="What is drawn">⚙</button>
         <button id="exportButton" title="Export as SVG or PNG">Export</button>
         <button id="views" title="Choose a view of this model">Views</button>
+        <button id="ontologyDiagram" title="Switch ontology diagram" hidden>Classes</button>
         <span class="spacer"></span>
         <span id="busy" class="busy" hidden></span>
         <span id="stale" class="stale" hidden></span>
@@ -1023,6 +1148,19 @@ function modelRootOf(uri: vscode.Uri): string {
     }
     const path = uri.fsPath;
     return path.slice(0, Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')));
+}
+
+function workspaceViewBase(folders: readonly vscode.WorkspaceFolder[]): vscode.Uri {
+    const workspaceFile = vscode.workspace.workspaceFile;
+    if (workspaceFile?.scheme === 'file') {
+        const slash = workspaceFile.path.lastIndexOf('/');
+        return workspaceFile.with({ path: workspaceFile.path.slice(0, slash) || '/' });
+    }
+    return folders[0]!.uri;
+}
+
+function workspaceViewUri(base: vscode.Uri, diagram: 'packages' | 'classes'): vscode.Uri {
+    return vscode.Uri.joinPath(base, '.tonto-visualizer', `workspace.${diagram}.tontoview`);
 }
 
 function nonceOf(): string {
