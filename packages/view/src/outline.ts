@@ -57,6 +57,14 @@ export interface OntologyOutline {
     documentation?: string;
 }
 
+/** One ontology in a workspace overview, with the imports resolved by the language. */
+export interface WorkspaceOntology {
+    name: string;
+    identity: string;
+    imports: OutlineImport[];
+    source?: SourceLocation;
+}
+
 export function ontologyGroupId(name: string): string {
     return `ontology:${name}`;
 }
@@ -189,6 +197,65 @@ export function derivePackages(outline: OntologyOutline): ViewModel {
         kind: 'ontology'
     };
     return { kind: 'packages', groups: [group], nodes, edges, gensets: [] };
+}
+
+/** All ontologies in a workspace and their import dependencies, without package membership detail. */
+export function deriveWorkspacePackages(ontologies: WorkspaceOntology[]): ViewModel {
+    const ontologyId = (name: string) => `workspace-ontology:${name}`;
+    const byIdentity = new Map(ontologies.map(one => [one.identity, one]));
+    const byName = new Map(ontologies.map(one => [one.name, one]));
+    const nodes: ViewNode[] = ontologies.map(one => ({
+        id: ontologyId(one.name), kind: 'package', name: one.name, stereotype: 'ontology',
+        color: PACKAGE_COLOR, isExternal: false, attributes: [], ...(one.source ? { source: one.source } : {})
+    }));
+    const edges: ViewEdge[] = [];
+    const edgeIds = new Set<string>();
+    const externalIds = new Map<string, string>();
+    const taken = new Set(nodes.map(node => node.id));
+
+    for (const client of ontologies) {
+        for (const imported of client.imports) {
+            const target = (imported.ontology && byIdentity.get(imported.ontology.id))
+                ?? (imported.ontology && byName.get(imported.ontology.name));
+            let supplier: string;
+            if (target) {
+                supplier = ontologyId(target.name);
+            } else {
+                const identity = imported.ontology?.id ?? `<${imported.location}>`;
+                supplier = externalIds.get(identity) ?? importNodeId(imported.ontology?.name ?? imported.alias);
+                if (!externalIds.has(identity)) {
+                    const base = supplier;
+                    for (let suffix = 2; taken.has(supplier); suffix += 1) {
+                        supplier = `${base}#${suffix}`;
+                    }
+                    taken.add(supplier);
+                }
+                externalIds.set(identity, supplier);
+                if (!nodes.some(node => node.id === supplier)) {
+                    nodes.push({
+                        id: supplier, kind: 'package', name: imported.ontology?.name ?? imported.alias,
+                        stereotype: 'ontology', color: imported.ontology ? PACKAGE_COLOR : UNRESOLVED_COLOR,
+                        isExternal: true, attributes: [], location: imported.location,
+                        ...(!imported.ontology ? { unavailable: true } : {}),
+                        ...(imported.documentation ? { documentation: imported.documentation } : {}),
+                        ...(imported.header ?? imported.statement ? { source: imported.header ?? imported.statement } : {})
+                    });
+                }
+            }
+            const source = ontologyId(client.name);
+            const id = dependencyId('import', source, supplier);
+            if (source !== supplier && !edgeIds.has(id)) {
+                edgeIds.add(id);
+                edges.push({
+                    kind: 'dependency', id, source, target: supplier, stereotype: 'import',
+                    ...(imported.alias !== (target?.name ?? imported.ontology?.name ?? imported.alias)
+                        ? { name: imported.alias } : {}),
+                    ...(imported.statement ? { source_: imported.statement } : {})
+                });
+            }
+        }
+    }
+    return { kind: 'packages', groups: [], nodes, edges, gensets: [] };
 }
 
 /**

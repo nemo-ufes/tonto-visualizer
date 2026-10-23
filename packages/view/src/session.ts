@@ -19,7 +19,7 @@ import type { Import, Package } from 'tonto-language';
 import { createTontoServices, isClassDeclaration, isModel, isOntologyBody } from 'tonto-language';
 import type { Model } from './language.js';
 import type { SourceLocation } from './model.js';
-import type { OntologyOutline, OutlineImport, OutlinePackage } from './outline.js';
+import type { OntologyOutline, OutlineImport, OutlinePackage, WorkspaceOntology } from './outline.js';
 
 // Ownership is the language's: which package a bundle entry selected, and
 // which ontology an import loaded, as its publication workspace decided them
@@ -242,6 +242,43 @@ export class ViewSession {
             ...located(header),
             ...documented(header)
         };
+    }
+
+    /** Every declared ontology in the workspace and its language-resolved imports. */
+    async workspaceOntologies(models?: Model[]): Promise<WorkspaceOntology[]> {
+        await this.open();
+        const all = models ?? await this.models();
+        const publication = publicationWorkspace(this.services.shared);
+        const result: WorkspaceOntology[] = [];
+        const names = new Set<string>();
+        for (const model of all) {
+            const header = model.ontologies[0];
+            const identity = documentUri(model);
+            if (!header?.name || !identity || names.has(header.name)) {
+                continue;
+            }
+            names.add(header.name);
+            const manifest = header.bundled ? await this.outline(identity) : undefined;
+            const imports: OutlineImport[] = manifest
+                ? [...manifest.imports, ...manifest.packages.flatMap(one => one.imports)]
+                : model.imports.filter(statement => statement.location !== undefined).map(statement => {
+                    const unit = publication.imported.get(statement);
+                    const importedHeader = unit?.root?.parseResult.value.ontologies[0];
+                    const source = locationOf(statement);
+                    const targetSource = importedHeader && unit?.root?.uri.scheme === 'file'
+                        ? locationOf(importedHeader) : undefined;
+                    return {
+                        alias: statement.alias ?? '',
+                        location: (statement.location ?? '').slice(1, -1),
+                        ...(unit ? { ontology: { id: unit.id, name: unit.declaration?.name ?? unit.name } } : {}),
+                        ...(source ? { statement: source } : {}),
+                        ...(targetSource ? { header: targetSource } : {})
+                    };
+                });
+            const source = locationOf(header);
+            result.push({ name: header.name, identity, imports, ...(source ? { source } : {}) });
+        }
+        return result;
     }
 
     /** The models of one document only, for a view that follows a single file. */

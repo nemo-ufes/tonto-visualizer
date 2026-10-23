@@ -40,12 +40,14 @@ const optionsPanel = element('options');
 const staleLabel = element('stale');
 // Looked up rather than required: a page without it -- the tests' -- still draws.
 const busyLabel = document.getElementById('busy');
+const ontologyDiagramButton = document.getElementById('ontologyDiagram') as HTMLButtonElement | null;
 
 let view: ViewModel = { groups: [], nodes: [], edges: [], gensets: [] };
 let positions: Record<string, Rect> = {};
 let routes: Record<string, EdgeRoute> = {};
 let display: DisplayOptions | undefined;
 let content: ContentOptions | undefined;
+let ontologyDiagram: 'packages' | 'classes' = 'packages';
 let layout: LayoutOptions | undefined;
 let packages: string[] = [];
 let filters: FilterItem[] = [];
@@ -123,8 +125,17 @@ window.addEventListener('message', event => {
         routes = message.routes;
         display = message.display;
         content = message.content;
+        ontologyDiagram = message.workspaceDiagram ?? message.ontologyDiagram ?? 'packages';
         layout = message.layout;
         packages = message.packages;
+        element('views').hidden = !!message.workspaceDiagram;
+        if (ontologyDiagramButton) {
+            ontologyDiagramButton.hidden = !message.ontologyName && !message.workspaceDiagram;
+            ontologyDiagramButton.textContent = ontologyDiagram === 'packages' ? 'Classes' : 'Packages';
+            ontologyDiagramButton.title = ontologyDiagram === 'packages'
+                ? `Show ${message.workspaceDiagram ? 'workspace' : message.ontologyName} classes`
+                : `Show ${message.workspaceDiagram ? 'workspace' : message.ontologyName} packages`;
+        }
         filters = message.filters;
         staleLabel.hidden = !message.stale;
         staleLabel.textContent = message.stale ? `does not parse — showing the last good diagram` : '';
@@ -1129,6 +1140,9 @@ element('distanceUp').addEventListener('click', () => changeDistance(ASSOCIATION
 // The commands are in the palette, which is not where a reader looking at a
 // diagram looks for another arrangement of it.
 element('views').addEventListener('click', () => host.postMessage({ type: 'chooseView' }));
+ontologyDiagramButton?.addEventListener('click', () => {
+    host.postMessage({ type: 'switchOntologyDiagram', diagram: ontologyDiagram === 'packages' ? 'classes' : 'packages' });
+});
 element('hide').addEventListener('click', hideSelection);
 // No format: the name the modeller gives the file in the dialog decides.
 element('exportButton').addEventListener('click', () => host.postMessage({ type: 'export' }));

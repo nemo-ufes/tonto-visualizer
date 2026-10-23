@@ -195,9 +195,8 @@ export interface ViewGroup {
 
 export interface ViewModel {
     /**
-     * `packages` for an ontology manifest's diagram: its packages, the
-     * ontologies it imports, and the dependencies between them. Absent for a
-     * class diagram, which is every other view.
+     * `packages` for an ontology or workspace package diagram: packages and
+     * their import dependencies. Absent for a class diagram.
      */
     kind?: 'packages';
     /** The package the view is centred on, when it is centred on one. */

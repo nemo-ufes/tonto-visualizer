@@ -38,6 +38,10 @@ export type ToPanel =
         content: ContentOptions;
         layout: LayoutOptions;
         packages: string[];
+        /** Present for a bundled ontology manifest, whose package and class diagrams are switchable. */
+        ontologyName?: string;
+        ontologyDiagram?: 'packages' | 'classes';
+        workspaceDiagram?: 'packages' | 'classes';
         filters: FilterItem[];
         /** Centre and scale this newly opened view once; later redraws preserve the viewport. */
         fit?: boolean;
@@ -71,6 +75,8 @@ export type FromPanel =
     | { type: 'reveal'; id: string }
     /** The title was clicked: which arrangement of this model to draw. */
     | { type: 'chooseView' }
+    /** Open the ontology's independently arranged package or class view. */
+    | { type: 'switchOntologyDiagram'; diagram: 'packages' | 'classes' }
     | { type: 'display'; display: Partial<DisplayOptions> }
     | { type: 'layout'; layout: Partial<LayoutOptions> }
     | { type: 'content'; content: Partial<ContentOptions> }
