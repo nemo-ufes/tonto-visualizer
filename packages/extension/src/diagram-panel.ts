@@ -24,6 +24,7 @@ import { routesAffectedBy, safeRestoredPlacements } from './restoration.js';
 import {
     labelOfView, ViewStore, viewChoicesFor, viewFileExists, viewNameFor, viewNameOf, viewToShow, viewUriFor
 } from './view-store.js';
+import { PANEL_BODY } from './webview/skeleton.js';
 
 const DEBOUNCE = 300;
 const WORKSPACE_CONFIRMATION_CLASS_LIMIT = 100;
@@ -1170,37 +1171,7 @@ export class DiagramPanel {
 <title>Tonto diagram</title>
 </head>
 <body>
-<div id="shell">
-    <div id="toolbar">
-        <button id="fit" title="Fit to view" aria-pressed="false">Fit</button>
-        <button id="arrange" title="Arrange the whole diagram automatically">Arrange</button>
-        <button id="newWindow" class="icon-button" title="Move into a New Window" aria-label="Move into a New Window">
-            <svg viewBox="0 0 16 16" aria-hidden="true">
-                <path d="M 9.5 2.5 H 13.5 V 6.5 M 13.5 2.5 L 7 9 M 11.5 8.5 V 13.5 H 2.5 V 4.5 H 7.5"></path>
-            </svg>
-        </button>
-        <span class="distance-control" role="group" aria-label="Association distance">
-            <button id="distanceDown" title="Reduce association distance">−</button>
-            <span id="distance" class="distance" title="Association distance used by Arrange">Distance 100%</span>
-            <button id="distanceUp" title="Increase association distance">+</button>
-        </span>
-        <button id="zoomOut" title="Zoom out">−</button>
-        <span id="scale" class="scale">100%</span>
-        <button id="zoomIn" title="Zoom in">+</button>
-        <button id="hide" title="Hide the selected classes or associations" disabled>Hide</button>
-        <button id="optionsButton" title="What is drawn">⚙</button>
-        <button id="exportButton" title="Export as SVG or PNG">Export</button>
-        <button id="views" title="Choose a view of this model">Views</button>
-        <button id="ontologyDiagram" title="Switch ontology diagram" hidden>Classes</button>
-        <span class="spacer"></span>
-        <span id="busy" class="busy" hidden></span>
-        <span id="stale" class="stale" hidden></span>
-    </div>
-    <div id="options" class="panel" hidden></div>
-    <div id="viewport">
-        <div id="canvas"></div>
-    </div>
-</div>
+${PANEL_BODY}
 <script nonce="${nonce}" src="${script}"></script>
 </body>
 </html>`;

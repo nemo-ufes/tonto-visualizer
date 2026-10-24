@@ -3,6 +3,7 @@
 import { beforeAll, describe, expect, test, vi } from 'vitest';
 import type { ViewModel } from 'tonto-view';
 import { defaultContentOptions, defaultDisplayOptions, defaultLayoutOptions } from 'tonto-view';
+import { PANEL_BODY } from '../src/webview/skeleton.js';
 
 const messages: unknown[] = [];
 
@@ -34,21 +35,6 @@ const view: ViewModel = {
         }
     ]
 };
-
-function panelHtml(): string {
-    return `<div id="shell">
-        <div id="toolbar">
-            <button id="fit"></button><button id="arrange"></button><button id="newWindow"></button>
-            <button id="distanceDown"></button><span id="distance"></span><button id="distanceUp"></button><button id="views"></button>
-            <button id="zoomOut"></button><span id="scale"></span><button id="zoomIn"></button>
-            <button id="hide" disabled></button><button id="optionsButton"></button><button id="exportButton"></button>
-            <span id="stale" hidden></span>
-        </div>
-        <div id="options" hidden></div>
-        <div id="viewport"><div id="canvas"></div></div>
-        <div id="legend" hidden></div>
-    </div>`;
-}
 
 function sendModel(hidden: string[] = [], stale?: string, fit = false): void {
     const visibleNodes = view.nodes.filter(node => !hidden.includes(node.id));
@@ -147,7 +133,7 @@ function checkbox(label: string): HTMLInputElement {
 
 describe('the webview and its host protocol', () => {
     beforeAll(async () => {
-        document.body.innerHTML = panelHtml();
+        document.body.innerHTML = PANEL_BODY;
         const viewport = document.getElementById('viewport')!;
         Object.defineProperty(viewport, 'clientWidth', { value: 900, configurable: true });
         Object.defineProperty(viewport, 'clientHeight', { value: 700, configurable: true });

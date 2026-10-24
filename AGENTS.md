@@ -45,6 +45,27 @@ elsewhere and is read, not reimplemented.
   cardinalities printing on top of each other, routes landing in the corner of
   the canvas -- passed review as code and was caught by looking.
 
+## What other projects load from here
+
+The panel also runs outside VS Code: a page can host it as the extension does,
+by loading its script into its body and answering its messages. The
+`exports` map in `packages/extension/package.json` names what such a page
+uses -- the built script and stylesheet, `src/webview/skeleton.ts`,
+`src/protocol.ts`, `src/restoration.ts` and `src/filters.ts` -- and that is a
+promise to code outside this repository, which updates by moving a pin and
+finds out what changed when its build breaks.
+
+- Change the panel's body only in `skeleton.ts`; the extension and the tests
+  both load it from there.
+- A change to `protocol.ts` -- a message renamed, a field made required -- is
+  a breaking change for every host, not only the extension. Add rather than
+  rename where you can, and say so in the commit message where you cannot.
+- `test/webview.test.ts` drives the panel through a stand-in host exactly as
+  another page does. Keep it passing.
+- Keep the exported modules free of `vscode`. The language is reached only
+  through `tonto-language/core`, whose few Node imports such a page stands in
+  for.
+
 ## House style
 
 - Comments say why, not what: the reason a table has a hole in it, the defect a
