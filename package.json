@@ -14,6 +14,7 @@
         "package": "npm run build && npm run package --workspace=tonto-visualizer",
         "versions:check": "node scripts/versioning.mjs check",
         "release:prepare": "node scripts/versioning.mjs prepare",
+        "release": "node scripts/release.mjs",
         "dev:install": "node scripts/dev-install.mjs",
         "install:local": "npm run dev:install"
     },

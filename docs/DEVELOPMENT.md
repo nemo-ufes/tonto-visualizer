@@ -79,37 +79,34 @@ extension, so uninstall it once, or both will open a diagram panel.
 
 ### Prepare and publish a release
 
-The developer communicates release intent by choosing a version, reviewing the
-version change, and dispatching the `Release tonto visualizer` workflow by
-hand. Pushing a tag does not start a release. The workflow's Marketplace
-option defaults to off, so a GitHub-only release needs no registry
-credentials.
+Commit the release-ready source to `main` first, including the language
+submodule at the commit the release is built against. Then run:
 
-1. Choose the SemVer release, for example `0.2.0`.
-2. Run `npm run release:prepare -- 0.2.0`. It sets the version in every
-   workspace's `package.json` and in the lockfile, and verifies they agree. It
-   does not publish anything.
-3. Review and commit the version change and the release-ready source,
-   including the language submodule at the commit the release is built
-   against: the release is built from that pin, not from tonto's `main`.
-4. Create a signed, annotated tag at that commit and push it. Check first that
-   the commit being tagged carries the version, since the workflow refuses a
-   tag that does not match:
+```sh
+npm run release -- 0.3.1
+```
 
-   ```sh
-   git status --short                   # nothing left uncommitted
-   npm run versions:check -- v0.2.0
-   git tag -s v0.2.0 -m "Release v0.2.0"
-   git push origin v0.2.0
-   ```
+The script checks that the working tree is clean, local `main` matches
+`origin/main`, the version is newer than the current release, the tag is
+unused, and `gh` is authenticated. It shows the steps and asks once before it
+updates versions, commits them, creates a signed annotated tag, pushes `main`
+and the tag, and dispatches `Release tonto visualizer`. Use `--dry-run` to show
+the plan without changing the version or repository. Use `--yes` to skip the
+confirmation in a deliberate non-interactive run.
 
-   Pushing the tag does not run the release workflow.
-5. In GitHub Actions, select `Release tonto visualizer` and choose **Run
-   workflow**. Enter the tag and leave **Publish extension to the VS Code
-   Marketplace** unchecked for a GitHub-only release. The workflow verifies the
-   signed tag and the versions, builds, typechecks and tests the tagged commit
-   with its pinned language, packages `tonto-visualizer-<version>.vsix`, and
-   attaches it to the GitHub Release.
+The Marketplace option defaults to off. To publish there as well, pass
+`--publish-marketplace` explicitly:
+
+```sh
+npm run release -- 0.3.1 --publish-marketplace
+```
+
+Pushing a tag alone does not start a release. The script dispatches the
+workflow after pushing; GitHub Actions verifies the signed tag and versions,
+builds, typechecks and tests the tagged commit with its pinned language,
+packages `tonto-visualizer-<version>.vsix`, and attaches it to the GitHub
+Release. If a step fails, the script stops there and reports the error; it
+does not roll back a commit, tag, or push that already succeeded.
 
 The signed tag identifies the release source; the GitHub Release is the
 download page. The workflow requires the `RELEASE_SIGNING_PUBLIC_KEY` secret
