@@ -17,6 +17,7 @@ import type { ViewMove } from './rename.js';
 import { autoLayout } from 'tonto-canvas';
 import { darkTheme, drawnSizes, lightTheme, movedTo, placeNewNodes, render, sizeOf } from 'tonto-canvas/draw';
 import { filterItemsOf, filterView } from './filters.js';
+import { lockDiagramGroup } from './group-lock.js';
 import { isWithinFolder } from './paths.js';
 import type { FilterItem, FromPanel, Rect, ToPanel } from './protocol.js';
 import { routesAffectedBy, safeRestoredPlacements } from './restoration.js';
@@ -225,6 +226,7 @@ export class DiagramPanel {
         );
         DiagramPanel.current = new DiagramPanel(panel, extensionUri);
         vscode.commands.executeCommand('setContext', 'tontoVizOpen', true);
+        void lockDiagramGroup(panel);
         await DiagramPanel.current.show(document, viewUri);
     }
 
@@ -245,6 +247,7 @@ export class DiagramPanel {
         );
         DiagramPanel.current = new DiagramPanel(panel, extensionUri);
         vscode.commands.executeCommand('setContext', 'tontoVizOpen', true);
+        void lockDiagramGroup(panel);
         await DiagramPanel.current.showWorkspace(folders);
     }
 
