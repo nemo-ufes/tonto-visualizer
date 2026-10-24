@@ -128,7 +128,7 @@ window.addEventListener('message', event => {
         ontologyDiagram = message.workspaceDiagram ?? message.ontologyDiagram ?? 'packages';
         layout = message.layout;
         packages = message.packages;
-        element('views').hidden = !!message.workspaceDiagram;
+        element('views').hidden = !!message.workspaceDiagram || !message.hasMultipleViews;
         if (ontologyDiagramButton) {
             ontologyDiagramButton.hidden = !message.ontologyName && !message.workspaceDiagram;
             ontologyDiagramButton.textContent = ontologyDiagram === 'packages' ? 'Classes' : 'Packages';

@@ -38,6 +38,8 @@ export type ToPanel =
         content: ContentOptions;
         layout: LayoutOptions;
         packages: string[];
+        /** The Views chooser is useful only when this model has saved alternatives. */
+        hasMultipleViews: boolean;
         /** Present for a bundled ontology manifest, whose package and class diagrams are switchable. */
         ontologyName?: string;
         ontologyDiagram?: 'packages' | 'classes';
