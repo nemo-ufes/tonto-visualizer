@@ -33,11 +33,16 @@ export async function lockDiagramGroup(panel: vscode.WebviewPanel): Promise<void
             return;
         }
         const previous = vscode.window.tabGroups.activeTabGroup.viewColumn;
-        if (!panel.active) {
+        // Ask the tab groups, not `panel.active`: a new panel reports itself
+        // active before any focus has moved, and trusting that locked the
+        // group the modeller was typing in.
+        if (!group.isActive) {
             panel.reveal(group.viewColumn, false);
-            // Locking before VS Code has moved focus would lock the group the
-            // modeller is typing in.
-            if (!await settled(() => panel.active || undefined, [panel.onDidChangeViewState])) {
+            const focused = await settled(() => groupOfDiagram()?.isActive || undefined, [
+                vscode.window.tabGroups.onDidChangeTabGroups, vscode.window.tabGroups.onDidChangeTabs,
+                panel.onDidChangeViewState
+            ]);
+            if (!focused || vscode.window.tabGroups.activeTabGroup.viewColumn !== group.viewColumn) {
                 return;
             }
         }
