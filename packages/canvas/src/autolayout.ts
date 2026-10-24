@@ -256,6 +256,96 @@ function partialRing(ring: number): Point[] {
     return offsets;
 }
 
+/**
+ * ELK's hierarchy pass can leave disconnected package compounds thousands of
+ * pixels apart. Their members have already been arranged inside each frame,
+ * so arrange the frames as plain boxes and translate each package rigidly.
+ */
+async function compactPackageContainers(
+    view: ViewModel,
+    positions: Positions,
+    sizes: Record<string, Size>,
+    groups: ViewModel['groups'],
+    subject: ReadonlySet<string>,
+    settings: LayoutOptions,
+    routing: RoutingStyle,
+    partonomy: boolean
+): Promise<void> {
+    const sizeOf = (id: string): Size => sizes[id] ?? { width: 160, height: 60 };
+    const members = new Map<string, string>();
+    const frames = groups.flatMap(group => {
+        const rects = group.nodes.filter(id => subject.has(id))
+            .map(id => positions[id]).filter((rect): rect is Rect => rect !== undefined);
+        if (rects.length === 0) {
+            return [];
+        }
+        for (const id of group.nodes) {
+            if (subject.has(id)) {
+                members.set(id, group.id);
+            }
+        }
+        const bounds = boundsOf(rects);
+        return [{
+            id: group.id,
+            bounds,
+            size: {
+                width: bounds.width + GROUP_PADDING * 2,
+                height: bounds.height + GROUP_PADDING * 2 + GROUP_HEADER
+            }
+        }];
+    });
+    const framed = new Set(members.keys());
+    const loose = view.nodes.filter(node => subject.has(node.id) && !framed.has(node.id));
+    const referenceOf = (id: string) => members.get(id) ?? id;
+    const uniqueEdges = new Map<string, ElkEdge>();
+    for (const edge of view.edges) {
+        if (!subject.has(edge.source) || !subject.has(edge.target)) {
+            continue;
+        }
+        const wholePart = partonomy ? wholePartOf(edge) : undefined;
+        const source = referenceOf(wholePart?.whole ?? (edge.kind === 'generalization' ? edge.target : edge.source));
+        const target = referenceOf(wholePart?.part ?? (edge.kind === 'generalization' ? edge.source : edge.target));
+        if (source === target) {
+            continue;
+        }
+        const key = `${source}\u0000${target}`;
+        if (!uniqueEdges.has(key)) {
+            uniqueEdges.set(key, { id: `package-edge:${source}->${target}`, sources: [source], targets: [target] });
+        }
+    }
+    const graph: ElkNode = {
+        id: 'package-root',
+        layoutOptions: optionsFor(settings, routing),
+        children: [
+            ...frames.map(frame => ({ id: frame.id, ...frame.size })),
+            ...loose.map(node => ({ id: node.id, ...sizeOf(node.id) }))
+        ],
+        edges: [...uniqueEdges.values()]
+    };
+    const laid = await new Elk().layout(graph);
+    const translatedFrames = new Map((laid.children ?? []).map(node => [node.id, node]));
+    for (const frame of frames) {
+        const destination = translatedFrames.get(frame.id);
+        if (!destination) {
+            continue;
+        }
+        const dx = (destination.x ?? 0) - (frame.bounds.x - GROUP_PADDING);
+        const dy = (destination.y ?? 0) - (frame.bounds.y - GROUP_PADDING - GROUP_HEADER);
+        for (const id of groups.find(group => group.id === frame.id)?.nodes ?? []) {
+            const rect = positions[id];
+            if (rect && subject.has(id)) {
+                positions[id] = { ...rect, x: Math.round(rect.x + dx), y: Math.round(rect.y + dy) };
+            }
+        }
+    }
+    for (const node of loose) {
+        const destination = translatedFrames.get(node.id);
+        if (destination && positions[node.id]) {
+            positions[node.id] = { ...positions[node.id]!, x: Math.round(destination.x ?? 0), y: Math.round(destination.y ?? 0) };
+        }
+    }
+}
+
 export async function autoLayout(
     view: ViewModel,
     sizes: Record<string, Size>,
@@ -366,6 +456,9 @@ async function layeredPlantUmlLayout(
         }
     };
     walk(laid, 0, 0);
+    if (grouped && !request.only) {
+        await compactPackageContainers(view, positions, sizes, groups, subject, settings, routing, partonomy);
+    }
     if (request.only) {
         placePartialLayout(view, positions, current, subject);
     }
