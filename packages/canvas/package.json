@@ -1,6 +1,6 @@
 {
     "name": "tonto-canvas",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "private": true,
     "description": "The drawing half: sizes, placement, routing and SVG for a Tonto view model. Runs in a webview and in Node.",
     "license": "MIT",
