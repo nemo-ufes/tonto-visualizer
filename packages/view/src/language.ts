@@ -1,14 +1,16 @@
 /**
  * Everything this package borrows from the language, named in one place.
  *
- * Two kinds of import live here. What `tonto-language` exports by name comes
- * through the package name. What it does not -- the nature reasoning and the
- * stereotype model, which are internal to that package's `exports` map -- comes
- * through a path into the submodule, because the alternative is a second copy
- * of the reasoning that decides what colour a class is, and a picture that
- * disagrees with the validator is worse than no picture.
+ * It comes from `tonto-language/core`, the entry that leaves out the
+ * language's command-line session and export writers. Those read folders and
+ * write files through Node, and this package also runs where there is no
+ * Node: the panel in a webview, and an editor in a browser page. The nature
+ * reasoning and the stereotype model come from the language too, because the
+ * alternative is a second copy of the reasoning that decides what colour a
+ * class is, and a picture that disagrees with the validator is worse than no
+ * picture.
  *
- * If that package ever widens its exports, this file is the only one to change.
+ * If the language's exports change, this file is the only one to change.
  *
  * The one exception is ontology ownership -- which package a bundle entry
  * selects, which ontology an import loads -- decided by the language's
@@ -16,7 +18,7 @@
  * in `session.ts`, which runs only in Node, and not here.
  */
 
-import type { Relation as LanguageRelation } from 'tonto-language';
+import type { Relation as LanguageRelation } from 'tonto-language/core';
 
 export type {
     Attribute,
@@ -29,7 +31,7 @@ export type {
     Relation,
     RelationEndMetaAttributes,
     RelationEndTarget
-} from 'tonto-language';
+} from 'tonto-language/core';
 
 export {
     isClassDeclaration,
@@ -40,14 +42,12 @@ export {
     isModel,
     isOntologyBody,
     isRelation
-} from 'tonto-language';
+} from 'tonto-language/core';
 
-export { getRelationSource, isParthood, wholeEndOf } from 'tonto-language';
+export { getRelationSource, isParthood, wholeEndOf } from 'tonto-language/core';
 
-// eslint-disable-next-line no-restricted-imports -- see the note above.
-export { getEffectiveNatures } from '../../../vendor/tonto/packages/language/out/utils/natures.js';
-export type { EffectiveNatures, NatureOrigin } from '../../../vendor/tonto/packages/language/out/utils/natures.js';
-export { isUltimateSortal } from '../../../vendor/tonto/packages/language/out/validation/stereotype-model.js';
+export { getEffectiveNatures, isUltimateSortal } from 'tonto-language/core';
+export type { EffectiveNatures, NatureOrigin } from 'tonto-language/core';
 
 /**
  * The agreement part of the language's inverse-end rule, kept browser-safe.

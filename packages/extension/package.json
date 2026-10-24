@@ -35,6 +35,14 @@
         "nemo-ufes.tonto-vscode"
     ],
     "main": "./out/extension.cjs",
+    "exports": {
+        "./panel/script": "./out/webview.js",
+        "./panel/style": "./media/canvas.css",
+        "./panel/skeleton": "./src/webview/skeleton.ts",
+        "./panel/protocol": "./src/protocol.ts",
+        "./panel/restoration": "./src/restoration.ts",
+        "./panel/filters": "./src/filters.ts"
+    },
     "activationEvents": [
         "onLanguage:tonto"
     ],

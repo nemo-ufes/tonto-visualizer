@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { PANEL_BODY } from '../src/webview/skeleton.js';
 
 const stylesheet = readFileSync(resolve(import.meta.dirname, '../media/canvas.css'), 'utf8');
 const panel = readFileSync(resolve(import.meta.dirname, '../src/diagram-panel.ts'), 'utf8');
@@ -67,13 +68,13 @@ describe('the panel chrome', () => {
     test('gives the webview every element it asks the page for', () => {
         const webview = readFileSync(resolve(import.meta.dirname, '../src/webview/main.ts'), 'utf8');
         const asked = [...webview.matchAll(/\belement\('([^']+)'/g)].map(match => match[1]!);
-        const offered = new Set([...panel.matchAll(/id="([^"]+)"/g)].map(match => match[1]!));
+        const offered = new Set([...PANEL_BODY.matchAll(/id="([^"]+)"/g)].map(match => match[1]!));
         expect(asked.length).toBeGreaterThan(0);
         expect(asked.filter(id => !offered.has(id))).toEqual([]);
     });
 
     test('shows the move-to-window action as a labelled icon', () => {
-        const button = /<button id="newWindow"([^>]*)>([\s\S]*?)<\/button>/.exec(panel);
+        const button = /<button id="newWindow"([^>]*)>([\s\S]*?)<\/button>/.exec(PANEL_BODY);
         expect(button).not.toBeNull();
         expect(button![1]).toContain('aria-label="Move into a New Window"');
         expect(button![2]).toContain('<svg');
@@ -81,7 +82,7 @@ describe('the panel chrome', () => {
     });
 
     test('starts with fit, arrange and new window without repeating the file name', () => {
-        const toolbar = /<div id="toolbar">([\s\S]*?)<\/div>/.exec(panel);
+        const toolbar = /<div id="toolbar">([\s\S]*?)<\/div>/.exec(PANEL_BODY);
         expect(toolbar).not.toBeNull();
         const controls = [...toolbar![1]!.matchAll(/<(?:button|span)\b[^>]*id="([^"]+)"/g)]
             .map(match => match[1]);
