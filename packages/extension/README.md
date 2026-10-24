@@ -13,6 +13,8 @@ rendering server, and nothing sent anywhere.
 
 Install the [**tonto** extension](https://github.com/nemo-ufes/tonto), which provides the `.tonto` language, and this one beside it, in VS Code 1.90 or later. Then open a `.tonto` file and run **Tonto: Open Diagram**, or use the diagram button in the editor's title bar or **Open Diagram** in the Explorer's context menu.
 
+The diagram opens in an editor group of its own, which it locks, so a file you open next, from the Explorer or anywhere else, lands beside the diagram instead of covering it. The padlock in the group's title bar unlocks it.
+
 The diagram above is the `people.tonto` example from the tonto README:
 
 ```tonto
