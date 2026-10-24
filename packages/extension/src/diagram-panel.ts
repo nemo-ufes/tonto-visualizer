@@ -14,7 +14,7 @@ import {
 } from 'tonto-view';
 import { ViewSession } from 'tonto-view/session';
 import type { ViewMove } from './rename.js';
-import { autoLayout, placeRelatorsAtDerivedMiddles } from 'tonto-canvas';
+import { autoLayout } from 'tonto-canvas';
 import { darkTheme, drawnSizes, lightTheme, movedTo, placeNewNodes, render, sizeOf } from 'tonto-canvas/draw';
 import { filterItemsOf, filterView } from './filters.js';
 import type { FilterItem, FromPanel, Rect, ToPanel } from './protocol.js';
@@ -25,6 +25,70 @@ import {
 
 const DEBOUNCE = 300;
 const WORKSPACE_CONFIRMATION_CLASS_LIMIT = 100;
+
+/**
+ * A relator reifies the material relation between its mediated classes. Make
+ * that path part of the graph ELK arranges: an edge into the relator followed
+ * by an edge out gives it an intermediate rank and makes neighbouring nodes
+ * leave room for it.
+ */
+function prioritizeRelatorPaths(view: ViewModel, materials: readonly ViewRelation[]): ViewModel {
+    const relators = new Set(view.nodes
+        .filter(node => node.stereotype === 'relator').map(node => node.id));
+    const materialFor = new Map<string, ViewRelation>();
+    for (const material of materials) {
+        for (const id of material.derivedFrom ?? []) {
+            if (relators.has(id) && !materialFor.has(id)) {
+                materialFor.set(id, material);
+            }
+        }
+    }
+
+    const mediationEdges = view.edges.filter((edge): edge is ViewRelation =>
+        edge.kind === 'relation' && edge.stereotype === 'mediation');
+    const mediationsFor = new Map<string, ViewRelation[]>();
+    for (const edge of mediationEdges) {
+        const relator = relators.has(edge.source) ? edge.source
+            : relators.has(edge.target) ? edge.target : undefined;
+        if (relator) {
+            const edges = mediationsFor.get(relator) ?? [];
+            edges.push(edge);
+            mediationsFor.set(relator, edges);
+        }
+    }
+    const directions = new Map<string, Pick<ViewRelation, 'source' | 'target'>>();
+    for (const relator of relators) {
+        const mediations = mediationsFor.get(relator) ?? [];
+        const classAt = (edge: ViewRelation) => edge.source === relator ? edge.target : edge.source;
+        const material = materialFor.get(relator);
+        const sourceMediation = material
+            ? mediations.find(edge => classAt(edge) === material.source)
+            : mediations[0];
+        const targetMediation = material
+            ? mediations.find(edge => classAt(edge) === material.target)
+            : mediations.find(edge => edge.id !== sourceMediation?.id);
+        if (!sourceMediation || !targetMediation || sourceMediation.id === targetMediation.id) {
+            continue;
+        }
+        const sourceClass = classAt(sourceMediation);
+        const targetClass = classAt(targetMediation);
+        // Use a derived material relation's reading when it names this
+        // relator. Otherwise, the declaration order of its two mediations is
+        // the stable direction. In both cases the layout path runs through
+        // the relator, while the displayed edges keep their model direction.
+        directions.set(sourceMediation.id, { source: sourceClass, target: relator });
+        directions.set(targetMediation.id, { source: relator, target: targetClass });
+    }
+
+    if (directions.size === 0) {
+        return view;
+    }
+    const edges = view.edges.map(edge => {
+        const direction = directions.get(edge.id);
+        return direction ? { ...edge, ...direction } : edge;
+    });
+    return { ...view, edges };
+}
 
 /**
  * Busts the webview's cache of its own script and stylesheet.
@@ -49,6 +113,7 @@ export class DiagramPanel {
     private workspaceFolders: string[] | undefined;
     private workspaceFolderItems: readonly vscode.WorkspaceFolder[] | undefined;
     private workspaceDiagram: 'packages' | 'classes' = 'packages';
+    private hasMultipleViews = false;
     private view: ViewModel = { groups: [], nodes: [], edges: [], gensets: [] };
     /** The last successfully derived model, before modeller-owned filters. */
     private catalog: ViewModel = { groups: [], nodes: [], edges: [], gensets: [] };
@@ -194,6 +259,7 @@ export class DiagramPanel {
             return;
         }
         this.document = undefined;
+        this.hasMultipleViews = false;
         this.workspaceFolders = paths;
         this.workspaceFolderItems = [...folders];
         this.workspaceDiagram = diagram;
@@ -243,6 +309,11 @@ export class DiagramPanel {
             await store.dispose();
             return;
         }
+        const hasMultipleViews = (await viewChoicesFor(document.uri)).length > 1;
+        if (generation !== this.generation) {
+            await store.dispose();
+            return;
+        }
         await this.store?.dispose();
         if (generation !== this.generation) {
             await store.dispose();
@@ -250,6 +321,7 @@ export class DiagramPanel {
         }
         this.document = document;
         this.viewOfDocument.set(document.uri.toString(), viewUri);
+        this.hasMultipleViews = hasMultipleViews;
         this.panel.title = this.diagramTitle(document.uri, viewUri);
         this.session = session;
         this.store = store;
@@ -376,8 +448,14 @@ export class DiagramPanel {
         const previous = this.positions;
         const arrangeDerivedRelators = store.state.content.derivedMaterialMode !== 'relations'
             && view.kind !== 'packages';
+        const hidden = store.state.content.hidden ?? [];
         const layoutView = arrangeDerivedRelators
-            ? filterView(filterDerivedMaterial(this.completeCatalog, 'relations'), store.state.content.hidden ?? [])
+            ? prioritizeRelatorPaths(
+                filterView(filterDerivedMaterial(this.completeCatalog, 'relators'), hidden),
+                this.completeCatalog.edges.filter((edge): edge is ViewRelation =>
+                    edge.kind === 'relation' && edge.stereotype === 'material'
+                    && !hidden.includes(edge.id))
+            )
             : view;
         const layoutNodeIds = new Set(layoutView.nodes.map(node => node.id));
         const layoutOnly = only?.filter(id => layoutView.nodes.some(node => node.id === id));
@@ -414,24 +492,6 @@ export class DiagramPanel {
         }
         if (request !== this.layoutRequest || store !== this.store || view !== this.view) {
             return false;
-        }
-        if (arrangeDerivedRelators) {
-            const positions = { ...laid.positions };
-            for (const node of view.nodes) {
-                if (node.stereotype === 'relator' && !layoutNodeIds.has(node.id) && previous[node.id]) {
-                    positions[node.id] = previous[node.id]!;
-                }
-            }
-            const relators = new Set(view.nodes
-                .filter(node => node.stereotype === 'relator' && (!only || only.includes(node.id)))
-                .map(node => node.id));
-            const layoutEdgeIds = new Set(layoutView.edges.map(edge => edge.id));
-            const derivedMaterial = this.completeCatalog.edges.filter((edge): edge is ViewRelation =>
-                edge.kind === 'relation' && edge.stereotype === 'material' && layoutEdgeIds.has(edge.id));
-            laid = {
-                ...laid,
-                positions: placeRelatorsAtDerivedMiddles(positions, derivedMaterial, relators)
-            };
         }
         this.positions = laid.positions;
         store.move(movedTo(laid.positions, store.state.nodes));
@@ -776,6 +836,7 @@ export class DiagramPanel {
             content: this.effectiveContent(store.state.content),
             layout: store.state.layout,
             packages: this.workspaceFolders && this.workspaceDiagram === 'packages' ? [] : this.availablePackages,
+            hasMultipleViews: !this.workspaceFolders && this.hasMultipleViews,
             ...(this.ontologyName ? { ontologyName: this.ontologyName } : {}),
             ...(this.ontologyName ? { ontologyDiagram: this.ontologyDiagram } : {}),
             ...(this.workspaceFolders ? { workspaceDiagram: this.workspaceDiagram } : {}),

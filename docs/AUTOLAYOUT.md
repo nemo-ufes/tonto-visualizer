@@ -9,6 +9,13 @@ edges participate in ranking and within-rank order. Saved positions still
 belong to the modeller and survive ordinary edits. Ontology package diagrams
 use the same layered options.
 
+When a relator is shown with a material relation derived from it, the layout
+uses the material relation's reading to orient its two mediations as
+source-class → relator → target-class. Without a derived material relation,
+the order of the two mediation declarations supplies that direction. The
+layout reverses the first mediation as needed; drawn edges keep the directions
+and semantics from the view model.
+
 ## Tried and abandoned
 
 - **Semantic ELK post-processing.** The earlier pipeline re-ranked taxonomies,
