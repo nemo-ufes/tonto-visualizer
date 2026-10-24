@@ -17,6 +17,7 @@ import type { ViewMove } from './rename.js';
 import { autoLayout } from 'tonto-canvas';
 import { darkTheme, drawnSizes, lightTheme, movedTo, placeNewNodes, render, sizeOf } from 'tonto-canvas/draw';
 import { filterItemsOf, filterView } from './filters.js';
+import { isWithinFolder } from './paths.js';
 import type { FilterItem, FromPanel, Rect, ToPanel } from './protocol.js';
 import { routesAffectedBy, safeRestoredPlacements } from './restoration.js';
 import {
@@ -147,6 +148,12 @@ export class DiagramPanel {
     /** The first drawing of an opened view should fill its viewport, exactly once. */
     private fitNextView = true;
     private selected = new Set<string>();
+    /**
+     * Documents closed since the last refresh, whose editor text the session
+     * may still hold. Closing without saving discards that text, and a diagram
+     * that kept drawing it showed edits that exist nowhere any more.
+     */
+    private readonly closedBuffers = new Set<string>();
     private disposal: Promise<void> | undefined;
     /** The last message built, so a panel that becomes ready late still gets it. */
     private last: ToPanel | undefined;
@@ -171,6 +178,12 @@ export class DiagramPanel {
         }));
         this.disposables.push(vscode.workspace.onDidSaveTextDocument(document => {
             if ((document === this.document || this.inWorkspace(document.uri)) && updateMode() === 'onSave') {
+                this.schedule();
+            }
+        }));
+        this.disposables.push(vscode.workspace.onDidCloseTextDocument(document => {
+            if (document.languageId === 'tonto' && (document === this.document || this.inWorkspace(document.uri))) {
+                this.closedBuffers.add(document.uri.toString());
                 this.schedule();
             }
         }));
@@ -437,11 +450,18 @@ export class DiagramPanel {
         }
     }
 
-    /** Arranges the diagram, and leaves the previous picture intact if ELK cannot. */
-    async autoLayoutNow(only?: string[]): Promise<boolean> {
+    /**
+     * Arranges the diagram, and leaves the previous picture intact if ELK cannot.
+     *
+     * `superseded` is not `failed`: a newer request -- the second click of a
+     * quick `+ +`, a drag, a keystroke -- owns the arrangement now. Treating
+     * the two alike had the layout options undo whatever step came last, which
+     * was the newer request's own.
+     */
+    async autoLayoutNow(only?: string[]): Promise<'arranged' | 'failed' | 'superseded'> {
         const store = this.store;
         if (!store) {
-            return false;
+            return 'superseded';
         }
         const request = ++this.layoutRequest;
         const view = this.view;
@@ -481,17 +501,17 @@ export class DiagramPanel {
             });
         } catch (error) {
             if (request !== this.layoutRequest || store !== this.store || view !== this.view) {
-                return false;
+                return 'superseded';
             }
             const message = error instanceof Error ? error.message : String(error);
             vscode.window.showErrorMessage(`Could not arrange this model: ${message}`);
             // Everything stays where it was, and is drawn: the arrangement that
             // failed is the one nobody sees.
             this.send();
-            return false;
+            return 'failed';
         }
         if (request !== this.layoutRequest || store !== this.store || view !== this.view) {
-            return false;
+            return 'superseded';
         }
         this.positions = laid.positions;
         store.move(movedTo(laid.positions, store.state.nodes));
@@ -523,7 +543,7 @@ export class DiagramPanel {
             this.dropRoutesAffectedBy(moved, store, replaced);
         }
         this.send();
-        return true;
+        return 'arranged';
     }
 
     async autoLayoutSelectedOrAll(): Promise<void> {
@@ -543,14 +563,20 @@ export class DiagramPanel {
      */
     async exportDiagram(format?: 'svg' | 'png'): Promise<void> {
         const store = this.store;
-        if (!store || !this.document) {
+        if (!store) {
             return;
         }
         const suggested = format ?? 'svg';
+        // A workspace diagram has no document to name the file after, and
+        // returning for want of one left its Export button doing nothing.
+        const defaultUri = this.document
+            ? this.document.uri.with({ path: this.document.uri.path.replace(/\.tonto$/, `.${suggested}`) })
+            : this.workspaceFolderItems?.length
+                ? vscode.Uri.joinPath(workspaceViewBase(this.workspaceFolderItems),
+                    `workspace-${this.workspaceDiagram}.${suggested}`)
+                : undefined;
         const target = await vscode.window.showSaveDialog({
-            defaultUri: this.document.uri.with({
-                path: this.document.uri.path.replace(/\.tonto$/, `.${suggested}`)
-            }),
+            ...(defaultUri ? { defaultUri } : {}),
             filters: format === 'png' ? { PNG: ['png'] }
                 : format === 'svg' ? { SVG: ['svg'] }
                     : { SVG: ['svg'], PNG: ['png'] }
@@ -640,8 +666,21 @@ export class DiagramPanel {
             return;
         }
 
+        const closed = [...this.closedBuffers];
+        this.closedBuffers.clear();
+        for (const uri of closed) {
+            try {
+                await session.revert(uri);
+            } catch {
+                // Deleted along with its editor: nothing on disk to read back.
+            }
+        }
         if (document) {
-            await session.update(document.uri.toString(), document.getText());
+            // A closed document's text is what it held when it closed, saved
+            // or not; the file on disk is what the model now is.
+            if (!document.isClosed) {
+                await session.update(document.uri.toString(), document.getText());
+            }
         } else {
             for (const open of vscode.workspace.textDocuments) {
                 if (open.languageId === 'tonto' && this.inWorkspace(open.uri)) {
@@ -784,7 +823,7 @@ export class DiagramPanel {
     }
 
     private inWorkspace(uri: vscode.Uri): boolean {
-        return this.workspaceFolders?.some(folder => uri.fsPath === folder || uri.fsPath.startsWith(`${folder}/`)) ?? false;
+        return this.workspaceFolders?.some(folder => isWithinFolder(uri.fsPath, folder)) ?? false;
     }
 
     /**
@@ -925,8 +964,11 @@ export class DiagramPanel {
                         // The routes belong to the style that made them: an
                         // orthogonal drawing's bends are nonsense as straight
                         // lines, and a straight drawing has none to keep.
-                        for (const edge of this.view.edges) {
-                            store.reroute(edge.id, undefined);
+                        // Every saved route, not only the visible ones: a
+                        // hidden association shown again later came back in
+                        // the old style, its stored route obeyed exactly.
+                        for (const edge of Object.keys(store.state.edges)) {
+                            store.reroute(edge, undefined);
                         }
                         this.layoutRequest += 1;
                         this.send();
@@ -947,7 +989,10 @@ export class DiagramPanel {
                 if (store) {
                     store.begin('Layout option');
                     store.update({ layout: { ...store.state.layout, ...message.layout } });
-                    if (!await this.autoLayoutNow()) {
+                    // Only a failure is taken back. A superseded arrangement
+                    // has a newer request behind it, and the last step in the
+                    // history is that request's, not this one's.
+                    if (await this.autoLayoutNow() === 'failed' && store === this.store) {
                         // Taken back exactly as the modeller would have taken it
                         // back, so the options panel goes on saying what is
                         // actually drawing the diagram.
