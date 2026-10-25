@@ -562,7 +562,11 @@ text {
 .tv-attribute { font-size: ${font.attribute}px; }
 .tv-edge path { fill: none; stroke: ${theme.line}; stroke-width: 1.2; }
 .tv-end { fill: ${theme.muted}; }
-.tv-edge-stereotype { font-size: ${font.edgeStereotype}px; fill-opacity: 0.78; letter-spacing: 0.01em; }
+/* No letter-spacing on a label drawn with a halo: WebKit places letter-spaced
+   SVG text glyph by glyph and then draws no halo, so in Safari, and in an
+   exported SVG opened in Preview, the line ran through the label and its
+   letters came out uneven. Chromium and Firefox never showed it. */
+.tv-edge-stereotype { font-size: ${font.edgeStereotype}px; fill-opacity: 0.78; }
 .tv-marker { fill: ${theme.surface}; stroke: ${theme.line}; stroke-width: 1.2; }
 .tv-arrow { fill: none; stroke: ${theme.line}; stroke-width: 1.2; }
 .tv-reading { fill: ${theme.text}; stroke: none; }
