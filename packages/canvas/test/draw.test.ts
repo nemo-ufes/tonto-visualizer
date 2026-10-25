@@ -776,6 +776,29 @@ describe('drawing', () => {
         expect(style).toContain('.tv-edge-stereotype { font-size: 9.5px');
     });
 
+    /**
+     * WebKit places letter-spaced SVG text glyph by glyph and then draws no
+     * halo: in Safari the line ran through «characterization» and its letters
+     * came out uneven. A halo and letter-spacing never meet on one label.
+     */
+    test('never letter-spaces a label it draws with a halo', () => {
+        const svg = render({
+            view: related(),
+            positions: {
+                'Sample::Contract': { x: 0, y: 0, width: 120, height: 42 },
+                'Sample::Employee': { x: 400, y: 0, width: 120, height: 42 }
+            },
+            display
+        }).svg;
+        const style = svg.match(/<style>([\s\S]*?)<\/style>/)![1]!;
+        const haloed = new Set([...svg.matchAll(/<text class="([^"]+)"[^>]*paint-order="stroke"/g)].map(match => match[1]!));
+        expect(haloed).toContain('tv-edge-stereotype');
+        for (const name of haloed) {
+            const rule = new RegExp(`\\.${name} \\{([^}]*)\\}`).exec(style)?.[1] ?? '';
+            expect({ name, rule }).not.toMatchObject({ rule: expect.stringContaining('letter-spacing') });
+        }
+    });
+
     test('puts the reading triangle just after the name it belongs to', () => {
         const view = related();
         const positions = {
