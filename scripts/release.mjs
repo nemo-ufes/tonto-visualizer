@@ -12,10 +12,11 @@ const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const [version, ...flags] = process.argv.slice(2);
 const tag = version ? `v${version}` : undefined;
 const publishMarketplace = flags.includes('--publish-marketplace');
+const publishNpm = flags.includes('--publish-npm');
 const yes = flags.includes('--yes');
 const dryRun = flags.includes('--dry-run');
 const unknownFlags = flags.filter(flag => ![
-    '--publish-marketplace', '--yes', '--dry-run'
+    '--publish-marketplace', '--publish-npm', '--yes', '--dry-run'
 ].includes(flag));
 
 function fail(message) {
@@ -61,12 +62,12 @@ function compareVersions(left, right) {
 
 function preflight() {
     if (version === '--help' || version === '-h' || flags.includes('--help') || flags.includes('-h')) {
-        console.log('Usage: npm run release -- <stable-version> [--dry-run] [--yes] [--publish-marketplace]');
-        console.log('Marketplace publishing is disabled unless --publish-marketplace is supplied.');
+        console.log('Usage: npm run release -- <stable-version> [--dry-run] [--yes] [--publish-marketplace] [--publish-npm]');
+        console.log('Marketplace and npm publishing are disabled unless explicitly requested.');
         process.exit(0);
     }
     if (!version || !isStableSemver(version) || unknownFlags.length > 0) {
-        fail('Usage: npm run release -- <stable-version> [--dry-run] [--yes] [--publish-marketplace]');
+        fail('Usage: npm run release -- <stable-version> [--dry-run] [--yes] [--publish-marketplace] [--publish-npm]');
     }
     const extension = JSON.parse(readFileSync(resolve(root, 'packages/extension/package.json'), 'utf8'));
     if (!isStableSemver(extension.version) || compareVersions(version, extension.version) <= 0) {
@@ -110,7 +111,7 @@ async function main() {
     console.log('  2. Commit the version change.');
     console.log('  3. Create a signed, annotated tag.');
     console.log('  4. Push main and the tag to origin.');
-    console.log(`  5. Dispatch Release tonto visualizer (Marketplace: ${publishMarketplace ? 'on' : 'off'}).`);
+    console.log(`  5. Dispatch Release tonto visualizer (Marketplace: ${publishMarketplace ? 'on' : 'off'}, npm: ${publishNpm ? 'on' : 'off'}).`);
     if (dryRun) {
         console.log('\nDry run only; no version, commit, tag, push, or workflow changes made.');
         return;
@@ -139,7 +140,8 @@ async function main() {
     run('gh', [
         'workflow', 'run', '.github/workflows/release.yml', '--ref', tag,
         '-f', `release_tag=${tag}`,
-        '-f', `publish_marketplace=${publishMarketplace}`
+        '-f', `publish_marketplace=${publishMarketplace}`,
+        '-f', `publish_npm=${publishNpm}`
     ]);
     console.log(`\nDispatched the ${tag} release workflow.`);
     run('gh', ['run', 'list', '--workflow', 'release.yml', '--limit', '1']);

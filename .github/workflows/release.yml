@@ -1,7 +1,7 @@
 name: Release tonto visualizer
 
 # Started by hand, from a signed tag that already exists: pushing a tag does
-# not release anything. Marketplace publication is off unless asked for, so a
+# not release anything. npm and Marketplace publication are opt-in, so a
 # GitHub-only release needs no registry credentials. See docs/DEVELOPMENT.md.
 on:
   workflow_dispatch:
@@ -12,6 +12,11 @@ on:
         type: string
       publish_marketplace:
         description: Publish the extension to the VS Code Marketplace
+        required: true
+        default: false
+        type: boolean
+      publish_npm:
+        description: Publish the standalone CLI to npm
         required: true
         default: false
         type: boolean
@@ -64,6 +69,28 @@ jobs:
       - run: npm run build
       - run: npm run typecheck
       - run: npm test
+      - name: Pack the standalone CLI
+        run: mkdir -p release-artifacts && npm pack --workspace=@nemo-ufes/tonto-visualizer-cli --pack-destination release-artifacts
+      - name: Install npm with trusted publishing support
+        if: ${{ inputs.publish_npm }}
+        run: npm install --global npm@^11.5.1
+      - name: Publish CLI to npm
+        if: ${{ inputs.publish_npm }}
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          VERSION="${RELEASE_TAG#v}"
+          TARBALL="$(find release-artifacts -maxdepth 1 -name '*.tgz' -print -quit)"
+          test -n "$TARBALL" || { echo "CLI tarball was not created."; exit 1; }
+          EXPECTED_INTEGRITY="sha512-$(openssl dgst -sha512 -binary "$TARBALL" | openssl base64 -A)"
+          if PUBLISHED_INTEGRITY="$(npm view "@nemo-ufes/tonto-visualizer-cli@${VERSION}" dist.integrity 2>/dev/null)"; then
+            test "$PUBLISHED_INTEGRITY" = "$EXPECTED_INTEGRITY" || {
+              echo "@nemo-ufes/tonto-visualizer-cli@${VERSION} already exists with different contents."; exit 1;
+            }
+            echo "Matching @nemo-ufes/tonto-visualizer-cli@${VERSION} is already published; skipping."
+          else
+            npm publish "./$TARBALL" --access public --provenance
+          fi
       - name: Package the VS Code extension
         run: npm run package --workspace=tonto-visualizer
       - name: Publish extension to the Visual Studio Marketplace
@@ -79,8 +106,9 @@ jobs:
         run: |
           VERSION="${RELEASE_TAG#v}"
           VSIX="packages/extension/tonto-visualizer-${VERSION}.vsix"
+          TARBALL="$(find release-artifacts -maxdepth 1 -name '*.tgz' -print -quit)"
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" "$VSIX" --clobber
+            gh release upload "$RELEASE_TAG" "$VSIX" "$TARBALL" --clobber
           else
-            gh release create "$RELEASE_TAG" "$VSIX" --verify-tag --generate-notes --title "tonto visualizer ${VERSION}"
+            gh release create "$RELEASE_TAG" "$VSIX" "$TARBALL" --verify-tag --generate-notes --title "tonto visualizer ${VERSION}"
           fi

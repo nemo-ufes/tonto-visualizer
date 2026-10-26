@@ -1,25 +1,33 @@
 {
-    "name": "tonto-view-cli",
+    "name": "@nemo-ufes/tonto-visualizer-cli",
     "version": "0.3.1",
-    "private": true,
-    "description": "The view model of a Tonto model, from a terminal: what the diagram would draw, before anything draws it.",
+    "description": "Render Tonto models as diagrams or inspect their visualizer view model from the command line.",
     "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/nemo-ufes/tonto-visualizer.git",
+        "directory": "packages/cli"
+    },
+    "homepage": "https://github.com/nemo-ufes/tonto-visualizer#readme",
+    "engines": {
+        "node": ">=22"
+    },
     "type": "module",
     "bin": {
         "tonto-view": "./bin/tonto-view.js"
     },
     "files": [
-        "out",
-        "bin"
+        "out/tonto-view.js",
+        "out/THIRD-PARTY-NOTICES.txt",
+        "bin",
+        "README.md",
+        "LICENSE"
     ],
     "scripts": {
         "clean": "shx rm -rf out tsconfig.tsbuildinfo",
         "prebuild": "npm run clean",
-        "build": "tsc -b tsconfig.json"
-    },
-    "dependencies": {
-        "tonto-view": "*",
-        "tonto-canvas": "*"
+        "build": "tsc -b tsconfig.json && node build.mjs",
+        "prepack": "npm run build"
     },
     "devDependencies": {
         "shx": "^0.3.4",
