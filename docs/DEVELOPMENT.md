@@ -21,11 +21,11 @@ npm test
 ```
 
 `npm run build` compiles `tonto-view`, `tonto-canvas` and the CLI with `tsc`,
-then bundles the extension host (`out/extension.cjs`) and the webview
-(`out/webview.js`) with esbuild, and writes `out/THIRD-PARTY-NOTICES.txt` from
-what esbuild bundled. It stops if a bundled package declares no license or one
-outside the permissive list in `packages/extension/third-party-notices.mjs`;
-elkjs is the one package taken, by name, under a copyleft license (EPL-2.0).
+bundles the CLI into a standalone Node executable, then bundles the extension
+host (`out/extension.cjs`) and the webview (`out/webview.js`) with esbuild. Both
+bundles get third-party notices from what esbuild included. The build stops if
+a bundled package declares no license or one outside the permissive list in
+`packages/extension/third-party-notices.mjs`; elkjs is taken under EPL-2.0.
 
 Open this repository in VS Code and press `F5` to launch the Extension
 Development Host. The launch runs the root build first, so the host draws with
@@ -37,10 +37,12 @@ after moving the submodule.
 There are two intentional workflows: install a development build locally, or
 publish a release. A local installation must not change the version selected
 for the next release. A release gives the extension and the workspaces bundled
-into it -- `tonto-view`, `tonto-canvas` and `tonto-view-cli` -- one shared
-SemVer version, because they ship as one thing. The extension's version is the
-reference the others must match, and `npm run versions:check` (run in CI)
-checks that they and the lockfile agree.
+into it -- `tonto-view`, `tonto-canvas` and
+`@nemo-ufes/tonto-visualizer-cli` -- one shared SemVer version. The CLI is
+bundled into a self-contained npm package and built against the same pinned
+language as the extension. The extension's version is the reference the others
+must match, and `npm run versions:check` (run in CI) checks that they and the
+lockfile agree.
 
 ### Install a development build
 
@@ -94,28 +96,35 @@ and the tag, and dispatches `Release tonto visualizer`. Use `--dry-run` to show
 the plan without changing the version or repository. Use `--yes` to skip the
 confirmation in a deliberate non-interactive run.
 
-The Marketplace option defaults to off. To publish there as well, pass
-`--publish-marketplace` explicitly:
+The Marketplace and npm options default to off. To publish the VS Code
+extension, pass `--publish-marketplace`. To publish the CLI package to npm,
+pass `--publish-npm`; both can be selected for one release:
 
 ```sh
 npm run release -- 0.3.1 --publish-marketplace
+npm run release -- 0.3.1 --publish-npm
+npm run release -- 0.3.1 --publish-marketplace --publish-npm
 ```
 
 Pushing a tag alone does not start a release. The script dispatches the
 workflow after pushing; GitHub Actions verifies the signed tag and versions,
 builds, typechecks and tests the tagged commit with its pinned language,
-packages `tonto-visualizer-<version>.vsix`, and attaches it to the GitHub
-Release. If a step fails, the script stops there and reports the error; it
-does not roll back a commit, tag, or push that already succeeded.
+packages `tonto-visualizer-<version>.vsix` and the CLI `.tgz`, and attaches
+both to the GitHub Release. When npm publication is selected, the workflow
+publishes `@nemo-ufes/tonto-visualizer-cli` with provenance and skips an
+existing version only when its integrity matches the artifact. If a step fails,
+the script stops there and reports the error; it does not roll back a commit,
+tag, or push that already succeeded.
 
 The signed tag identifies the release source; the GitHub Release is the
 download page. The workflow requires the `RELEASE_SIGNING_PUBLIC_KEY` secret
 and the `RELEASE_SIGNING_FINGERPRINT` variable even when publishing only to
 GitHub. Protect the `v*` tag namespace and accept only the trusted release
 signer. Before enabling Marketplace publication, configure trusted publishing
-for the `nemo-ufes` Marketplace publisher and this workflow; no long-lived
-publishing token is used. The workflow skips a version the Marketplace already
-has.
+for the `nemo-ufes` Marketplace publisher. Before enabling npm publication,
+configure npm trusted publishing for `@nemo-ufes/tonto-visualizer-cli` and this
+workflow. Neither registry needs a long-lived publishing token; the workflow
+skips versions already present with matching contents.
 
 A release of this extension does not have to coincide with one of tonto's:
 the extension bundles its own copy of the language, at the pinned commit, for

@@ -74,6 +74,8 @@ if (watch) {
 } else {
     const results = await Promise.all(contexts.map(context => context.rebuild()));
     await Promise.all(contexts.map(context => context.dispose()));
-    const count = writeThirdPartyNotices(results.map(result => result.metafile), 'out/THIRD-PARTY-NOTICES.txt');
+    const count = writeThirdPartyNotices(results.map(result => result.metafile), 'out/THIRD-PARTY-NOTICES.txt', {
+        ownPackageRoots: [resolve('.'), resolve('../view'), resolve('../canvas'), resolve('../cli')]
+    });
     console.log(`esbuild build complete; notices for ${count} bundled packages.`);
 }

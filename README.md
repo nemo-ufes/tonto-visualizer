@@ -39,6 +39,18 @@ multiplicities keep them.
 
 The diagram edits the saved view, not the `.tonto` model.
 
+## Command line
+
+Install the standalone CLI with Node.js 22 or later:
+
+```sh
+npm install --global @nemo-ufes/tonto-visualizer-cli
+tonto-view path/to/model.tonto --svg > diagram.svg
+```
+
+Without `--svg`, `tonto-view` prints the diagram's JSON view model. See the
+[CLI package guide](packages/cli/README.md) for local installation and options.
+
 ## Getting started
 
     git clone --recurse-submodules https://github.com/nemo-ufes/tonto-visualizer

@@ -1,8 +1,8 @@
-// One version for the release set. The extension is what users install, and
-// it carries the derivation, the renderer and the command line's code inside
-// it, so the workspaces it is built from are released with it under the same
-// SemVer version -- as tonto releases its CLI, extension and MCP server
-// together. The extension's manifest is the reference the others must match.
+// One version for the release set. The extension carries the derivation and
+// renderer; the standalone CLI bundles that same code and language pin. These
+// workspaces are released together under one SemVer version, following tonto's
+// release of its CLI, extension and MCP server together. The extension's
+// manifest is the reference the others must match.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 

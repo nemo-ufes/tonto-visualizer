@@ -7,7 +7,7 @@
     ],
     "scripts": {
         "language": "npm --prefix vendor/tonto install --no-audit --no-fund && npm --prefix vendor/tonto run build --workspace=tonto-language",
-        "build": "npm run build --workspace=tonto-view --workspace=tonto-canvas --workspace=tonto-view-cli --workspace=tonto-visualizer",
+        "build": "npm run build --workspace=tonto-view --workspace=tonto-canvas --workspace=@nemo-ufes/tonto-visualizer-cli --workspace=tonto-visualizer",
         "test": "npm run test --workspace=tonto-view --workspace=tonto-canvas --workspace=tonto-visualizer",
         "lint": "npm run lint --workspaces --if-present",
         "typecheck": "tsc -p packages/extension/tsconfig.json --noEmit",

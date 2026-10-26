@@ -40,21 +40,25 @@ const elected = new Map([
 
 const noticeFile = /^(licen[cs]e|copying|notice)([.-]|$)/i;
 
-// This repository's own packages are covered by its LICENSE, which the VSIX
-// already carries.
-const ownPackages = resolve(fileURLToPath(new URL('..', import.meta.url))) + sep;
+// This repository's own packages are covered by its LICENSE, included in the
+// artifact that carries each bundle.
+const extensionPackage = resolve(fileURLToPath(new URL('..', import.meta.url)));
 
 /**
  * Writes the notices of every npm package bundled into the given builds.
  * @param {import('esbuild').Metafile[]} metafiles
  * @param {string} outfile
  */
-export function writeThirdPartyNotices(metafiles, outfile) {
+export function writeThirdPartyNotices(metafiles, outfile, {
+    ownPackageRoots = [extensionPackage],
+    description = 'The tonto visualizer extension bundles the following packages into out/.'
+} = {}) {
+    const ownPackages = ownPackageRoots.map(root => `${resolve(root)}${sep}`);
     const inputs = new Map();
     for (const metafile of metafiles) {
         for (const input of Object.keys(metafile.inputs)) {
             const path = resolve(input.replace(/^[a-z-]+:/i, ''));
-            const root = packageRoot(path);
+            const root = packageRoot(path, ownPackages);
             if (!root) continue;
             if (!inputs.has(root)) inputs.set(root, new Set());
             inputs.get(root).add(path);
@@ -110,7 +114,7 @@ export function writeThirdPartyNotices(metafiles, outfile) {
     writeFileSync(outfile, [
         'Third-party notices',
         '',
-        'The tonto visualizer extension bundles the following packages into out/.',
+        description,
         'Each is listed with the license it is distributed under, the copyright',
         'notices its bundled files carry, and its license text.',
         '',
@@ -124,7 +128,7 @@ export function writeThirdPartyNotices(metafiles, outfile) {
 // so the language arrives under vendor/ rather than node_modules, and is found
 // by its nearest package.json. Inside node_modules the nearest one is not
 // enough: some packages put a stub package.json in a subdirectory.
-function packageRoot(path) {
+function packageRoot(path, ownPackages) {
     const marker = `${sep}node_modules${sep}`;
     const at = path.lastIndexOf(marker);
     if (at >= 0) {
@@ -132,7 +136,7 @@ function packageRoot(path) {
         const depth = rest[0].startsWith('@') ? 2 : 1;
         return realpathSync(path.slice(0, at + marker.length) + rest.slice(0, depth).join(sep));
     }
-    if (path.startsWith(ownPackages)) return undefined;
+    if (ownPackages.some(root => path.startsWith(root))) return undefined;
     for (let directory = dirname(path); directory !== dirname(directory); directory = dirname(directory)) {
         try {
             if (JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8')).name) return directory;
