@@ -1,6 +1,6 @@
 {
     "name": "@nemo-ufes/tonto-visualizer-cli",
-    "version": "0.3.1",
+    "version": "0.3.2",
     "description": "Render Tonto models as diagrams or inspect their visualizer view model from the command line.",
     "license": "MIT",
     "repository": {
