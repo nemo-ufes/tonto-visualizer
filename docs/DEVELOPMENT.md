@@ -85,7 +85,7 @@ Commit the release-ready source to `main` first, including the language
 submodule at the commit the release is built against. Then run:
 
 ```sh
-npm run release -- 0.3.1
+npm run release -- 0.3.2
 ```
 
 The script checks that the working tree is clean, local `main` matches
@@ -97,14 +97,29 @@ the plan without changing the version or repository. Use `--yes` to skip the
 confirmation in a deliberate non-interactive run.
 
 The Marketplace and npm options default to off. To publish the VS Code
-extension, pass `--publish-marketplace`. To publish the CLI package to npm,
-pass `--publish-npm`; both can be selected for one release:
+extension, pass `--publish-marketplace`. For later CLI releases, pass
+`--publish-npm`; both can be selected for one release:
 
 ```sh
-npm run release -- 0.3.1 --publish-marketplace
-npm run release -- 0.3.1 --publish-npm
-npm run release -- 0.3.1 --publish-marketplace --publish-npm
+npm run release -- 0.3.2 --publish-marketplace
+npm run release -- 0.3.2 --publish-npm  # after the initial npm publication
+npm run release -- 0.3.2 --publish-marketplace --publish-npm  # after the initial npm publication
 ```
+
+For the first npm release, leave `--publish-npm` off. npm only lets a trusted
+publisher be configured after a package exists. Once the GitHub release has
+finished, download its attached CLI `.tgz` and publish that exact artifact from
+an npm-authenticated shell:
+
+```sh
+npm publish ./nemo-ufes-tonto-visualizer-cli-0.3.2.tgz --access public
+```
+
+Then add a trusted publisher for organization `nemo-ufes`, repository
+`tonto-visualizer`, workflow `release.yml`, with direct publishing enabled.
+After that, use `--publish-npm` for subsequent releases; GitHub Actions
+publishes with provenance. The initial manual publication does not have a
+GitHub Actions provenance attestation.
 
 Pushing a tag alone does not start a release. The script dispatches the
 workflow after pushing; GitHub Actions verifies the signed tag and versions,
