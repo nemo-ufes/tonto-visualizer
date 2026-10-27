@@ -50,6 +50,8 @@ tonto-view path/to/model.tonto --svg > diagram.svg
 
 Without `--svg`, `tonto-view` prints the diagram's JSON view model. See the
 [CLI package guide](packages/cli/README.md) for local installation and options.
+To use the CLI alongside the Tonto language server in Vim or Neovim, see the
+[Vim and Neovim guide](docs/VIM-NEOVIM.md).
 
 ## Getting started
 
