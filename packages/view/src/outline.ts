@@ -62,6 +62,10 @@ export interface WorkspaceOntology {
     name: string;
     identity: string;
     imports: OutlineImport[];
+    /** Packages declared by this ontology's bundle manifest. */
+    packages?: OutlinePackage[];
+    /** The ontology has member packages to show when expanded in the workspace view. */
+    hasPackages?: boolean;
     source?: SourceLocation;
 }
 
@@ -200,14 +204,40 @@ export function derivePackages(outline: OntologyOutline): ViewModel {
 }
 
 /** All ontologies in a workspace and their import dependencies, without package membership detail. */
-export function deriveWorkspacePackages(ontologies: WorkspaceOntology[]): ViewModel {
+export function deriveWorkspacePackages(
+    ontologies: WorkspaceOntology[], expanded: ReadonlySet<string> = new Set()
+): ViewModel {
     const ontologyId = (name: string) => `workspace-ontology:${name}`;
     const byIdentity = new Map(ontologies.map(one => [one.identity, one]));
     const byName = new Map(ontologies.map(one => [one.name, one]));
-    const nodes: ViewNode[] = ontologies.map(one => ({
-        id: ontologyId(one.name), kind: 'package', name: one.name, stereotype: 'ontology',
-        color: PACKAGE_COLOR, isExternal: false, attributes: [], ...(one.source ? { source: one.source } : {})
-    }));
+    const groups: ViewGroup[] = [];
+    const nodes: ViewNode[] = [];
+    for (const one of ontologies) {
+        const id = ontologyId(one.name);
+        const packages = one.packages ?? [];
+        if (one.hasPackages && expanded.has(id)) {
+            const members = packages.map(pkg => `workspace-package:${one.name}::${pkg.name}`);
+            groups.push({ id, name: one.name, isExternal: false, nodes: members, kind: 'ontology', expandable: true });
+            for (const pkg of packages) {
+                nodes.push({
+                    id: `workspace-package:${one.name}::${pkg.name}`, kind: 'package', name: pkg.name,
+                    package: one.name, color: pkg.available ? PACKAGE_COLOR : UNRESOLVED_COLOR,
+                    isExternal: false, attributes: [],
+                    ...(pkg.location ? { location: pkg.location } : {}),
+                    ...(!pkg.available ? { unavailable: true } : {}),
+                    ...(pkg.documentation ? { documentation: pkg.documentation } : {}),
+                    ...(pkg.source ? { source: pkg.source } : {})
+                });
+            }
+        } else {
+            nodes.push({
+                id, kind: 'package', name: one.name, stereotype: 'ontology',
+                color: PACKAGE_COLOR, isExternal: false, attributes: [],
+                ...(one.hasPackages ? { hasPackages: true } : {}),
+                ...(one.source ? { source: one.source } : {})
+            });
+        }
+    }
     const edges: ViewEdge[] = [];
     const edgeIds = new Set<string>();
     const externalIds = new Map<string, string>();
@@ -255,7 +285,30 @@ export function deriveWorkspacePackages(ontologies: WorkspaceOntology[]): ViewMo
             }
         }
     }
-    return { kind: 'packages', groups: [], nodes, edges, gensets: [] };
+    for (const one of ontologies) {
+        if (!expanded.has(ontologyId(one.name))) {
+            continue;
+        }
+        const packages = new Set((one.packages ?? []).map(pkg => pkg.name));
+        for (const pkg of one.packages ?? []) {
+            const client = `workspace-package:${one.name}::${pkg.name}`;
+            for (const used of pkg.uses) {
+                if (!packages.has(used.name) || used.name === pkg.name) {
+                    continue;
+                }
+                const supplier = `workspace-package:${one.name}::${used.name}`;
+                const id = dependencyId('use', client, supplier);
+                if (!edgeIds.has(id)) {
+                    edgeIds.add(id);
+                    edges.push({
+                        kind: 'dependency', id, source: client, target: supplier, stereotype: 'use',
+                        ...(used.statement ? { source_: used.statement } : {})
+                    });
+                }
+            }
+        }
+    }
+    return { kind: 'packages', groups, nodes, edges, gensets: [] };
 }
 
 /**

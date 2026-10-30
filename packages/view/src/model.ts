@@ -70,6 +70,8 @@ export interface ViewNode {
     location?: string;
     /** A bundled package or an imported ontology that did not load. */
     unavailable?: boolean;
+    /** A workspace ontology card whose member packages can be expanded inline. */
+    hasPackages?: boolean;
     documentation?: string;
     source?: SourceLocation;
 }
@@ -191,6 +193,8 @@ export interface ViewGroup {
      * whether or not package boxes are.
      */
     kind?: 'ontology';
+    /** Workspace overview: this frame can be collapsed to its ontology card. */
+    expandable?: boolean;
 }
 
 export interface ViewModel {

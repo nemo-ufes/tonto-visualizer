@@ -146,6 +146,32 @@ describe('the webview and its host protocol', () => {
         await import('../src/webview/main.js');
     });
 
+    test('toggles workspace packages from the ontology badge after pointer capture', () => {
+        const id = 'workspace-ontology:library';
+        window.dispatchEvent(new MessageEvent('message', { data: {
+            type: 'model',
+            view: {
+                kind: 'packages', groups: [], gensets: [], edges: [],
+                nodes: [{
+                    id, kind: 'package', name: 'library', stereotype: 'ontology',
+                    color: '#eee', isExternal: false, attributes: [], hasPackages: true
+                }]
+            },
+            positions: { [id]: { x: 0, y: 0, width: 180, height: 80 } },
+            routes: {}, display: defaultDisplayOptions, content: defaultContentOptions,
+            layout: defaultLayoutOptions, packages: [], filters: []
+        } }));
+
+        const badge = document.querySelector('[data-toggle-ontology]')!;
+        vi.spyOn(document, 'elementFromPoint').mockReturnValue(badge);
+        badge.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1 }));
+        document.getElementById('viewport')!.dispatchEvent(new MouseEvent('click', {
+            bubbles: true, clientX: 10, clientY: 10
+        }));
+        expect(posted('toggleOntologyPackages').at(-1)).toEqual({ type: 'toggleOntologyPackages', id });
+        vi.restoreAllMocks();
+    });
+
     test('offers layout controls without a strategy choice', () => {
         sendModel();
         openOptions();

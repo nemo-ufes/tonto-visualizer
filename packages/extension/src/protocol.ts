@@ -75,6 +75,8 @@ export type FromPanel =
     | { type: 'rerouted'; edge: string; route?: EdgeRoute }
     | { type: 'selected'; ids: string[] }
     | { type: 'reveal'; id: string }
+    /** Expand or collapse an ontology's member packages in the workspace overview. */
+    | { type: 'toggleOntologyPackages'; id: string }
     /** The title was clicked: which arrangement of this model to draw. */
     | { type: 'chooseView' }
     /** Open the ontology's independently arranged package or class view. */

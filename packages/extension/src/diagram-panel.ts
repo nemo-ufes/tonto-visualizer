@@ -116,6 +116,7 @@ export class DiagramPanel {
     private workspaceFolders: string[] | undefined;
     private workspaceFolderItems: readonly vscode.WorkspaceFolder[] | undefined;
     private workspaceDiagram: 'packages' | 'classes' = 'packages';
+    private readonly expandedOntologies = new Set<string>();
     private hasMultipleViews = false;
     private view: ViewModel = { groups: [], nodes: [], edges: [], gensets: [] };
     /** The last successfully derived model, before modeller-owned filters. */
@@ -746,7 +747,7 @@ export class DiagramPanel {
         const content = this.effectiveContent(store.state.content);
         const ontologyPackages = this.ontologyPackages;
         const deriveWith = (options: ContentOptions) => workspaceFolders && this.workspaceDiagram === 'packages'
-            ? deriveWorkspacePackages(workspaceOntologies ?? [])
+            ? deriveWorkspacePackages(workspaceOntologies ?? [], this.expandedOntologies)
             : outline && this.ontologyDiagram === 'packages' ? derivePackages(outline) : derive({
             models,
             ...(this.focusPackages[0] ? { focus: this.focusPackages[0] } : {}),
@@ -1034,6 +1035,57 @@ export class DiagramPanel {
                     await this.show(this.document, target);
                 }
                 return;
+            case 'toggleOntologyPackages': {
+                if (!this.workspaceFolders || this.workspaceDiagram !== 'packages') {
+                    return;
+                }
+                const card = this.view.nodes.find(one => one.id === message.id && one.hasPackages);
+                const frame = this.view.groups.find(one => one.id === message.id && one.expandable);
+                if (!card && !frame) {
+                    return;
+                }
+                const wasExpanded = frame !== undefined;
+                const previous = card ? this.positions[message.id] : undefined;
+                const frameCentre = frame ? (() => {
+                    const rects = frame.nodes.map(id => this.positions[id]).filter((rect): rect is Rect => rect !== undefined);
+                    if (rects.length === 0) {
+                        return undefined;
+                    }
+                    const left = Math.min(...rects.map(rect => rect.x));
+                    const top = Math.min(...rects.map(rect => rect.y));
+                    const right = Math.max(...rects.map(rect => rect.x + rect.width));
+                    const bottom = Math.max(...rects.map(rect => rect.y + rect.height));
+                    return { x: (left + right) / 2, y: (top + bottom) / 2 };
+                })() : undefined;
+                if (wasExpanded) {
+                    this.expandedOntologies.delete(message.id);
+                } else {
+                    this.expandedOntologies.add(message.id);
+                }
+                await this.refresh();
+                if (wasExpanded && frameCentre && this.positions[message.id] && this.store) {
+                    const collapsed = this.positions[message.id]!;
+                    this.positions[message.id] = {
+                        ...collapsed,
+                        x: Math.round(frameCentre.x - collapsed.width / 2),
+                        y: Math.round(frameCentre.y - collapsed.height / 2)
+                    };
+                    this.store.move(movedTo(this.positions, this.store.state.nodes));
+                    this.send();
+                } else if (!wasExpanded && previous) {
+                    const expanded = this.view.groups.find(one => one.id === message.id);
+                    if (expanded) {
+                        for (const id of expanded.nodes) {
+                            const rect = this.positions[id];
+                            if (rect) {
+                                this.positions[id] = { ...rect, x: previous.x, y: previous.y };
+                            }
+                        }
+                        await this.autoLayoutNow(expanded.nodes);
+                    }
+                }
+                return;
+            }
             case 'hide':
                 if (store) {
                     store.begin('Hide');

@@ -276,7 +276,12 @@ export class ViewSession {
                     };
                 });
             const source = locationOf(header);
-            result.push({ name: header.name, identity, imports, ...(source ? { source } : {}) });
+            result.push({
+                name: header.name, identity, imports,
+                ...(manifest ? { packages: manifest.packages } : {}),
+                ...(manifest?.packages.length ? { hasPackages: true } : {}),
+                ...(source ? { source } : {})
+            });
         }
         return result;
     }
