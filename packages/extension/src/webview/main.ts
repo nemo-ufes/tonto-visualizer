@@ -617,6 +617,12 @@ viewport.addEventListener('pointerdown', event => {
     const target = event.target as Element;
     viewport.setPointerCapture(event.pointerId);
 
+    // This is a navigation affordance drawn on the ontology card, not part of
+    // the card's selection or drag surface.
+    if (target.closest('[data-toggle-ontology]')) {
+        return;
+    }
+
     // Before anything else: a grip or a handle sits over the thing it belongs
     // to, which is already selected, so neither the selection nor a pan is
     // wanted -- and a grip on a card's corner is inside the card.
@@ -696,6 +702,28 @@ viewport.addEventListener('pointerdown', event => {
         moved: false,
         origin: Object.fromEntries(ids.map(candidate => [candidate, { ...positions[candidate]! }]))
     };
+});
+
+viewport.addEventListener('click', event => {
+    // Pointer capture retargets click to the viewport, as it does dblclick, so
+    // resolve the badge at the pointer's final position instead of event.target.
+    const target = document.elementFromPoint(event.clientX, event.clientY) ?? event.target as Element;
+    const id = target.closest('[data-toggle-ontology]')?.getAttribute('data-toggle-ontology');
+    if (id) {
+        host.postMessage({ type: 'toggleOntologyPackages', id });
+    }
+});
+
+viewport.addEventListener('keydown', event => {
+    if (event.key !== 'Enter' && event.key !== ' ') {
+        return;
+    }
+    const target = event.target as Element;
+    const id = target.closest('[data-toggle-ontology]')?.getAttribute('data-toggle-ontology');
+    if (id) {
+        event.preventDefault();
+        host.postMessage({ type: 'toggleOntologyPackages', id });
+    }
 });
 
 viewport.addEventListener('pointermove', event => {
@@ -973,6 +1001,9 @@ viewport.addEventListener('dblclick', event => {
     const under = document.elementFromPoint(event.clientX, event.clientY);
     if (!under) {
         fit();
+        return;
+    }
+    if (under.closest('[data-toggle-ontology]')) {
         return;
     }
     const grip = gripAt(under);

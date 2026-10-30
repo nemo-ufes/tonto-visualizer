@@ -583,6 +583,11 @@ text {
 .tv-selected path, path.tv-selected { stroke: ${theme.accent}; stroke-width: 2.2; }
 .tv-unresolved rect { stroke-dasharray: 5 3; }
 .tv-external rect { stroke-dasharray: 2 2; }
+.tv-open-packages { cursor: pointer; }
+.tv-open-packages circle { fill: ${theme.surface}; stroke: ${theme.accent}; stroke-width: 1.2; }
+.tv-open-packages path { fill: none; stroke: ${theme.accent}; stroke-width: 1.4; stroke-linecap: round; pointer-events: none; }
+.tv-open-packages:hover circle { fill: ${theme.accent}; }
+.tv-open-packages:hover path { stroke: ${theme.surface}; }
 </style>
 <rect x="${origin.x}" y="${origin.y}" width="${width}" height="${height}" fill="${theme.background}"/>
 ${groups.map(group => drawGroup(group, font)).join('')}${edgeMarkup}${derivationMarkup}${treeMarkup}${nodeMarkup}<g class="tv-labels">${labelMarkup}</g>${legendMarkup}</svg>`;
@@ -974,11 +979,17 @@ function drawPackage(node: ViewNode, rect: Rect, display: DisplayOptions, theme:
     const title = node.documentation
         ? `<title>${escape(node.documentation)}</title>`
         : '';
+    const openPackages = node.hasPackages
+        ? `<g class="tv-open-packages" data-toggle-ontology="${escape(node.id)}" role="button" aria-label="Expand packages in ${escape(node.name)}" tabindex="0">`
+            + `<circle cx="${rect.x + rect.width - 10}" cy="${body.y + 10}" r="7"/>`
+            + `<path d="M ${rect.x + rect.width - 13} ${body.y + 10} H ${rect.x + rect.width - 7} M ${rect.x + rect.width - 10} ${body.y + 7} V ${body.y + 13}"/>`
+            + '</g>'
+        : '';
     // The tab first, so the body's top edge is drawn over the seam between them.
     return `<g class="${classes}" data-node="${escape(node.id)}">`
         + title + `<rect x="${rect.x}" y="${rect.y}" width="${packageTabWidth(rect.width)}" height="${tab + 1}" rx="2" fill="${fill}"/>`
         + `<rect x="${body.x}" y="${body.y}" width="${body.width}" height="${body.height}" rx="2" fill="${fill}"/>`
-        + text + '</g>';
+        + text + openPackages + '</g>';
 }
 
 function drawEdge(
@@ -2576,6 +2587,7 @@ export interface GroupBox {
     name: string;
     rect: Rect;
     kind?: 'ontology';
+    expandable?: boolean;
 }
 
 export function groupBoxes(view: ViewModel, positions: Positions): GroupBox[] {
@@ -2601,7 +2613,11 @@ export function groupBoxes(view: ViewModel, positions: Positions): GroupBox[] {
             });
             return encloses
                 ? undefined
-                : { id: group.id, name: group.name, rect, ...(group.kind ? { kind: group.kind } : {}) };
+                : {
+                    id: group.id, name: group.name, rect,
+                    ...(group.kind ? { kind: group.kind } : {}),
+                    ...(group.expandable ? { expandable: true } : {})
+                };
         })
         .filter((group): group is GroupBox => group !== undefined);
 }
@@ -2640,10 +2656,16 @@ function drawGroup(group: GroupBox, font: FontMetrics): string {
         // its name on the tab, which sits in the header the layout keeps
         // above the packages inside.
         const tab = Math.min(rect.width, textWidth(group.name, font.name, true, font.kind) + 16);
+        const toggle = group.expandable
+            ? `<g class="tv-open-packages" data-toggle-ontology="${escape(group.id)}" role="button" aria-label="Collapse packages in ${escape(group.name)}" tabindex="0">`
+                + `<circle cx="${rect.x + rect.width - 10}" cy="${rect.y + GROUP_HEADER / 2}" r="7"/>`
+                + `<path d="M ${rect.x + rect.width - 13} ${rect.y + GROUP_HEADER / 2} H ${rect.x + rect.width - 7}"/>`
+                + '</g>'
+            : '';
         return `<g class="tv-group tv-ontology" data-group="${escape(group.id)}">`
             + `<rect x="${rect.x}" y="${rect.y}" width="${tab}" height="${GROUP_HEADER + 1}" rx="2"/>`
             + `<rect x="${rect.x}" y="${rect.y + GROUP_HEADER}" width="${rect.width}" height="${rect.height - GROUP_HEADER}" rx="2"/>`
-            + `<text x="${rect.x + 8}" y="${rect.y + GROUP_HEADER - 6}">${escape(group.name)}</text></g>`;
+            + `<text x="${rect.x + 8}" y="${rect.y + GROUP_HEADER - 6}">${escape(group.name)}</text>${toggle}</g>`;
     }
     return `<g class="tv-group" data-group="${escape(group.id)}">`
         + `<rect x="${rect.x}" y="${rect.y}" width="${rect.width}" height="${rect.height}" rx="4"/>`

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
-import type { OntologyOutline, ViewModel } from 'tonto-view';
-import { defaultDisplayOptions, defaultLayoutOptions, derivePackages } from 'tonto-view';
+import type { OntologyOutline, ViewModel, WorkspaceOntology } from 'tonto-view';
+import { defaultDisplayOptions, defaultLayoutOptions, derivePackages, deriveWorkspacePackages } from 'tonto-view';
 import { autoLayout } from '../src/autolayout.js';
 import type { Rect } from '../src/geometry.js';
 import { overlaps } from '../src/geometry.js';
@@ -37,6 +37,30 @@ function inside(inner: Rect, outer: Rect): boolean {
 }
 
 describe('a package diagram', () => {
+
+    test('expands a workspace ontology into packages inside its own frame', async () => {
+        const ontology: WorkspaceOntology = {
+            name: 'library', identity: 'file:///library.tonto', imports: [], hasPackages: true,
+            packages: outline.packages
+        };
+        const collapsed = deriveWorkspacePackages([ontology]);
+        expect(collapsed.nodes.find(node => node.id === 'workspace-ontology:library')?.hasPackages).toBe(true);
+
+        const view = deriveWorkspacePackages([ontology], new Set(['workspace-ontology:library']));
+        const positions = await laidOut(view);
+        const frame = groupBoxes(view, positions)[0]!;
+        expect(frame).toMatchObject({ id: 'workspace-ontology:library', name: 'library', expandable: true });
+        for (const id of [
+            'workspace-package:library::catalogue', 'workspace-package:library::lending'
+        ]) {
+            expect(inside(positions[id]!, frame.rect)).toBe(true);
+        }
+        expect(view.edges).toContainEqual(expect.objectContaining({
+            id: 'use:workspace-package:library::lending->workspace-package:library::catalogue'
+        }));
+        const { svg } = render({ view, positions, display });
+        expect(svg).toContain('data-toggle-ontology="workspace-ontology:library"');
+    });
 
     test('lays the members out inside the frame and the imports outside it', async () => {
         const view = derivePackages(outline);
