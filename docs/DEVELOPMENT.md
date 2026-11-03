@@ -81,17 +81,17 @@ extension, so uninstall it once, or both will open a diagram panel.
 
 ### Prepare and publish a release
 
-Commit the release-ready source to `master` first, including the language
+Commit the release-ready source to `main` first, including the language
 submodule at the commit the release is built against. Then run:
 
 ```sh
 npm run release -- 0.3.2
 ```
 
-The script checks that the working tree is clean, local `master` matches
-`origin/master`, the version is newer than the current release, the tag is
+The script checks that the working tree is clean, local `main` matches
+`origin/main`, the version is newer than the current release, the tag is
 unused, and `gh` is authenticated. It shows the steps and asks once before it
-updates versions, commits them, creates a signed annotated tag, pushes `master`
+updates versions, commits them, creates a signed annotated tag, pushes `main`
 and the tag, and dispatches `Release tonto visualizer`. Use `--dry-run` to show
 the plan without changing the version or repository. Use `--yes` to skip the
 confirmation in a deliberate non-interactive run.

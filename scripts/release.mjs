@@ -1,4 +1,4 @@
-// Prepares a release from a clean master branch, then pushes its signed tag and
+// Prepares a release from a clean main branch, then pushes its signed tag and
 // dispatches the release workflow. Each operation stops the sequence on error;
 // a partially completed release is left visible for a deliberate retry.
 import { readFileSync } from 'node:fs';
@@ -77,16 +77,16 @@ function preflight() {
         fail('The working tree must be clean. Commit the release-ready source before preparing a release.');
     }
     const branch = output('git', ['branch', '--show-current']);
-    if (branch !== 'master') {
-        fail(`Releases must be prepared from master; current branch is ${branch || '(detached HEAD)'}.`);
+    if (branch !== 'main') {
+        fail(`Releases must be prepared from main; current branch is ${branch || '(detached HEAD)'}.`);
     }
 
-    console.log('Checking origin/master and release tag availability...');
+    console.log('Checking origin/main and release tag availability...');
     run('git', ['fetch', 'origin']);
     const local = output('git', ['rev-parse', 'HEAD']);
-    const remote = output('git', ['rev-parse', 'origin/master']);
+    const remote = output('git', ['rev-parse', 'origin/main']);
     if (local !== remote) {
-        fail('Local master must match origin/master. Push or pull the release-ready source first.');
+        fail('Local main must match origin/main. Push or pull the release-ready source first.');
     }
     const remoteTag = run('git', ['ls-remote', '--exit-code', '--tags', 'origin', `refs/tags/${tag}`], {
         capture: true, allowFailure: true
@@ -110,7 +110,7 @@ async function main() {
     console.log('  1. Set and check the shared workspace version.');
     console.log('  2. Commit the version change.');
     console.log('  3. Create a signed, annotated tag.');
-    console.log('  4. Push master and the tag to origin.');
+    console.log('  4. Push main and the tag to origin.');
     console.log(`  5. Dispatch Release tonto visualizer (Marketplace: ${publishMarketplace ? 'on' : 'off'}, npm: ${publishNpm ? 'on' : 'off'}).`);
     if (dryRun) {
         console.log('\nDry run only; no version, commit, tag, push, or workflow changes made.');
@@ -135,7 +135,7 @@ async function main() {
         'packages/cli/package.json', 'packages/extension/package.json']);
     run('git', ['commit', '-m', `Prepare release ${tag}`]);
     run('git', ['tag', '-s', tag, '-m', `Release ${tag}`]);
-    run('git', ['push', 'origin', 'master']);
+    run('git', ['push', 'origin', 'main']);
     run('git', ['push', 'origin', tag]);
     run('gh', [
         'workflow', 'run', '.github/workflows/release.yml', '--ref', tag,
