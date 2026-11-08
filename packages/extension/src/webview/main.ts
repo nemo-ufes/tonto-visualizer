@@ -17,16 +17,19 @@ import { ASSOCIATION_DISTANCE, clampAssociationDistance, defaultLayoutOptions } 
 // pulls in the derivation, and with it Langium and half of Node.
 import type { Corner, Handle, Point, Rect, Rendered, RenderInput, Size } from 'tonto-canvas/draw';
 import {
-    CORNERS, cornerOf, curvedRoute, darkTheme, derivationBetween, distanceToPath, drawDerivation, drawNode, drawTrees,
-    dropHandle, edgeEnds, handlesFor, lightTheme, moveHandle, overlaps, pathData, rectBetween, relationSpreads, render,
+    CORNERS, cornerOf, curvedRoute, derivationBetween, distanceToPath, drawDerivation, drawNode, drawTrees,
+    dropHandle, edgeEnds, handlesFor, moveHandle, overlaps, pathData, rectBetween, relationSpreads, render,
     resizeTo, routeEdge, segmentHitsRect, sizeOf, trianglePoints
 } from 'tonto-canvas/draw';
 import type { FilterItem } from '../protocol.js';
 import { BackgroundRenderer } from './background.js';
+import type { DiagramBackground } from '../appearance.js';
+import { diagramTheme, isDiagramBackground } from '../appearance.js';
+import { installPanControls } from './pan.js';
 
 interface HostApi {
     postMessage(message: unknown): void;
-    getState(): { scale?: number; x?: number; y?: number; fit?: boolean } | undefined;
+    getState(): { scale?: number; x?: number; y?: number; fit?: boolean; pan?: boolean; background?: DiagramBackground } | undefined;
     setState(state: unknown): void;
 }
 
@@ -60,6 +63,7 @@ let scale = stored.scale ?? 1;
 let panX = stored.x ?? 0;
 let panY = stored.y ?? 0;
 let fitMode = stored.fit ?? false;
+let backgroundChoice: DiagramBackground = isDiagramBackground(stored.background) ? stored.background : 'editor';
 let bounds: Rect = { x: 0, y: 0, width: 1, height: 1 };
 /** Set while a drag is in flight, so a redraw does not yank the boxes back. */
 let dragging: DragState | undefined;
@@ -89,6 +93,43 @@ let spines: Record<string, Point[]> = {};
 let anchors: Record<string, Point> = {};
 /** Where the pointer last was, in diagram coordinates, for a drag that ends. */
 let lastPoint: Point | undefined;
+
+const panControls = installPanControls({
+    viewport,
+    button: element('pan'),
+    initial: stored.pan === true,
+    canStart: () => dragging === undefined,
+    move: (dx, dy) => {
+        fitMode = false;
+        updateFitToggle();
+        panX += dx;
+        panY += dy;
+        applyViewport();
+    },
+    changed: saveViewport
+});
+const backgroundChooser = element('diagramBackground') as HTMLSelectElement;
+backgroundChooser.value = backgroundChoice;
+backgroundChooser.addEventListener('change', () => {
+    if (isDiagramBackground(backgroundChooser.value)) {
+        backgroundChoice = backgroundChooser.value;
+        updateDiagramTheme();
+        saveViewport();
+        host.postMessage({ type: 'background', background: backgroundChoice });
+        draw();
+    }
+});
+updateDiagramTheme();
+
+function updateDiagramTheme(): void {
+    const theme = diagramTheme(backgroundChoice, dark);
+    viewport.style.backgroundColor = theme.background;
+    viewport.style.color = theme.text;
+    viewport.style.colorScheme = backgroundChoice === 'black' || backgroundChoice === 'editor' && dark ? 'dark' : 'light';
+    // Keep editing handles and focus legible without recolouring the toolbar.
+    viewport.style.setProperty('--vscode-editor-background', theme.background);
+    viewport.style.setProperty('--vscode-focusBorder', theme.accent);
+}
 
 interface DragState {
     ids: string[];
@@ -171,6 +212,7 @@ window.addEventListener('message', event => {
     } else if (message.type === 'theme') {
         dark = message.dark;
         document.body.classList.toggle('dark', dark);
+        updateDiagramTheme();
         draw();
     }
 });
@@ -260,7 +302,7 @@ function draw(): void {
         routes,
         display,
         direction: layout?.direction,
-        theme: dark ? darkTheme : lightTheme,
+        theme: diagramTheme(backgroundChoice, dark),
         selection: [...selection]
     };
     const generation = ++drawRequested;
@@ -510,7 +552,7 @@ function repaintNode(id: string): void {
     if (!node || !group || !rect || !display) {
         return;
     }
-    group.outerHTML = drawNode(node, rect, display, dark ? darkTheme : lightTheme, selection.has(id));
+    group.outerHTML = drawNode(node, rect, display, diagramTheme(backgroundChoice, dark), selection.has(id));
 }
 
 /** Draws one line from its editable guide, without redrawing anything else. */
@@ -564,8 +606,12 @@ function repaintDerivations(affected: (client: string, supplier: string) => bool
 function applyViewport(): void {
     canvas.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
     scaleLabel.textContent = `${Math.round(scale * 100)}%`;
-    host.setState({ scale, x: panX, y: panY, fit: fitMode });
+    saveViewport();
     drawHandles();
+}
+
+function saveViewport(): void {
+    host.setState({ scale, x: panX, y: panY, fit: fitMode, pan: panControls.active, background: backgroundChoice });
 }
 
 function fitViewport(): void {
@@ -973,7 +1019,7 @@ function redrawTrees(moved: Set<string>): void {
         return;
     }
     const drawn = drawTrees({
-        view, positions, theme: dark ? darkTheme : lightTheme, selection: [...selection],
+        view, positions, theme: diagramTheme(backgroundChoice, dark), selection: [...selection],
         ...(display ? { display } : {}),
         anchors
     });
@@ -1196,6 +1242,9 @@ window.addEventListener('pointerdown', event => {
 }, true);
 
 const followViewportSize = () => {
+    const toolbarHeight = element('toolbar').offsetHeight;
+    optionsPanel.style.top = `${toolbarHeight + 4}px`;
+    optionsPanel.style.maxHeight = `calc(100% - ${toolbarHeight + 24}px)`;
     if (fitMode) {
         fitViewport();
     }
@@ -1426,4 +1475,4 @@ function cssEscape(value: string): string {
     return value.replaceAll(/["\\]/g, '\\$&');
 }
 
-host.postMessage({ type: 'ready' });
+host.postMessage({ type: 'ready', background: backgroundChoice });
