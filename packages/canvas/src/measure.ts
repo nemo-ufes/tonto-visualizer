@@ -161,7 +161,12 @@ export function packageLocationLine(node: ViewNode): string | undefined {
  */
 export function multiplicityLabel(cardinality: string | undefined, showExactlyOne = false): string | undefined {
     if (!cardinality) {
-        return undefined;
+        // Tonto reads an omitted cardinality as exactly one -- its hover says
+        // `[1] (default)` for a relation end, and its attribute checks bound
+        // an unmarked attribute at one and one -- so asking to see exactly one
+        // shows it here as well, or the option would show only the ones
+        // written out and leave the commonest case looking unconstrained.
+        return showExactlyOne ? '1' : undefined;
     }
     const [lower, upper] = cardinality.split('..');
     if (upper === undefined) {

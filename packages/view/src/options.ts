@@ -78,10 +78,11 @@ export interface DisplayOptions {
     showAttributes: boolean;
     showCardinalities: boolean;
     /**
-     * Write a cardinality of exactly one (`1`, `1..1`) where the model states
-     * it. Off by default, since one is what an unmarked end is usually read
-     * as; on for readers who should not have to know that convention. A
-     * cardinality the model leaves out is never drawn as one.
+     * Write a cardinality of exactly one as `1`: one the model states (`[1]`,
+     * `[1..1]`) and one it leaves out, which Tonto reads as exactly one on
+     * relation ends and attributes alike. Off by default, since one is what an
+     * unmarked end is usually read as; on for readers who should not have to
+     * know that convention.
      */
     showExactlyOne: boolean;
     showRelationNames: boolean;

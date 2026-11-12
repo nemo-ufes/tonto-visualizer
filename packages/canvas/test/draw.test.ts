@@ -1071,8 +1071,8 @@ describe('drawing', () => {
         expect(multiplicityLabel('1', true)).toBe('1');
         expect(multiplicityLabel('1..1', true)).toBe('1');
         expect(multiplicityLabel('0..*', true)).toBe('*');
-        // An end that states nothing is not thereby one.
-        expect(multiplicityLabel(undefined, true)).toBeUndefined();
+        // Tonto reads an end that states nothing as exactly one.
+        expect(multiplicityLabel(undefined, true)).toBe('1');
 
         const svg = drawn(related(), { ...display, showExactlyOne: true }).svg;
         expect(svg).toContain('>1..*<');
@@ -1090,6 +1090,9 @@ describe('drawing', () => {
         };
         expect(wrappedAttributeLines(node, display)).toEqual(['name: string']);
         expect(wrappedAttributeLines(node, { ...display, showExactlyOne: true })).toEqual(['name: string [1]']);
+        const unmarked = { ...node, attributes: node.attributes.map(({ cardinality: _, ...rest }) => rest) };
+        expect(wrappedAttributeLines(unmarked, display)).toEqual(['name: string']);
+        expect(wrappedAttributeLines(unmarked, { ...display, showExactlyOne: true })).toEqual(['name: string [1]']);
     });
 
     test('drops the decorations, the padlock included, when they are turned off', () => {
