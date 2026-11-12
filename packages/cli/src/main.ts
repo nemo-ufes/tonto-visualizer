@@ -17,7 +17,10 @@ import {
 import { modelRoot, ViewSession } from 'tonto-view/session';
 import { autoLayout, darkTheme, placeNewNodes, render, sizeOf } from 'tonto-canvas';
 
+declare const __TONTOVIEW_VERSION__: string;
+
 const usage = `tonto-view <file-or-directory> [--package <name>]...
+tonto-view --version
 
 Prints the view model -- the nodes, edges, groups and generalization sets a
 diagram of the model would hold. An ontology manifest -- an "ontology"
@@ -37,9 +40,14 @@ packages, the ontologies it imports, and the dependencies between them.
   --no-external      leave out elements from packages outside the view
   --no-datatypes     leave out datatypes and enumerations
   --derived-material <mode>  both (default), relators, or relations
+  --version, -V      print the CLI version
 `;
 
 export async function run(argv: string[]): Promise<number> {
+    if (argv[0] === '--version' || argv[0] === '-V') {
+        process.stdout.write(`${__TONTOVIEW_VERSION__}\n`);
+        return 0;
+    }
     if (argv.length === 0 || argv[0] === '--help' || argv[0] === '-h') {
         process.stdout.write(usage);
         return argv.length === 0 ? 2 : 0;

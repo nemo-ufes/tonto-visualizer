@@ -1,9 +1,10 @@
-import { chmodSync, mkdirSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { writeThirdPartyNotices } from '../extension/third-party-notices.mjs';
 
 const esbuild = createRequire(new URL('../extension/package.json', import.meta.url))('esbuild');
+const { version } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
 mkdirSync('out', { recursive: true });
 const result = await esbuild.build({
     entryPoints: ['src/command.ts'],
@@ -12,6 +13,7 @@ const result = await esbuild.build({
     platform: 'node',
     target: 'node22',
     format: 'esm',
+    define: { __TONTOVIEW_VERSION__: JSON.stringify(version) },
     banner: { js: '#!/usr/bin/env node' },
     metafile: true
 });

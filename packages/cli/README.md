@@ -24,4 +24,5 @@ diagram. Ontology manifests with a `bundles` clause are rendered as package
 diagrams.
 
 Use `tonto-view --help` for package filters, display modes, routing options and
-saved `.tontoview` arrangements.
+saved `.tontoview` arrangements. Check the installed package version with
+`tonto-view --version`.
