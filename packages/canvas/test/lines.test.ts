@@ -162,6 +162,45 @@ describe('telling one line from another', () => {
         expect(svg.match(/class="tv-marker"/g)).toHaveLength(1);
     });
 
+    test('separates tree buses that meet at a shared subtype', () => {
+        const gensets = ['PersonStatus', 'ActiveThings'].map(name => ({
+            id: `set:Sample::${name}`, name, disjoint: true, complete: true,
+            general: name === 'PersonStatus' ? 'Sample::Person' : 'Sample::Active',
+            specifics: name === 'PersonStatus'
+                ? ['Sample::ActivePerson', 'Sample::RetiredPerson']
+                : ['Sample::ActivePerson', 'Sample::ActiveOrganization'],
+            categorizers: []
+        }));
+        const view: ViewModel = {
+            groups: [],
+            nodes: ['Person', 'Active', 'RetiredPerson', 'ActivePerson', 'ActiveOrganization'].map(classNode),
+            edges: [
+                generalization('ActivePerson', 'Person', gensets[0]!.id),
+                generalization('RetiredPerson', 'Person', gensets[0]!.id),
+                generalization('ActivePerson', 'Active', gensets[1]!.id),
+                generalization('ActiveOrganization', 'Active', gensets[1]!.id)
+            ],
+            gensets
+        };
+        const positions = {
+            'Sample::Person': { x: 89, y: 12, width: 108, height: 42 },
+            'Sample::Active': { x: 270, y: 12, width: 108, height: 42 },
+            'Sample::RetiredPerson': { x: 12, y: 160, width: 108, height: 42 },
+            'Sample::ActivePerson': { x: 180, y: 160, width: 108, height: 42 },
+            'Sample::ActiveOrganization': { x: 348, y: 160, width: 137, height: 42 }
+        };
+        const svg = render({ view, positions, display }).svg;
+        const branch = (id: string) => new RegExp(`<path data-edge="${id.replaceAll('>', '&gt;')}" d="([^"]+)"`).exec(svg)?.[1];
+        const person = branch('gen:Sample::ActivePerson-&gt;Sample::Person');
+        const active = branch('gen:Sample::ActivePerson-&gt;Sample::Active');
+
+        expect(person).toBeDefined();
+        expect(active).toBeDefined();
+        expect(person).not.toEqual(active);
+        const landingX = (path: string) => Number(/L ([-\d.]+) ([-\d.]+)$/.exec(path)?.[1]);
+        expect(landingX(person!)).not.toBe(landingX(active!));
+    });
+
     test('keeps the tree through a drag that falls a little short of clearing the general', () => {
         // A drag that meant to slide Child sideways and landed 15px shy of
         // clearing Person's own edge should not cost the set its shared

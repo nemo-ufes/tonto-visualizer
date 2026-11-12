@@ -2224,10 +2224,11 @@ function drawPlannedTrees(
     const inTree: Record<string, string> = {};
     const spines: Record<string, Point[]> = {};
     const apexes: Record<string, Point> = {};
+    const legLanes = new Map<string, number>();
     for (const plan of plans) {
         const tree = drawTree(
             plan, positions, theme, placer, font, obstacles, buses,
-            anchors.stems, anchors.heads, anchors.headStrokes, selected
+            anchors.stems, anchors.heads, anchors.headStrokes, selected, legLanes
         );
         if (!tree.markup) {
             continue;
@@ -2251,7 +2252,8 @@ function drawTree(
     plan: TreePlan, positions: Positions, theme: Theme, placer: LabelPlacer, font: FontMetrics,
     obstacles: Rect[] = [],
     buses: BusLine[] = [], stems: ReadonlyMap<string, Point> = new Map(),
-    heads: HeadMarker[] = [], headStrokes: HeadStroke[] = [], selected: ReadonlySet<string> = new Set()
+    heads: HeadMarker[] = [], headStrokes: HeadStroke[] = [], selected: ReadonlySet<string> = new Set(),
+    legLanes: Map<string, number> = new Map()
 ): DrawnTree {
     const general = positions[plan.general];
     const children = plan.children
@@ -2330,7 +2332,11 @@ function drawTree(
     // it like every other element in the drawing.
     const legs: Record<string, Point[]> = {};
     for (const entry of children) {
-        const points = legPath(entry.rect, bus, obstacles, axis);
+        // A class can belong to several explicit sets. Give each tree a
+        // separate landing on that card so their legs do not share a stroke.
+        const lane = legLanes.get(entry.id) ?? 0;
+        legLanes.set(entry.id, lane + 1);
+        const points = legPath(entry.rect, bus, obstacles, axis, lane);
         const edge = plan.edgeOf[entry.id];
         if (edge) {
             legs[edge] = points;
@@ -2471,12 +2477,15 @@ function legEdge(child: Rect, bus: number, axis: TreeAxis): number {
  * nothing to do with is read as ending there -- so it steps aside, comes down
  * beside the obstacle and turns back in just above the subtype.
  */
-function legPath(child: Rect, bus: number, obstacles: Rect[], axis: TreeAxis): Point[] {
-    const centre = axis.cross(child);
+function legPath(child: Rect, bus: number, obstacles: Rect[], axis: TreeAxis, lane = 0): Point[] {
+    const middle = axis.cross(child);
+    const offsets = [0, -12, 12, -24, 24];
+    const cross = Math.max(axis.crossStart(child) + 8, Math.min(axis.crossEnd(child) - 8,
+        middle + (offsets[lane % offsets.length] ?? 0)));
     const edge = legEdge(child, bus, axis);
     const direction = edge >= bus ? 1 : -1;
-    const from = axis.point(bus, centre);
-    const to = axis.point(edge, centre);
+    const from = axis.point(bus, cross);
+    const to = axis.point(edge, cross);
     const blocking = obstacles.filter(rect => rect !== child && segmentHitsRect(from, to, rect, 2));
     if (blocking.length === 0) {
         return [from, to];
@@ -2487,7 +2496,7 @@ function legPath(child: Rect, bus: number, obstacles: Rect[], axis: TreeAxis): P
         for (const aside of [axis.crossStart(rect) - 20, axis.crossEnd(rect) + 20]) {
             const viaBus = axis.point(bus, aside);
             const viaTurn = axis.point(turn, aside);
-            const backIn = axis.point(turn, centre);
+            const backIn = axis.point(turn, cross);
             const clear = !obstacles.some(other => other !== child
                 && (segmentHitsRect(from, viaBus, other, 2)
                     || segmentHitsRect(viaBus, viaTurn, other, 2)
@@ -2551,7 +2560,9 @@ function busDepth(
         // bus on the same axis competes for it -- a vertical tree's depth is a
         // y, and has nothing to say about a horizontal one's x.
         let crossings = buses.filter(other => other.vertical === axis.vertical && Math.abs(other.at - depth) < 12
-            && other.from < right && left < other.to).length * 2;
+            // Two buses that meet at one subtype still compete for its leg:
+            // otherwise the leg is drawn twice over the same segment.
+            && other.from <= right && left <= other.to).length * 2;
         for (const rect of obstacles) {
             if (segmentHitsRect(axis.point(depth, left), axis.point(depth, right), rect, 2)) {
                 crossings += 1;
