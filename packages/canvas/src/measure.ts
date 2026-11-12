@@ -247,18 +247,22 @@ export function stereotypeLabel(node: ViewNode): string | undefined {
     if (node.kind === 'unresolved') {
         return undefined;
     }
-    const powerType = node.isPowerType ? ', powertype' : '';
-    return node.stereotype ? `«${node.stereotype}${powerType}»` : undefined;
+    return node.stereotype ? `«${node.stereotype}»` : undefined;
 }
 
 export function nodeLabel(node: ViewNode, options: DisplayOptions): string {
     return options.qualifyNames && node.package ? `${node.package}::${node.name}` : node.name;
 }
 
+export function taggedValueLabel(node: ViewNode): string | undefined {
+    return node.kind === 'class' && node.isPowerType ? '{isPowertype=true}' : undefined;
+}
+
 export function sizeOf(node: ViewNode, options: DisplayOptions): Size {
     const font = fontMetrics(options);
     const label = nodeLabel(node, options);
     const stereotype = stereotypeLabel(node);
+    const taggedValue = taggedValueLabel(node);
     if (node.kind === 'package') {
         const location = packageLocationLine(node);
         const width = Math.max(
@@ -270,6 +274,7 @@ export function sizeOf(node: ViewNode, options: DisplayOptions): Size {
         const height = PACKAGE_TAB.height * font.scale
             + (stereotype ? NODE.stereotypeHeight * font.scale : 0)
             + NODE.nameHeight * font.scale
+            + (taggedValue ? NODE.lineHeight * font.scale : 0)
             + (location ? NODE.lineHeight * font.scale : 0)
             + NODE.headerGap * 4;
         return { width: round(width), height: round(height) };
@@ -279,10 +284,13 @@ export function sizeOf(node: ViewNode, options: DisplayOptions): Size {
         font.cardMinWidth,
         textWidth(label, font.name, true, font.kind) + font.cardPadding * 2,
         stereotype ? textWidth(stereotype, font.stereotype, false, font.kind) + font.cardPadding * 2 : 0,
+        taggedValue ? textWidth(taggedValue, font.attribute, false, font.kind) + font.cardPadding * 2 : 0,
         ...lines.map(line => textWidth(line, font.attribute, false, font.kind) + font.cardPadding * 2)
     );
     const header = (stereotype ? NODE.stereotypeHeight * font.scale : 0)
-        + NODE.nameHeight * font.scale + NODE.headerGap * 2;
+        + NODE.nameHeight * font.scale
+        + (taggedValue ? NODE.lineHeight * font.scale : 0)
+        + NODE.headerGap * 2;
     const body = lines.length > 0 ? lines.length * NODE.lineHeight * font.scale + NODE.headerGap * 2 : 0;
     return { width: round(width), height: round(header + body) };
 }

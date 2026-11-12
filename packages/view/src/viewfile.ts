@@ -150,6 +150,8 @@ function readDisplayOptions(value: unknown): DisplayOptions {
         showEndDecorations: booleanOr(source.showEndDecorations, defaultDisplayOptions.showEndDecorations),
         showRoleNames: booleanOr(source.showRoleNames, defaultDisplayOptions.showRoleNames),
         showColors: booleanOr(source.showColors, defaultDisplayOptions.showColors),
+        transparentBackground: booleanOr(
+            source.transparentBackground, defaultDisplayOptions.transparentBackground),
         showLegend: booleanOr(source.showLegend, defaultDisplayOptions.showLegend),
         showPackageGroups: booleanOr(source.showPackageGroups, defaultDisplayOptions.showPackageGroups),
         qualifyNames: booleanOr(source.qualifyNames, defaultDisplayOptions.qualifyNames)

@@ -84,6 +84,8 @@ export interface DisplayOptions {
     showRoleNames: boolean;
     /** Fill elements with their nature colour; off is monochrome. */
     showColors: boolean;
+    /** Leave the SVG canvas clear outside the diagram. */
+    transparentBackground: boolean;
     /** Show the nature-colour key beside the canvas. */
     showLegend: boolean;
     /** Box each package. */
@@ -121,7 +123,7 @@ export const defaultLayoutOptions: LayoutOptions = {
     associationDistance: 100,
     nodeSpacing: 60,
     rankSpacing: 100,
-    groupByPackage: true
+    groupByPackage: false
 };
 
 /** Toolbar bounds keep dense layouts usable and spacious ones finite. */
@@ -152,6 +154,7 @@ export const defaultDisplayOptions: DisplayOptions = {
     showEndDecorations: true,
     showRoleNames: true,
     showColors: true,
+    transparentBackground: false,
     showLegend: false,
     showPackageGroups: true,
     qualifyNames: false,

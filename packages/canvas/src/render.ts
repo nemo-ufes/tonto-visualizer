@@ -18,7 +18,7 @@ import {
 } from './geometry.js';
 import {
     fontMetrics, multiplicityLabel, NODE, nodeLabel, PACKAGE_TAB, packageLocationLine, packageTabWidth,
-    stereotypeLabel, textWidth, wrappedAttributeLines
+    stereotypeLabel, taggedValueLabel, textWidth, wrappedAttributeLines
 } from './measure.js';
 import type { FontMetrics } from './measure.js';
 import type { Positions } from './place.js';
@@ -237,7 +237,12 @@ export function render(input: RenderInput): Rendered {
     const { positions, display } = input;
     const view = shownView(input.view, display);
     const font = fontMetrics(display);
-    const theme = input.theme ?? lightTheme;
+    const theme = {
+        ...(input.theme ?? lightTheme),
+        // A paper-coloured text halo leaves visible marks in an otherwise
+        // transparent export, so clear it along with the canvas backdrop.
+        background: display.transparentBackground ? 'none' : (input.theme ?? lightTheme).background
+    };
     const padding = input.padding ?? 16;
     const selected = new Set(input.selection ?? []);
     const rects = view.nodes
@@ -538,6 +543,9 @@ export function render(input: RenderInput): Rendered {
                     + `<text x="${legendX + legendPadding + 20}" y="${y + font.name + 2}">${escape(entry.label)}</text>`;
             }).join('') + '</g>'
         : '';
+    const backgroundMarkup = display.transparentBackground
+        ? ''
+        : `<rect x="${origin.x}" y="${origin.y}" width="${width}" height="${height}" fill="${theme.background}"/>`;
 
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${origin.x} ${origin.y} ${width} ${height}" width="${width}" height="${height}">
 <style>
@@ -557,6 +565,7 @@ text {
 .tv-node rect { stroke: ${theme.line}; stroke-width: 1; }
 .tv-node text { fill: ${theme.onFill}; }
 .tv-name { font-weight: 600; font-size: ${font.name}px; letter-spacing: 0.005em; }
+.tv-tagged-value { font-size: ${font.attribute}px; }
 .tv-legend text { font-size: ${font.name}px; fill: ${theme.text}; }
 .tv-stereotype { font-size: ${font.stereotype}px; fill-opacity: 0.72; letter-spacing: 0.01em; }
 .tv-attribute { font-size: ${font.attribute}px; }
@@ -589,7 +598,7 @@ text {
 .tv-open-packages:hover circle { fill: ${theme.accent}; }
 .tv-open-packages:hover path { stroke: ${theme.surface}; }
 </style>
-<rect x="${origin.x}" y="${origin.y}" width="${width}" height="${height}" fill="${theme.background}"/>
+${backgroundMarkup}
 ${groups.map(group => drawGroup(group, font)).join('')}${edgeMarkup}${derivationMarkup}${treeMarkup}${nodeMarkup}<g class="tv-labels">${labelMarkup}</g>${legendMarkup}</svg>`;
 
     return {
@@ -903,6 +912,7 @@ export function drawNode(
 ): string {
     const font = fontMetrics(display);
     const stereotype = stereotypeLabel(node);
+    const taggedValue = taggedValueLabel(node);
     if (node.kind === 'package') {
         return drawPackage(node, rect, display, theme, isSelected);
     }
@@ -922,9 +932,15 @@ export function drawNode(
         y += NODE.stereotypeHeight * font.scale - font.stereotype;
     }
     y += font.name;
+    const nameBaseline = y;
     text += `<text class="tv-name" x="${rect.x + rect.width / 2}" y="${y}" text-anchor="middle">${escape(nodeLabel(node, display))}</text>`;
     y = rect.y + (stereotype ? NODE.stereotypeHeight * font.scale : 0)
         + NODE.nameHeight * font.scale + NODE.headerGap * 2;
+    if (taggedValue) {
+        const lineGap = NODE.stereotypeHeight * font.scale - font.stereotype + font.name;
+        text += `<text class="tv-tagged-value" x="${rect.x + rect.width / 2}" y="${nameBaseline + lineGap}" text-anchor="middle">${escape(taggedValue)}</text>`;
+        y += NODE.lineHeight * font.scale;
+    }
 
     let compartment = '';
     if (lines.length > 0) {
@@ -952,6 +968,7 @@ export function drawNode(
 function drawPackage(node: ViewNode, rect: Rect, display: DisplayOptions, theme: Theme, isSelected: boolean): string {
     const font = fontMetrics(display);
     const stereotype = stereotypeLabel(node);
+    const taggedValue = taggedValueLabel(node);
     const location = packageLocationLine(node);
     const fill = display.showColors && !node.unavailable ? node.color : theme.surface;
     const classes = ['tv-node',
@@ -972,6 +989,11 @@ function drawPackage(node: ViewNode, rect: Rect, display: DisplayOptions, theme:
     y += font.name;
     text += `<text class="tv-name" x="${middle}" y="${y}" text-anchor="middle">${escape(nodeLabel(node, display))}</text>`;
     y += NODE.nameHeight * font.scale - font.name;
+    if (taggedValue) {
+        y += font.attribute;
+        text += `<text class="tv-tagged-value" x="${middle}" y="${y}" text-anchor="middle">${escape(taggedValue)}</text>`;
+        y += NODE.lineHeight * font.scale - font.attribute;
+    }
     if (location) {
         y += font.attribute;
         text += `<text class="tv-location" x="${middle}" y="${y}" text-anchor="middle">${escape(location)}</text>`;

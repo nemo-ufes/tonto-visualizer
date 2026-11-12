@@ -179,9 +179,15 @@ describe('the webview and its host protocol', () => {
         expect(chooser('Direction').value).toBe('DOWN');
         expect(chooser('Typeface').value).toBe('sans');
         expect(chooser('Text size').value).toBe('medium');
-        expect(checkbox('Cluster packages').checked).toBe(true);
+        expect(checkbox('Cluster packages').checked).toBe(false);
+        expect(checkbox('Transparent background').checked).toBe(false);
         expect([...document.querySelectorAll('label.choice')]
             .some(candidate => candidate.querySelector('span')?.textContent === 'Arrangement')).toBe(false);
+
+        checkbox('Transparent background').click();
+        expect(posted('display').at(-1)).toEqual({
+            type: 'display', display: { transparentBackground: true }
+        });
     });
 
     test('turns one hierarchy-only view off when the other is turned on', () => {

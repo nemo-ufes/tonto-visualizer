@@ -49,7 +49,7 @@ describe('view file options', () => {
                 hidden: ['Sample::Person', 'works-for']
             },
             display: {
-                taxonomyOnly: true, showLegend: true, routing: 'orthogonal',
+                taxonomyOnly: true, showLegend: true, transparentBackground: true, routing: 'orthogonal',
                 fontFamily: 'monospace', fontSize: 'large'
             },
             layout: {
@@ -79,6 +79,7 @@ describe('view file options', () => {
             ...defaultDisplayOptions,
             taxonomyOnly: true,
             showLegend: true,
+            transparentBackground: true,
             routing: 'orthogonal',
             fontFamily: 'monospace',
             fontSize: 'large'

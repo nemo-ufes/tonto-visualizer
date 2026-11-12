@@ -388,6 +388,44 @@ describe('drawing', () => {
         expect(sizeOf(employee!, display).width).toBe(108);
     });
 
+    test('shows a Cardelli powertype as a tagged value after its name', () => {
+        const base = model();
+        const node = { ...base.nodes[0]!, isPowerType: true };
+        const view = { ...base, nodes: [node], edges: [], groups: [], gensets: [] };
+        const svg = render({
+            view,
+            positions: placeNewNodes(view, { [node.id]: sizeOf(node, display) }, {}),
+            display
+        }).svg;
+
+        expect(svg).toContain('class="tv-name"');
+        expect(svg).toContain('class="tv-tagged-value"');
+        expect(svg).toContain('>Person</text>');
+        expect(svg).toContain('>{isPowertype=true}</text>');
+        expect(svg.indexOf('>Person</text>')).toBeLessThan(svg.indexOf('>{isPowertype=true}</text>'));
+        const baseline = (className: string) => Number(svg.match(
+            new RegExp(`<text class="${className}"[^>]* y="([^"]+)"`)
+        )?.[1]);
+        expect(baseline('tv-tagged-value') - baseline('tv-name'))
+            .toBe(baseline('tv-name') - baseline('tv-stereotype'));
+        expect(sizeOf(node, display).height).toBeGreaterThan(sizeOf(base.nodes[0]!, display).height);
+        expect(svg).not.toContain('«kind, powertype»');
+    });
+
+    test('leaves the SVG canvas transparent when requested', () => {
+        const view = model();
+        const positions = placeNewNodes(view, Object.fromEntries(
+            view.nodes.map(node => [node.id, sizeOf(node, display)])
+        ), {});
+        const opaque = render({ view, positions, display });
+        const transparent = render({ view, positions, display: { ...display, transparentBackground: true } });
+        const backdrop = `<rect x="${opaque.bounds.x}" y="${opaque.bounds.y}" width="${opaque.bounds.width}" height="${opaque.bounds.height}" fill="#f7f6f2"/>`;
+
+        expect(opaque.svg).toContain(backdrop);
+        expect(transparent.svg).not.toContain(backdrop);
+        expect(transparent.svg).not.toContain('stroke="#f7f6f2"');
+    });
+
     test('measures and renders the selected portable font preset', () => {
         const person = model().nodes[0]!;
         const small = { ...display, fontFamily: 'sans' as const, fontSize: 'small' as const };

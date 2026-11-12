@@ -1221,6 +1221,7 @@ function fillOptions(): void {
         ['showRoleNames', 'Role names'],
         ['showEndDecorations', 'End decorations'],
         ['showColors', 'Nature colours'],
+        ['transparentBackground', 'Transparent background'],
         ['showLegend', 'Nature colour legend'],
         ['showPackageGroups', 'Package boxes'],
         ['qualifyNames', 'Qualified names']
@@ -1241,7 +1242,7 @@ function fillOptions(): void {
             value => host.postMessage({ type: 'layout', layout: { direction: value as LayoutOptions['direction'] } })),
         // Package cohesion is a preference; visible package boxes turn it into
         // a hard container without changing taxonomy ranks.
-        toggle('Cluster packages', layout?.groupByPackage ?? true,
+        toggle('Cluster packages', layout?.groupByPackage ?? false,
             value => host.postMessage({ type: 'layout', layout: { groupByPackage: value } }))
     ];
     optionsPanel.append(section('Shape', arrangement));
