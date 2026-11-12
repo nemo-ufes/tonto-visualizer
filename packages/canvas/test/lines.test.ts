@@ -163,39 +163,46 @@ describe('telling one line from another', () => {
     });
 
     test('separates tree buses that meet at a shared subtype', () => {
-        const gensets = ['PersonStatus', 'ActiveThings'].map(name => ({
+        const gensets = ['PersonStatus', 'OrganizationStatus', 'ActiveThings'].map(name => ({
             id: `set:Sample::${name}`, name, disjoint: true, complete: true,
-            general: name === 'PersonStatus' ? 'Sample::Person' : 'Sample::Active',
-            specifics: name === 'PersonStatus'
-                ? ['Sample::ActivePerson', 'Sample::RetiredPerson']
-                : ['Sample::ActivePerson', 'Sample::ActiveOrganization'],
+            general: name === 'PersonStatus' ? 'Sample::Person'
+                : name === 'OrganizationStatus' ? 'Sample::Organization' : 'Sample::Active',
+            specifics: name === 'PersonStatus' ? ['Sample::ActivePerson', 'Sample::RetiredPerson']
+                : name === 'OrganizationStatus' ? ['Sample::ActiveOrganization', 'Sample::ClosedOrganization']
+                    : ['Sample::ActivePerson', 'Sample::ActiveOrganization'],
             categorizers: []
         }));
         const view: ViewModel = {
             groups: [],
-            nodes: ['Person', 'Active', 'RetiredPerson', 'ActivePerson', 'ActiveOrganization'].map(classNode),
+            nodes: ['Person', 'Organization', 'Active', 'RetiredPerson', 'ActivePerson', 'ActiveOrganization', 'ClosedOrganization'].map(classNode),
             edges: [
                 generalization('ActivePerson', 'Person', gensets[0]!.id),
                 generalization('RetiredPerson', 'Person', gensets[0]!.id),
-                generalization('ActivePerson', 'Active', gensets[1]!.id),
-                generalization('ActiveOrganization', 'Active', gensets[1]!.id)
+                generalization('ActiveOrganization', 'Organization', gensets[1]!.id),
+                generalization('ClosedOrganization', 'Organization', gensets[1]!.id),
+                generalization('ActivePerson', 'Active', gensets[2]!.id),
+                generalization('ActiveOrganization', 'Active', gensets[2]!.id)
             ],
             gensets
         };
         const positions = {
             'Sample::Person': { x: 89, y: 12, width: 108, height: 42 },
+            'Sample::Organization': { x: 543, y: 12, width: 108, height: 42 },
             'Sample::Active': { x: 270, y: 12, width: 108, height: 42 },
             'Sample::RetiredPerson': { x: 12, y: 160, width: 108, height: 42 },
             'Sample::ActivePerson': { x: 180, y: 160, width: 108, height: 42 },
-            'Sample::ActiveOrganization': { x: 348, y: 160, width: 137, height: 42 }
+            'Sample::ActiveOrganization': { x: 348, y: 160, width: 137, height: 42 },
+            'Sample::ClosedOrganization': { x: 545, y: 160, width: 139, height: 42 }
         };
         const svg = render({ view, positions, display }).svg;
         const branch = (id: string) => new RegExp(`<path data-edge="${id.replaceAll('>', '&gt;')}" d="([^"]+)"`).exec(svg)?.[1];
         const person = branch('gen:Sample::ActivePerson-&gt;Sample::Person');
         const active = branch('gen:Sample::ActivePerson-&gt;Sample::Active');
+        const activeOrganization = branch('gen:Sample::ActiveOrganization-&gt;Sample::Active');
 
         expect(person).toBeDefined();
         expect(active).toBeDefined();
+        expect(activeOrganization).toBeDefined();
         expect(person).not.toEqual(active);
         const landingX = (path: string) => Number(/L ([-\d.]+) ([-\d.]+)$/.exec(path)?.[1]);
         expect(landingX(person!)).not.toBe(landingX(active!));
@@ -203,6 +210,10 @@ describe('telling one line from another', () => {
         expect(activePoints[0]!.y).toBe(activePoints[1]!.y);
         expect(activePoints[0]!.x).not.toBe(activePoints[1]!.x);
         expect(activePoints[1]!.x).toBe(activePoints[2]!.x);
+        const rightPoints = points(activeOrganization!);
+        expect(rightPoints[0]!.y).toBe(rightPoints[1]!.y);
+        expect(rightPoints[1]!.x).toBeGreaterThan(rightPoints[0]!.x);
+        expect(rightPoints[1]!.x).toBe(rightPoints[2]!.x);
     });
 
     test('keeps the tree through a drag that falls a little short of clearing the general', () => {

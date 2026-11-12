@@ -2336,7 +2336,9 @@ function drawTree(
         // separate landing on that card so their legs do not share a stroke.
         const lane = legLanes.get(entry.id) ?? 0;
         legLanes.set(entry.id, lane + 1);
-        const points = legPath(entry.rect, bus, obstacles, axis, lane);
+        const midpoint = (crossLow + crossHigh) / 2;
+        const outward = axis.cross(entry.rect) < midpoint ? -1 : 1;
+        const points = legPath(entry.rect, bus, obstacles, axis, lane, outward);
         const edge = plan.edgeOf[entry.id];
         if (edge) {
             legs[edge] = points;
@@ -2477,11 +2479,11 @@ function legEdge(child: Rect, bus: number, axis: TreeAxis): number {
  * nothing to do with is read as ending there -- so it steps aside, comes down
  * beside the obstacle and turns back in just above the subtype.
  */
-function legPath(child: Rect, bus: number, obstacles: Rect[], axis: TreeAxis, lane = 0): Point[] {
+function legPath(child: Rect, bus: number, obstacles: Rect[], axis: TreeAxis, lane = 0, outward = 1): Point[] {
     const middle = axis.cross(child);
-    const offsets = [0, -12, 12, -24, 24];
+    const offsets = [0, 16, 32, 48, 64];
     const cross = Math.max(axis.crossStart(child) + 8, Math.min(axis.crossEnd(child) - 8,
-        middle + (offsets[lane % offsets.length] ?? 0)));
+        middle + outward * (offsets[lane % offsets.length] ?? 0)));
     const edge = legEdge(child, bus, axis);
     const direction = edge >= bus ? 1 : -1;
     const busJoin = axis.point(bus, middle);
