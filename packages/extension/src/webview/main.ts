@@ -1216,6 +1216,7 @@ function fillOptions(): void {
         ['partonomyOnly', 'Partonomy only'],
         ['showAttributes', 'Attributes'],
         ['showCardinalities', 'Cardinalities'],
+        ['showExactlyOne', 'Exactly-one cardinalities'],
         ['showRelationNames', 'Relation names'],
         ['showRelationStereotypes', 'Relation stereotypes'],
         ['showRoleNames', 'Role names'],

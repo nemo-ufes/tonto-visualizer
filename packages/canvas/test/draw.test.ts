@@ -1067,6 +1067,31 @@ describe('drawing', () => {
         expect(svg).not.toMatch(/>\[?1\]?</);
     });
 
+    test('writes an exactly-one multiplicity when the view asks for it', () => {
+        expect(multiplicityLabel('1', true)).toBe('1');
+        expect(multiplicityLabel('1..1', true)).toBe('1');
+        expect(multiplicityLabel('0..*', true)).toBe('*');
+        // An end that states nothing is not thereby one.
+        expect(multiplicityLabel(undefined, true)).toBeUndefined();
+
+        const svg = drawn(related(), { ...display, showExactlyOne: true }).svg;
+        expect(svg).toContain('>1..*<');
+        expect(svg).toMatch(/>1</);
+        // Still under the cardinality switch: off means no multiplicity at all.
+        const hidden = drawn(related(), { ...display, showExactlyOne: true, showCardinalities: false }).svg;
+        expect(hidden).not.toMatch(/>1</);
+
+        const node = {
+            id: 'Sample::Person', name: 'Person', stereotype: 'kind', color: '#FF99A3', isExternal: false,
+            attributes: [{
+                name: 'name', type: 'string', cardinality: '1', stereotypes: [],
+                isOrdered: false, isConst: false, isAddOnly: false, isDerived: false
+            }]
+        };
+        expect(wrappedAttributeLines(node, display)).toEqual(['name: string']);
+        expect(wrappedAttributeLines(node, { ...display, showExactlyOne: true })).toEqual(['name: string [1]']);
+    });
+
     test('drops the decorations, the padlock included, when they are turned off', () => {
         const svg = drawn(related(), { ...display, showEndDecorations: false }).svg;
         expect(svg).not.toContain('class="tv-lock"');

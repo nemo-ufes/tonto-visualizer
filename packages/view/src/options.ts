@@ -77,6 +77,13 @@ export interface DisplayOptions {
     fontSize: DiagramFontSize;
     showAttributes: boolean;
     showCardinalities: boolean;
+    /**
+     * Write a cardinality of exactly one (`1`, `1..1`) where the model states
+     * it. Off by default, since one is what an unmarked end is usually read
+     * as; on for readers who should not have to know that convention. A
+     * cardinality the model leaves out is never drawn as one.
+     */
+    showExactlyOne: boolean;
     showRelationNames: boolean;
     showRelationStereotypes: boolean;
     /** `subsets`, `redefines`, `const`, `addOnly` on the ends that carry them. */
@@ -149,6 +156,7 @@ export const defaultDisplayOptions: DisplayOptions = {
     fontSize: 'medium',
     showAttributes: true,
     showCardinalities: true,
+    showExactlyOne: false,
     showRelationNames: true,
     showRelationStereotypes: true,
     showEndDecorations: true,

@@ -144,6 +144,7 @@ function readDisplayOptions(value: unknown): DisplayOptions {
             ? source.fontSize : defaultDisplayOptions.fontSize,
         showAttributes: booleanOr(source.showAttributes, defaultDisplayOptions.showAttributes),
         showCardinalities: booleanOr(source.showCardinalities, defaultDisplayOptions.showCardinalities),
+        showExactlyOne: booleanOr(source.showExactlyOne, defaultDisplayOptions.showExactlyOne),
         showRelationNames: booleanOr(source.showRelationNames, defaultDisplayOptions.showRelationNames),
         showRelationStereotypes: booleanOr(
             source.showRelationStereotypes, defaultDisplayOptions.showRelationStereotypes),

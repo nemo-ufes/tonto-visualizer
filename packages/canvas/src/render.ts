@@ -1628,7 +1628,7 @@ function endLabel(
 ): string {
     const font = fontMetrics(display);
     const end = atSource ? edge.sourceEnd : edge.targetEnd;
-    const multiplicity = display.showCardinalities ? multiplicityLabel(end.cardinality) : undefined;
+    const multiplicity = display.showCardinalities ? multiplicityLabel(end.cardinality, display.showExactlyOne) : undefined;
 
     const role: string[] = [];
     if (display.showRoleNames && end.role) {

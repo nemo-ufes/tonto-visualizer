@@ -159,17 +159,18 @@ export function packageLocationLine(node: ViewNode): string | undefined {
  * is a `1` beside almost every line, which is noise the reader has to look past
  * to find the multiplicities that do say something.
  */
-export function multiplicityLabel(cardinality: string | undefined): string | undefined {
+export function multiplicityLabel(cardinality: string | undefined, showExactlyOne = false): string | undefined {
     if (!cardinality) {
         return undefined;
     }
     const [lower, upper] = cardinality.split('..');
     if (upper === undefined) {
-        return lower === '1' ? undefined : lower;
+        return lower === '1' && !showExactlyOne ? undefined : lower;
     }
     if (lower === upper) {
-        // `3..3` is three, and `1..1` is the default said twice.
-        return lower === '1' ? undefined : lower;
+        // `3..3` is three, and `1..1` is the default said twice -- left out
+        // unless the view asks for it.
+        return lower === '1' && !showExactlyOne ? undefined : lower;
     }
     // `0..*` and `*` are the same range; the shorter is what a diagram uses.
     return lower === '0' && upper === '*' ? '*' : `${lower}..${upper}`;
@@ -193,8 +194,9 @@ export function attributeLines(node: ViewNode, options: DisplayOptions): string[
         const stereotypes = attribute.stereotypes.map(one => `@${one}`).join(' ');
         // Brackets stay here, where UML puts them and where the multiplicity
         // has a type to be told apart from -- but an explicit `1` is the default
-        // written down, and says no more on an attribute than on an end.
-        const multiplicity = multiplicityLabel(attribute.cardinality);
+        // written down, and says no more on an attribute than on an end, so it
+        // follows the same option.
+        const multiplicity = multiplicityLabel(attribute.cardinality, options.showExactlyOne);
         const cardinality = multiplicity ? ` [${multiplicity}]` : '';
         return `${stereotypes ? `${stereotypes} ` : ''}${attribute.name}: ${flags ? `${flags} ` : ''}${attribute.type}${cardinality}`;
     });
