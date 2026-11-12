@@ -2142,6 +2142,28 @@ interface DrawnTree {
     apex?: Point;
 }
 
+/**
+ * A tree whose triangle, stem and bus are settled but whose legs are not.
+ *
+ * The legs wait because a subtype in several sets takes one leg from each, and
+ * where each of those may land depends on every bus over that subtype -- some
+ * of which belong to trees not yet laid when this one is.
+ */
+interface LaidTree {
+    set: string;
+    general: string;
+    axis: TreeAxis;
+    bus: number;
+    /** The bus's extent along the cross axis, stem included. */
+    from: number;
+    to: number;
+    /** Where the stem meets the bus, along the cross axis. */
+    trunk: number;
+    children: Array<{ id: string; rect: Rect }>;
+    /** Finish the tree, each leg moved along its subtype's edge by `shifts`, keyed by `legKey`. */
+    draw(shifts: ReadonlyMap<string, number>): DrawnTree;
+}
+
 /** Every tree in a view, drawn. */
 export interface TreeDrawing {
     /** What each tree is drawn as, by the set it draws. */
@@ -2224,19 +2246,21 @@ function drawPlannedTrees(
     const inTree: Record<string, string> = {};
     const spines: Record<string, Point[]> = {};
     const apexes: Record<string, Point> = {};
-    const legLanes = new Map<string, number>();
-    for (const plan of plans) {
-        const tree = drawTree(
+    // Every bus first, every leg after: a leg's landing on a shared subtype is
+    // chosen against all the buses over it, not only those drawn before it.
+    const laid = plans
+        .map(plan => drawTree(
             plan, positions, theme, placer, font, obstacles, buses,
-            anchors.stems, anchors.heads, anchors.headStrokes, selected, legLanes
-        );
-        if (!tree.markup) {
-            continue;
-        }
-        const set = plan.marker ?? plan.general;
+            anchors.stems, anchors.heads, anchors.headStrokes, selected
+        ))
+        .filter((tree): tree is LaidTree => tree !== undefined);
+    const shifts = legShifts(laid);
+    for (const lay of laid) {
+        const tree = lay.draw(shifts);
+        const set = lay.set;
         markup[set] = tree.markup;
         spines[set] = tree.spine;
-        const general = positions[plan.general];
+        const general = positions[lay.general];
         if (tree.apex && general) {
             apexes[set] = { x: tree.apex.x - general.x, y: tree.apex.y - general.y };
         }
@@ -2252,15 +2276,14 @@ function drawTree(
     plan: TreePlan, positions: Positions, theme: Theme, placer: LabelPlacer, font: FontMetrics,
     obstacles: Rect[] = [],
     buses: BusLine[] = [], stems: ReadonlyMap<string, Point> = new Map(),
-    heads: HeadMarker[] = [], headStrokes: HeadStroke[] = [], selected: ReadonlySet<string> = new Set(),
-    legLanes: Map<string, number> = new Map()
-): DrawnTree {
+    heads: HeadMarker[] = [], headStrokes: HeadStroke[] = [], selected: ReadonlySet<string> = new Set()
+): LaidTree | undefined {
     const general = positions[plan.general];
     const children = plan.children
         .map(id => ({ id, rect: positions[id] }))
         .filter((entry): entry is { id: string; rect: Rect } => entry.rect !== undefined);
     if (!general || children.length < 2) {
-        return { markup: '', legs: {}, spine: [] };
+        return undefined;
     }
 
     // Which side of the general the bus sits on -- a majority vote, not a
@@ -2325,67 +2348,70 @@ function drawTree(
     const busLeft = axis.point(bus, left);
     const busRight = axis.point(bus, right);
     markup += `<path d="M ${round(busLeft.x)} ${round(busLeft.y)} L ${round(busRight.x)} ${round(busRight.y)}"/>`;
-    // A leg is one generalization, and says so: the group around it names the
-    // set, which is what the tree is, and not what any one branch of it is.
-    // Without the id on the leg, clicking a branch chose nothing and
-    // double-clicking it opened nothing, though each has a line of text behind
-    // it like every other element in the drawing.
-    const legs: Record<string, Point[]> = {};
-    for (const entry of children) {
-        // A class can belong to several explicit sets. Give each tree a
-        // separate landing on that card so their legs do not share a stroke.
-        const lane = legLanes.get(entry.id) ?? 0;
-        legLanes.set(entry.id, lane + 1);
-        const midpoint = (crossLow + crossHigh) / 2;
-        const outward = axis.cross(entry.rect) < midpoint ? -1 : 1;
-        const points = legPath(entry.rect, bus, obstacles, axis, lane, outward);
-        const edge = plan.edgeOf[entry.id];
-        if (edge) {
-            legs[edge] = points;
+    const head = markup;
+    const draw = (shifts: ReadonlyMap<string, number>): DrawnTree => {
+        let markup = head;
+        // A leg is one generalization, and says so: the group around it names the
+        // set, which is what the tree is, and not what any one branch of it is.
+        // Without the id on the leg, clicking a branch chose nothing and
+        // double-clicking it opened nothing, though each has a line of text behind
+        // it like every other element in the drawing.
+        const legs: Record<string, Point[]> = {};
+        for (const entry of children) {
+            const shift = shifts.get(legKey(set, entry.id)) ?? 0;
+            const points = legPath(entry.rect, bus, obstacles, axis, shift);
+            const edge = plan.edgeOf[entry.id];
+            if (edge) {
+                legs[edge] = points;
+            }
+            // Drawn chosen here as well as marked in the panel: a redraw comes with
+            // every keystroke, and a branch that lost its highlight on one would
+            // leave the modeller holding a selection the picture denies.
+            const chosen = edge !== undefined && selected.has(edge);
+            markup += `<path${edge ? ` data-edge="${escape(edge)}"` : ''}`
+                + `${chosen ? ' class="tv-selected"' : ''} d="${pathData(points)}"/>`;
         }
-        // Drawn chosen here as well as marked in the panel: a redraw comes with
-        // every keystroke, and a branch that lost its highlight on one would
-        // leave the modeller holding a selection the picture denies.
-        const chosen = edge !== undefined && selected.has(edge);
-        markup += `<path${edge ? ` data-edge="${escape(edge)}"` : ''}`
-            + `${chosen ? ' class="tv-selected"' : ''} d="${pathData(points)}"/>`;
-    }
 
-    if (plan.label) {
-        const label = plan.label;
-        const width = textWidth(label, font.edge, false, font.kind);
-        // The label belongs to the bar, so it is written on the bar: centred
-        // along it, on the side the parent is. Beside the stem is where it went
-        // before, which on a parent that has a subtype outside the set is on
-        // top of that subtype's line -- `PersonAgePhases {disjoint, complete}`
-        // printed across the generalization to `Employee`, a class the set does
-        // not hold. A label is read against whatever line is nearest it, so the
-        // bar is registered as a line and the label pays for leaving it.
-        placer.carry(plan.marker ?? plan.general, [axis.point(bus, left), axis.point(bus, right)]);
-        const middle = (left + right) / 2;
-        // Clear of the bar either way: six one way puts the text wholly on the
-        // near side of it, sixteen the other puts it wholly on the far one.
-        const above = bus - 6;
-        const below = bus + 16;
-        const near = direction > 0 ? above : below;
-        const far = direction > 0 ? below : above;
-        const baseCross = axis.crossOfPoint(base);
-        const at = placer.place([
-            axis.point(near, middle),
-            axis.point(far, middle),
-            axis.point(near, baseCross + width / 2 + 14),
-            axis.point(near, baseCross - width / 2 - 14)
-        ], label, plan.marker ?? plan.general);
-        markup += `<text data-for="${escape(set)}" x="${round(at.x)}" y="${round(at.y)}" `
-            + `fill="${theme.muted}" text-anchor="middle" `
-            + `paint-order="stroke" stroke="${theme.background}" stroke-width="3" stroke-linejoin="round">`
-            + `${escape(label)}</text>`;
-    }
-    // Down the stem and along the whole bar, retracing the middle: a pointer is
-    // measured against this, and every segment of it is a place the set is
-    // drawn.
-    const spine = [apex, axis.point(bus, crossAt), axis.point(bus, left), axis.point(bus, right)];
-    return { markup: markup + '</g>', legs, spine, apex };
+        if (plan.label) {
+            const label = plan.label;
+            const width = textWidth(label, font.edge, false, font.kind);
+            // The label belongs to the bar, so it is written on the bar: centred
+            // along it, on the side the parent is. Beside the stem is where it went
+            // before, which on a parent that has a subtype outside the set is on
+            // top of that subtype's line -- `PersonAgePhases {disjoint, complete}`
+            // printed across the generalization to `Employee`, a class the set does
+            // not hold. A label is read against whatever line is nearest it, so the
+            // bar is registered as a line and the label pays for leaving it.
+            placer.carry(plan.marker ?? plan.general, [axis.point(bus, left), axis.point(bus, right)]);
+            const middle = (left + right) / 2;
+            // Clear of the bar either way: six one way puts the text wholly on the
+            // near side of it, sixteen the other puts it wholly on the far one.
+            const above = bus - 6;
+            const below = bus + 16;
+            const near = direction > 0 ? above : below;
+            const far = direction > 0 ? below : above;
+            const baseCross = axis.crossOfPoint(base);
+            const at = placer.place([
+                axis.point(near, middle),
+                axis.point(far, middle),
+                axis.point(near, baseCross + width / 2 + 14),
+                axis.point(near, baseCross - width / 2 - 14)
+            ], label, plan.marker ?? plan.general);
+            markup += `<text data-for="${escape(set)}" x="${round(at.x)}" y="${round(at.y)}" `
+                + `fill="${theme.muted}" text-anchor="middle" `
+                + `paint-order="stroke" stroke="${theme.background}" stroke-width="3" stroke-linejoin="round">`
+                + `${escape(label)}</text>`;
+        }
+        // Down the stem and along the whole bar, retracing the middle: a pointer is
+        // measured against this, and every segment of it is a place the set is
+        // drawn.
+        const spine = [apex, axis.point(bus, crossAt), axis.point(bus, left), axis.point(bus, right)];
+        return { markup: markup + '</g>', legs, spine, apex };
+    };
+    return {
+        set, general: plan.general, axis, bus, from: crossLow, to: crossHigh,
+        trunk: axis.crossOfPoint(base), children, draw
+    };
 }
 
 interface TreePlan {
@@ -2470,6 +2496,61 @@ function legEdge(child: Rect, bus: number, axis: TreeAxis): number {
     return Math.abs(bus - near) <= Math.abs(bus - far) ? near : far;
 }
 
+function legKey(set: string, child: string): string {
+    return `${set}\u0000${child}`;
+}
+
+/**
+ * Where each leg lands on a subtype that more than one set shares.
+ *
+ * The bus nearest the subtype lands its leg in the middle. Every other leg
+ * comes from a bus further out, so it passes the depth of each nearer bus on
+ * its way in, and must do so to one side of that bus's end. The side used to
+ * be read from the leg's own bus -- away from its middle -- which on
+ * `ActivePerson`, under both `Person` and the `Active` mixin, sent the
+ * `Active` leg straight through the `Person` bar it was meant to step round.
+ * So the side is chosen against the nearer buses instead: one where none of
+ * them reaches, preferring the side of the leg's own stem so the step along
+ * its bus does not overshoot the subtype. Where both sides are taken nothing
+ * can avoid a crossing, and the stem's side is as good as any. Legs further
+ * out land further from the middle, so none crosses the step of a nearer one.
+ */
+function legShifts(trees: LaidTree[]): Map<string, number> {
+    const landings = new Map<string, Array<{ tree: LaidTree; rect: Rect; id: string; depth: number }>>();
+    for (const tree of trees) {
+        for (const { id, rect } of tree.children) {
+            const edge = legEdge(rect, tree.bus, tree.axis);
+            const key = `${id}\u0000${tree.axis.vertical}\u0000${edge}`;
+            const group = landings.get(key) ?? [];
+            group.push({ tree, rect, id, depth: Math.abs(tree.bus - edge) });
+            landings.set(key, group);
+        }
+    }
+    const shifts = new Map<string, number>();
+    for (const group of landings.values()) {
+        if (group.length < 2) {
+            continue;
+        }
+        group.sort((a, b) => a.depth - b.depth);
+        const centre = group[0]!.tree.axis.cross(group[0]!.rect);
+        const used = { [-1]: 0, [1]: 0 } as Record<-1 | 1, number>;
+        group.forEach((landing, index) => {
+            if (index === 0) {
+                return;
+            }
+            const nearer = group.slice(0, index);
+            const blocked = (side: -1 | 1) => nearer.some(other => side < 0
+                ? other.tree.from < centre - 1
+                : other.tree.to > centre + 1);
+            const own: -1 | 1 = landing.tree.trunk < centre ? -1 : 1;
+            const side = !blocked(own) ? own : !blocked(-own as -1 | 1) ? -own as -1 | 1 : own;
+            used[side] += 1;
+            shifts.set(legKey(landing.tree.set, landing.id), side * 16 * used[side]);
+        });
+    }
+    return shifts;
+}
+
 /**
  * A leg from the bus down to one subtype, round anything in the way.
  *
@@ -2479,11 +2560,9 @@ function legEdge(child: Rect, bus: number, axis: TreeAxis): number {
  * nothing to do with is read as ending there -- so it steps aside, comes down
  * beside the obstacle and turns back in just above the subtype.
  */
-function legPath(child: Rect, bus: number, obstacles: Rect[], axis: TreeAxis, lane = 0, outward = 1): Point[] {
+function legPath(child: Rect, bus: number, obstacles: Rect[], axis: TreeAxis, shift = 0): Point[] {
     const middle = axis.cross(child);
-    const offsets = [0, 16, 32, 48, 64];
-    const cross = Math.max(axis.crossStart(child) + 8, Math.min(axis.crossEnd(child) - 8,
-        middle + outward * (offsets[lane % offsets.length] ?? 0)));
+    const cross = Math.max(axis.crossStart(child) + 8, Math.min(axis.crossEnd(child) - 8, middle + shift));
     const edge = legEdge(child, bus, axis);
     const direction = edge >= bus ? 1 : -1;
     const busJoin = axis.point(bus, middle);

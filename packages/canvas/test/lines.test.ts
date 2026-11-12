@@ -162,8 +162,11 @@ describe('telling one line from another', () => {
         expect(svg.match(/class="tv-marker"/g)).toHaveLength(1);
     });
 
-    test('separates tree buses that meet at a shared subtype', () => {
-        const gensets = ['PersonStatus', 'OrganizationStatus', 'ActiveThings'].map(name => ({
+    test.each([
+        ['PersonStatus', 'OrganizationStatus', 'ActiveThings'],
+        ['ActiveThings', 'PersonStatus', 'OrganizationStatus']
+    ])('separates tree buses that meet at a shared subtype (%s first)', (...order) => {
+        const gensets = order.map(name => ({
             id: `set:Sample::${name}`, name, disjoint: true, complete: true,
             general: name === 'PersonStatus' ? 'Sample::Person'
                 : name === 'OrganizationStatus' ? 'Sample::Organization' : 'Sample::Active',
@@ -176,12 +179,12 @@ describe('telling one line from another', () => {
             groups: [],
             nodes: ['Person', 'Organization', 'Active', 'RetiredPerson', 'ActivePerson', 'ActiveOrganization', 'ClosedOrganization'].map(classNode),
             edges: [
-                generalization('ActivePerson', 'Person', gensets[0]!.id),
-                generalization('RetiredPerson', 'Person', gensets[0]!.id),
-                generalization('ActiveOrganization', 'Organization', gensets[1]!.id),
-                generalization('ClosedOrganization', 'Organization', gensets[1]!.id),
-                generalization('ActivePerson', 'Active', gensets[2]!.id),
-                generalization('ActiveOrganization', 'Active', gensets[2]!.id)
+                generalization('ActivePerson', 'Person', 'set:Sample::PersonStatus'),
+                generalization('RetiredPerson', 'Person', 'set:Sample::PersonStatus'),
+                generalization('ActiveOrganization', 'Organization', 'set:Sample::OrganizationStatus'),
+                generalization('ClosedOrganization', 'Organization', 'set:Sample::OrganizationStatus'),
+                generalization('ActivePerson', 'Active', 'set:Sample::ActiveThings'),
+                generalization('ActiveOrganization', 'Active', 'set:Sample::ActiveThings')
             ],
             gensets
         };
@@ -206,14 +209,30 @@ describe('telling one line from another', () => {
         expect(person).not.toEqual(active);
         const landingX = (path: string) => Number(/L ([-\d.]+) ([-\d.]+)$/.exec(path)?.[1]);
         expect(landingX(person!)).not.toBe(landingX(active!));
-        const activePoints = points(active!);
-        expect(activePoints[0]!.y).toBe(activePoints[1]!.y);
-        expect(activePoints[0]!.x).not.toBe(activePoints[1]!.x);
-        expect(activePoints[1]!.x).toBe(activePoints[2]!.x);
-        const rightPoints = points(activeOrganization!);
-        expect(rightPoints[0]!.y).toBe(rightPoints[1]!.y);
-        expect(rightPoints[1]!.x).toBeGreaterThan(rightPoints[0]!.x);
-        expect(rightPoints[1]!.x).toBe(rightPoints[2]!.x);
+        // The Active bus runs above the Person and Organization buses, so its
+        // legs pass their depth on the way down, and must do so on the inner
+        // side of each card, where neither of those buses reaches. Fanning
+        // them away from the Active bus's middle put them through both.
+        const buses = [...svg.matchAll(/<path d="M ([-\d.]+) ([-\d.]+) L ([-\d.]+) ([-\d.]+)"\/>/g)]
+            .map(match => match.slice(1).map(Number))
+            .filter(([, y1, , y2]) => y1 === y2)
+            .map(([x1, y, x2]) => ({ y: y!, from: Math.min(x1!, x2!), to: Math.max(x1!, x2!) }));
+        for (const leg of [active!, activeOrganization!]) {
+            const legPoints = points(leg);
+            for (let index = 1; index < legPoints.length; index++) {
+                const a = legPoints[index - 1]!;
+                const b = legPoints[index]!;
+                if (a.x !== b.x) {
+                    continue;
+                }
+                const crossed = buses.filter(bus => bus.y > Math.min(a.y, b.y) && bus.y < Math.max(a.y, b.y)
+                    && bus.from <= a.x && a.x <= bus.to);
+                expect(crossed).toEqual([]);
+            }
+        }
+        expect(points(active!).at(-1)!.x).toBeGreaterThan(points(person!).at(-1)!.x);
+        expect(points(activeOrganization!).at(-1)!.x)
+            .toBeLessThan(points(branch('gen:Sample::ActiveOrganization-&gt;Sample::Organization')!).at(-1)!.x);
     });
 
     test('keeps the tree through a drag that falls a little short of clearing the general', () => {
