@@ -570,6 +570,13 @@ text {
 .tv-stereotype { font-size: ${font.stereotype}px; fill-opacity: 0.72; letter-spacing: 0.01em; }
 .tv-attribute { font-size: ${font.attribute}px; }
 .tv-edge path { fill: none; stroke: ${theme.line}; stroke-width: 1.2; }
+/* A tree is drawn as separate strokes -- stem, bus, one path per leg -- that
+   meet end to end. Butt caps stop each one dead on the shared point, so where
+   the bus ends and a leg turns down neither covers the outer corner, and the
+   joint shows a bite out of it. A square cap reaches half a stroke past the end,
+   which is exactly that corner; elsewhere it lands inside another stroke or
+   under the box the leg runs to. */
+.tv-tree path { stroke-linecap: square; }
 .tv-end { fill: ${theme.muted}; }
 /* No letter-spacing on a label drawn with a halo: WebKit places letter-spaced
    SVG text glyph by glyph and then draws no halo, so in Safari, and in an
@@ -2343,14 +2350,19 @@ function drawTree(
     const busStart = axis.point(bus, crossAt);
     headStrokes.push({ owner: set, points: [base, busStart] });
     markup += `<path d="M ${round(base.x)} ${round(base.y)} L ${round(busStart.x)} ${round(busStart.y)}"/>`;
-    const left = crossLow;
-    const right = crossHigh;
-    const busLeft = axis.point(bus, left);
-    const busRight = axis.point(bus, right);
-    markup += `<path d="M ${round(busLeft.x)} ${round(busLeft.y)} L ${round(busRight.x)} ${round(busRight.y)}"/>`;
     const head = markup;
     const draw = (shifts: ReadonlyMap<string, number>): DrawnTree => {
         let markup = head;
+        // The bar runs from the stem to the outermost legs where they actually
+        // land. Measured to the subtypes' middles, it overshot a leg moved
+        // aside on a shared subtype and left a stub past the corner.
+        const landings = children.map(entry =>
+            legCross(entry.rect, axis, shifts.get(legKey(set, entry.id)) ?? 0));
+        const left = Math.min(...landings, axis.crossOfPoint(base));
+        const right = Math.max(...landings, axis.crossOfPoint(base));
+        const busLeft = axis.point(bus, left);
+        const busRight = axis.point(bus, right);
+        markup += `<path d="M ${round(busLeft.x)} ${round(busLeft.y)} L ${round(busRight.x)} ${round(busRight.y)}"/>`;
         // A leg is one generalization, and says so: the group around it names the
         // set, which is what the tree is, and not what any one branch of it is.
         // Without the id on the leg, clicking a branch chose nothing and
@@ -2551,6 +2563,11 @@ function legShifts(trees: LaidTree[]): Map<string, number> {
     return shifts;
 }
 
+/** Where a leg meets its subtype across the bus, moved by `shift` but kept on the box. */
+function legCross(child: Rect, axis: TreeAxis, shift: number): number {
+    return Math.max(axis.crossStart(child) + 8, Math.min(axis.crossEnd(child) - 8, axis.cross(child) + shift));
+}
+
 /**
  * A leg from the bus down to one subtype, round anything in the way.
  *
@@ -2561,19 +2578,14 @@ function legShifts(trees: LaidTree[]): Map<string, number> {
  * beside the obstacle and turns back in just above the subtype.
  */
 function legPath(child: Rect, bus: number, obstacles: Rect[], axis: TreeAxis, shift = 0): Point[] {
-    const middle = axis.cross(child);
-    const cross = Math.max(axis.crossStart(child) + 8, Math.min(axis.crossEnd(child) - 8, middle + shift));
+    const cross = legCross(child, axis, shift);
     const edge = legEdge(child, bus, axis);
     const direction = edge >= bus ? 1 : -1;
-    const busJoin = axis.point(bus, middle);
     const from = axis.point(bus, cross);
     const to = axis.point(edge, cross);
-    const approach = cross === middle ? [busJoin] : [busJoin, from];
-    const blocking = obstacles.filter(rect => rect !== child && (
-        approach.slice(1).some((point, index) => segmentHitsRect(approach[index]!, point, rect, 2))
-            || segmentHitsRect(from, to, rect, 2)));
+    const blocking = obstacles.filter(rect => rect !== child && segmentHitsRect(from, to, rect, 2));
     if (blocking.length === 0) {
-        return [...approach, to];
+        return [from, to];
     }
 
     const turn = edge - direction * 22;
@@ -2583,12 +2595,11 @@ function legPath(child: Rect, bus: number, obstacles: Rect[], axis: TreeAxis, sh
             const viaTurn = axis.point(turn, aside);
             const backIn = axis.point(turn, cross);
             const clear = !obstacles.some(other => other !== child
-                && (approach.slice(1).some((point, index) => segmentHitsRect(approach[index]!, point, other, 2))
-                    || segmentHitsRect(from, viaBus, other, 2)
+                && (segmentHitsRect(from, viaBus, other, 2)
                     || segmentHitsRect(viaBus, viaTurn, other, 2)
                     || segmentHitsRect(viaTurn, backIn, other, 2)));
             if (clear) {
-                return [...approach, viaBus, viaTurn, backIn, to];
+                return [from, viaBus, viaTurn, backIn, to];
             }
         }
     }

@@ -128,7 +128,7 @@ describe('telling one line from another', () => {
         // A shared triangle asserts a generalization set. A common parent alone
         // does not make one, so every declaration remains visible as its own
         // specialization line and marker.
-        expect(svg).not.toContain('tv-tree');
+        expect(svg).not.toContain('class="tv-edge tv-tree');
         expect(Object.keys(paths(svg))).toHaveLength(3);
         expect(svg.match(/class="tv-marker"/g)).toHaveLength(3);
     });
@@ -230,6 +230,11 @@ describe('telling one line from another', () => {
                 expect(crossed).toEqual([]);
             }
         }
+        // The Active bar ends where its legs land, not at the subtypes'
+        // middles, which would leave a stub past each moved leg.
+        const activeBus = buses.find(bus => bus.y === points(active!)[0]!.y)!;
+        expect([activeBus.from, activeBus.to])
+            .toEqual([points(active!)[0]!.x, points(activeOrganization!)[0]!.x]);
         expect(points(active!).at(-1)!.x).toBeGreaterThan(points(person!).at(-1)!.x);
         expect(points(activeOrganization!).at(-1)!.x)
             .toBeLessThan(points(branch('gen:Sample::ActiveOrganization-&gt;Sample::Organization')!).at(-1)!.x);
@@ -384,7 +389,7 @@ describe('telling one line from another', () => {
             [generalization('Child', 'Person'), generalization('Adult', 'Person')],
             { Person: { x: 200, y: 200 }, Child: { x: 0, y: 400 }, Adult: { x: 200, y: 0 } });
         // A tree with legs going two ways says less than two arrows do.
-        expect(svg).not.toContain('tv-tree');
+        expect(svg).not.toContain('class="tv-edge tv-tree');
         expect(Object.keys(paths(svg))).toHaveLength(2);
     });
 });
