@@ -98,7 +98,7 @@ jobs:
         working-directory: packages/extension
         env:
           RELEASE_TAG: ${{ inputs.release_tag }}
-        run: npx @vscode/vsce publish --packagePath "tonto-visualizer-${RELEASE_TAG#v}.vsix" --oidc --skip-duplicate
+        run: npx --yes @vscode/vsce@^4.0.2 publish --packagePath "tonto-visualizer-${RELEASE_TAG#v}.vsix" --oidc --skip-duplicate
       - name: Create or update the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
