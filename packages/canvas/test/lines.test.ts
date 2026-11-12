@@ -199,6 +199,10 @@ describe('telling one line from another', () => {
         expect(person).not.toEqual(active);
         const landingX = (path: string) => Number(/L ([-\d.]+) ([-\d.]+)$/.exec(path)?.[1]);
         expect(landingX(person!)).not.toBe(landingX(active!));
+        const activePoints = points(active!);
+        expect(activePoints[0]!.y).toBe(activePoints[1]!.y);
+        expect(activePoints[0]!.x).not.toBe(activePoints[1]!.x);
+        expect(activePoints[1]!.x).toBe(activePoints[2]!.x);
     });
 
     test('keeps the tree through a drag that falls a little short of clearing the general', () => {

@@ -2484,11 +2484,15 @@ function legPath(child: Rect, bus: number, obstacles: Rect[], axis: TreeAxis, la
         middle + (offsets[lane % offsets.length] ?? 0)));
     const edge = legEdge(child, bus, axis);
     const direction = edge >= bus ? 1 : -1;
+    const busJoin = axis.point(bus, middle);
     const from = axis.point(bus, cross);
     const to = axis.point(edge, cross);
-    const blocking = obstacles.filter(rect => rect !== child && segmentHitsRect(from, to, rect, 2));
+    const approach = cross === middle ? [busJoin] : [busJoin, from];
+    const blocking = obstacles.filter(rect => rect !== child && (
+        approach.slice(1).some((point, index) => segmentHitsRect(approach[index]!, point, rect, 2))
+            || segmentHitsRect(from, to, rect, 2)));
     if (blocking.length === 0) {
-        return [from, to];
+        return [...approach, to];
     }
 
     const turn = edge - direction * 22;
@@ -2498,11 +2502,12 @@ function legPath(child: Rect, bus: number, obstacles: Rect[], axis: TreeAxis, la
             const viaTurn = axis.point(turn, aside);
             const backIn = axis.point(turn, cross);
             const clear = !obstacles.some(other => other !== child
-                && (segmentHitsRect(from, viaBus, other, 2)
+                && (approach.slice(1).some((point, index) => segmentHitsRect(approach[index]!, point, other, 2))
+                    || segmentHitsRect(from, viaBus, other, 2)
                     || segmentHitsRect(viaBus, viaTurn, other, 2)
                     || segmentHitsRect(viaTurn, backIn, other, 2)));
             if (clear) {
-                return [from, viaBus, viaTurn, backIn, to];
+                return [...approach, viaBus, viaTurn, backIn, to];
             }
         }
     }
