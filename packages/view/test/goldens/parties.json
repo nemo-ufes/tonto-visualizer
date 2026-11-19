@@ -163,6 +163,7 @@
         {
           "name": "address",
           "type": "Address",
+          "typeId": "parties::Address",
           "cardinality": "0..1",
           "stereotypes": [],
           "isOrdered": false,

@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url';
 import { defaultDisplayOptions, defaultLayoutOptions, derive } from 'tonto-view';
 import { ViewSession } from 'tonto-view/session';
 import { autoLayout } from '../src/autolayout.js';
+import { boundsOf } from '../src/geometry.js';
 import { sizeOf } from '../src/measure.js';
 import { render } from '../src/render.js';
 import { measureLayout } from './layout-quality.js';
@@ -29,6 +30,37 @@ async function benchmark(target = fixture, display = defaultDisplayOptions) {
 }
 
 describe('representative layout fixtures', () => {
+    test.each([
+        ['university', resolve(repository, 'packages/canvas/test/fixtures/university')],
+        ['showcase', resolve(repository, 'packages/canvas/test/fixtures/showcase.tonto')],
+        ['genealogy', resolve(repository, 'packages/canvas/test/fixtures/genealogy.tonto')]
+    ])('places the %s value types in the picture rather than beside it', async (_name, target) => {
+        // A value type has no lines, and ELK packed each one -- or the
+        // package of them -- beside the model: in university a lone datatype
+        // pushed the whole model right and left a column empty beneath it.
+        const folder = statSync(target).isDirectory() ? target : dirname(target);
+        const session = new ViewSession({ workspace: [folder] });
+        const models = statSync(target).isDirectory()
+            ? await session.models()
+            : await session.modelsOf(pathToFileURL(target).toString());
+        const view = derive({ models, documentation: session.documentation() });
+        const sizes = Object.fromEntries(view.nodes.map(node => [node.id, sizeOf(node, defaultDisplayOptions)]));
+        const laid = await autoLayout(view, sizes, {}, {
+            ...defaultLayoutOptions, routing: 'straight', packageContainers: true
+        });
+        const valueType = (id: string) => ['datatype', 'enumeration'].includes(
+            view.nodes.find(node => node.id === id)?.kind ?? '');
+        const rects = Object.entries(laid.positions);
+        const classes = boundsOf(rects.filter(([id]) => !valueType(id)).map(([, rect]) => rect));
+        const all = boundsOf(rects.map(([, rect]) => rect));
+        expect(rects.some(([id]) => valueType(id))).toBe(true);
+        expect(all).toEqual(classes);
+        const rendered = render({ view, positions: laid.positions, display: defaultDisplayOptions, direction: 'DOWN' });
+        const quality = measureLayout(view, laid.positions, rendered, 'DOWN');
+        expect(quality.nodeOverlaps).toBe(0);
+        expect(quality.edgeNodeIntersections).toBe(0);
+    });
+
     test('draws the motorcycle partonomy whole above part, with its role specializations', async () => {
         const target = resolve(import.meta.dirname, 'fixtures/motorcycle.tonto');
         const session = new ViewSession({ workspace: [dirname(target)] });

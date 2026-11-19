@@ -20,6 +20,8 @@ import type { Positions } from './place.js';
 import type { RoutingStyle } from './route.js';
 import { routeEdge } from './route.js';
 import { partonomyView, wholePartOf } from './partonomy.js';
+import type { LooseBlock, LoosePlacement } from './loose.js';
+import { placeLoose } from './loose.js';
 
 const GROUP_PADDING = 18;
 const GROUP_HEADER = 20;
@@ -269,7 +271,8 @@ async function compactPackageContainers(
     subject: ReadonlySet<string>,
     settings: LayoutOptions,
     routing: RoutingStyle,
-    partonomy: boolean
+    partonomy: boolean,
+    valueTypes: ValueTypes
 ): Promise<void> {
     const sizeOf = (id: string): Size => sizes[id] ?? { width: 160, height: 60 };
     const members = new Map<string, string>();
@@ -313,18 +316,26 @@ async function compactPackageContainers(
             uniqueEdges.set(key, { id: `package-edge:${source}->${target}`, sources: [source], targets: [target] });
         }
     }
+    // A package of value types alone has no dependency for ELK to rank it
+    // by, and packed beside the rest it pushed the whole model aside. It is
+    // placed after the others, as one box, where its users are.
+    const connected = new Set([...uniqueEdges.values()].flatMap(edge => [...edge.sources, ...edge.targets]));
+    const valueFrames = frames.filter(frame => !connected.has(frame.id)
+        && (groups.find(group => group.id === frame.id)?.nodes ?? [])
+            .every(id => !subject.has(id) || valueTypes.loose.has(id)));
+    const ranked = frames.filter(frame => !valueFrames.includes(frame));
     const graph: ElkNode = {
         id: 'package-root',
         layoutOptions: optionsFor(settings, routing),
         children: [
-            ...frames.map(frame => ({ id: frame.id, ...frame.size })),
+            ...ranked.map(frame => ({ id: frame.id, ...frame.size })),
             ...loose.map(node => ({ id: node.id, ...sizeOf(node.id) }))
         ],
         edges: [...uniqueEdges.values()]
     };
     const laid = await new Elk().layout(graph);
     const translatedFrames = new Map((laid.children ?? []).map(node => [node.id, node]));
-    for (const frame of frames) {
+    for (const frame of ranked) {
         const destination = translatedFrames.get(frame.id);
         if (!destination) {
             continue;
@@ -342,6 +353,164 @@ async function compactPackageContainers(
         const destination = translatedFrames.get(node.id);
         if (destination && positions[node.id]) {
             positions[node.id] = { ...positions[node.id]!, x: Math.round(destination.x ?? 0), y: Math.round(destination.y ?? 0) };
+        }
+    }
+    if (valueFrames.length === 0) {
+        return;
+    }
+    // Every other frame is an obstacle as drawn, padding and header included,
+    // so a value package is never put inside one.
+    const placed: Record<string, Rect> = {};
+    for (const id of subject) {
+        if (positions[id] && !valueFrames.some(frame => members.get(id) === frame.id)) {
+            placed[id] = positions[id]!;
+        }
+    }
+    for (const frame of ranked) {
+        const rects = (groups.find(group => group.id === frame.id)?.nodes ?? [])
+            .map(id => positions[id]).filter((rect): rect is Rect => rect !== undefined);
+        if (rects.length) {
+            placed[frame.id] = frameRound(boundsOf(rects));
+        }
+    }
+    const blocks = valueFrames.map(frame => ({
+        id: frame.id,
+        size: frame.size,
+        users: (groups.find(group => group.id === frame.id)?.nodes ?? [])
+            .flatMap(id => valueTypes.users.get(id) ?? [])
+            .filter(id => placed[id] !== undefined)
+    }));
+    const at = placeLoose(blocks, placed, linesBetween(view, placed, settings.direction), valueTypes.placement);
+    for (const frame of valueFrames) {
+        const corner = at[frame.id];
+        if (!corner) {
+            continue;
+        }
+        const dx = corner.x - (frame.bounds.x - GROUP_PADDING);
+        const dy = corner.y - (frame.bounds.y - GROUP_PADDING - GROUP_HEADER);
+        for (const id of groups.find(group => group.id === frame.id)?.nodes ?? []) {
+            const rect = positions[id];
+            if (rect && subject.has(id)) {
+                positions[id] = { ...rect, x: Math.round(rect.x + dx), y: Math.round(rect.y + dy) };
+            }
+        }
+    }
+}
+
+/** A package frame round its members, as it is drawn. */
+function frameRound(bounds: Rect): Rect {
+    return {
+        x: bounds.x - GROUP_PADDING,
+        y: bounds.y - GROUP_PADDING - GROUP_HEADER,
+        width: bounds.width + GROUP_PADDING * 2,
+        height: bounds.height + GROUP_PADDING * 2 + GROUP_HEADER
+    };
+}
+
+/**
+ * Datatypes and enumerations no drawn line reaches, and the classes whose
+ * attributes each one types.
+ */
+interface ValueTypes {
+    loose: ReadonlySet<string>;
+    users: ReadonlyMap<string, string[]>;
+    placement: LoosePlacement;
+}
+
+function valueTypesOf(
+    view: ViewModel, subject: ReadonlySet<string>, edges: readonly ElkEdge[], settings: LayoutOptions
+): ValueTypes {
+    const touched = new Set(edges.flatMap(edge => [...edge.sources, ...edge.targets]));
+    const loose = new Set(view.nodes
+        .filter(node => subject.has(node.id) && (node.kind === 'datatype' || node.kind === 'enumeration')
+            && !touched.has(node.id))
+        .map(node => node.id));
+    const users = new Map<string, string[]>();
+    for (const node of view.nodes) {
+        for (const attribute of node.attributes) {
+            if (attribute.typeId && loose.has(attribute.typeId) && attribute.typeId !== node.id) {
+                const list = users.get(attribute.typeId) ?? [];
+                if (!list.includes(node.id)) {
+                    list.push(node.id);
+                }
+                users.set(attribute.typeId, list);
+            }
+        }
+    }
+    return {
+        loose,
+        users,
+        placement: {
+            gap: Math.round(settings.nodeSpacing * 0.75),
+            edgeClearance: Math.round(settings.nodeSpacing * 0.4),
+            separation: Math.round(settings.rankSpacing * 0.75)
+        }
+    };
+}
+
+/**
+ * The lines a placed box must stay off, as they will be drawn: straight from
+ * box to box, and for a specialization also the shared bar a generalization
+ * set draws half way between the ranks.
+ */
+function linesBetween(
+    view: ViewModel, positions: Readonly<Record<string, Rect>>, direction: LayoutOptions['direction']
+): Array<readonly [Point, Point]> {
+    const lines: Array<readonly [Point, Point]> = [];
+    for (const edge of view.edges) {
+        const source = positions[edge.source];
+        const target = positions[edge.target];
+        if (!source || !target || edge.source === edge.target) {
+            continue;
+        }
+        const from = centerOf(source);
+        const to = centerOf(target);
+        lines.push([from, to]);
+        if (edge.kind === 'generalization') {
+            if (direction === 'RIGHT') {
+                const middle = (from.x + to.x) / 2;
+                lines.push([from, { x: middle, y: from.y }], [{ x: middle, y: from.y }, { x: middle, y: to.y }],
+                    [{ x: middle, y: to.y }, to]);
+            } else {
+                const middle = (from.y + to.y) / 2;
+                lines.push([from, { x: from.x, y: middle }], [{ x: from.x, y: middle }, { x: to.x, y: middle }],
+                    [{ x: to.x, y: middle }, to]);
+            }
+        }
+    }
+    return lines;
+}
+
+/**
+ * Puts each package's loose value types beside the classes of the package
+ * that use them, inside the package so its frame does not grow; a package
+ * of value types alone is packed into a block of its own, for the frame
+ * pass to place.
+ */
+function placeValueTypesInGroups(
+    view: ViewModel, positions: Positions, sizes: (id: string) => Size,
+    groups: ViewModel['groups'], subject: ReadonlySet<string>, valueTypes: ValueTypes, direction: LayoutOptions['direction']
+): void {
+    for (const group of groups) {
+        const members = group.nodes.filter(id => subject.has(id));
+        const blocks = members.filter(id => valueTypes.loose.has(id));
+        if (blocks.length === 0) {
+            continue;
+        }
+        const placed: Record<string, Rect> = {};
+        for (const id of members) {
+            if (!valueTypes.loose.has(id) && positions[id]) {
+                placed[id] = positions[id]!;
+            }
+        }
+        const at = placeLoose(
+            blocks.map(id => ({
+                id, size: sizes(id),
+                users: (valueTypes.users.get(id) ?? []).filter(user => members.includes(user))
+            })),
+            placed, linesBetween(view, placed, direction), valueTypes.placement);
+        for (const id of blocks) {
+            positions[id] = { ...at[id]!, ...sizes(id) };
         }
     }
 }
@@ -405,21 +574,37 @@ async function layeredPlantUmlLayout(
     const grouped = groups.length > 1;
     const included = new Set(groups.flatMap(group => group.nodes));
     const algorithmOptions = optionsFor(settings, routing);
+    const coveredInverseIds = inversePairs(view.edges).covered;
+    const edges: ElkEdge[] = view.edges.filter(edge => !coveredInverseIds.has(edge.id)
+        && subject.has(edge.source) && subject.has(edge.target))
+        .map(edge => {
+            const wholePart = partonomy ? wholePartOf(edge) : undefined;
+            return {
+                id: edge.id,
+                sources: [wholePart?.whole ?? (edge.kind === 'generalization' ? edge.target : edge.source)],
+                targets: [wholePart?.part ?? (edge.kind === 'generalization' ? edge.source : edge.target)]
+            };
+        });
+    // Arranging a selection keeps what it always did: the selection is
+    // placed as one piece beside what was not selected.
+    const valueTypes = request.only
+        ? { loose: new Set<string>(), users: new Map<string, string[]>(), placement: { gap: 0, edgeClearance: 0, separation: 0 } }
+        : valueTypesOf(view, subject, edges, settings);
+    const ranked = (id: string) => subject.has(id) && !valueTypes.loose.has(id);
     const children: ElkNode[] = grouped
         ? [
-            ...groups.map(group => ({
+            ...groups.filter(group => group.nodes.some(ranked)).map(group => ({
                 id: group.id,
                 layoutOptions: {
                     ...algorithmOptions,
                     'elk.padding': `[top=${GROUP_PADDING + GROUP_HEADER},left=${GROUP_PADDING},bottom=${GROUP_PADDING},right=${GROUP_PADDING}]`
                 },
-                children: group.nodes.filter(id => subject.has(id)).map(id => ({ id, ...sizeOf(id) }))
+                children: group.nodes.filter(ranked).map(id => ({ id, ...sizeOf(id) }))
             })),
-            ...view.nodes.filter(node => subject.has(node.id) && !included.has(node.id))
+            ...view.nodes.filter(node => ranked(node.id) && !included.has(node.id))
                 .map(node => ({ id: node.id, ...sizeOf(node.id) }))
         ]
-        : view.nodes.filter(node => subject.has(node.id)).map(node => ({ id: node.id, ...sizeOf(node.id) }));
-    const coveredInverseIds = inversePairs(view.edges).covered;
+        : view.nodes.filter(node => ranked(node.id)).map(node => ({ id: node.id, ...sizeOf(node.id) }));
     const graph: ElkNode = {
         id: 'root',
         layoutOptions: {
@@ -428,16 +613,7 @@ async function layeredPlantUmlLayout(
             'elk.json.edgeCoords': 'ROOT'
         },
         children,
-        edges: view.edges.filter(edge => !coveredInverseIds.has(edge.id)
-            && subject.has(edge.source) && subject.has(edge.target))
-            .map(edge => {
-                const wholePart = partonomy ? wholePartOf(edge) : undefined;
-                return {
-                    id: edge.id,
-                    sources: [wholePart?.whole ?? (edge.kind === 'generalization' ? edge.target : edge.source)],
-                    targets: [wholePart?.part ?? (edge.kind === 'generalization' ? edge.source : edge.target)]
-                };
-            })
+        edges
     };
     const laid = await new Elk().layout(graph);
     const positions: Positions = { ...current };
@@ -457,7 +633,21 @@ async function layeredPlantUmlLayout(
     };
     walk(laid, 0, 0);
     if (grouped && !request.only) {
-        await compactPackageContainers(view, positions, sizes, groups, subject, settings, routing, partonomy);
+        placeValueTypesInGroups(view, positions, sizeOf, groups, subject, valueTypes, settings.direction);
+        await compactPackageContainers(view, positions, sizes, groups, subject, settings, routing, partonomy, valueTypes);
+    } else if (valueTypes.loose.size > 0) {
+        const placed: Record<string, Rect> = {};
+        for (const id of subject) {
+            if (!valueTypes.loose.has(id) && positions[id]) {
+                placed[id] = positions[id]!;
+            }
+        }
+        const at = placeLoose(
+            [...valueTypes.loose].map((id): LooseBlock => ({ id, size: sizeOf(id), users: valueTypes.users.get(id) ?? [] })),
+            placed, linesBetween(view, placed, settings.direction), valueTypes.placement);
+        for (const id of valueTypes.loose) {
+            positions[id] = { ...at[id]!, ...sizeOf(id) };
+        }
     }
     if (request.only) {
         placePartialLayout(view, positions, current, subject);

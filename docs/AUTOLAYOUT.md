@@ -16,6 +16,20 @@ the order of the two mediation declarations supplies that direction. The
 layout reverses the first mediation as needed; drawn edges keep the directions
 and semantics from the view model.
 
+Datatypes and enumerations that no drawn line reaches are left out of the
+layered pass. To ELK each was a graph of one node, packed beside the model: a
+row of value types across the top, a last row holding one enumeration, or, for
+a package of datatypes alone, a frame at the top left with the model pushed
+right of it and an empty column beneath. They are placed afterwards instead
+(`loose.ts`): each into the free space nearest the classes whose attributes it
+types, inside the picture and clear of boxes and lines, so it grows no larger;
+a package of them as one block the same way. What does not fit is packed below
+or beside the model in rows of balanced length, on whichever side lets the
+picture be shown largest in a panel of the usual 1.6 shape -- not whichever
+side makes it smallest, which put seven value types in a strip to the right of
+a wide model. Which attributes a value type types is the language's link,
+carried in the view model as `typeId`. Arranging a selection is unchanged.
+
 ## Tried and abandoned
 
 - **Semantic ELK post-processing.** The earlier pipeline re-ranked taxonomies,

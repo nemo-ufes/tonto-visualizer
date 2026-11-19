@@ -26,6 +26,13 @@ export type NodeKind = 'class' | 'datatype' | 'enumeration' | 'unresolved' | 'pa
 export interface ViewAttribute {
     name: string;
     type: string;
+    /**
+     * The datatype or enumeration the attribute is typed by, by node id, when
+     * the model declares it. A value type has no line to the classes that
+     * use it, so this is the only thing that says where it belongs; the
+     * built-in `string` and `number` are nobody's to place, and have none.
+     */
+    typeId?: string;
     cardinality?: string;
     /** `@begin`, `@end`. */
     stereotypes: string[];

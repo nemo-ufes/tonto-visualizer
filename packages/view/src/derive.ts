@@ -567,6 +567,14 @@ class Derivation {
         this.groups.set(groupName, group);
     }
 
+    private typeIdOf(attribute: Attribute): { typeId?: string } {
+        const type = attribute.type?.ref;
+        if ((!isDatatype(type) && !isEnumeration(type)) || AstUtils.getDocument(type).uri.scheme !== 'file') {
+            return {};
+        }
+        return { typeId: this.declarationId(type) };
+    }
+
     private declarationId(declaration: ClassDeclaration | Datatype | Enumeration): string {
         return qualify(packageName(declaration.$container), declaration.name);
     }
@@ -590,6 +598,7 @@ class Derivation {
             .map(attribute => ({
                 name: attribute.name,
                 type: attribute.type?.ref?.name ?? attribute.type?.$refText ?? '?',
+                ...this.typeIdOf(attribute),
                 ...(attribute.cardinality ? { cardinality: cardinality(attribute.cardinality) } : {}),
                 stereotypes: [...attribute.stereotypes],
                 isOrdered: attribute.isOrdered,
