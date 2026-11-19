@@ -10,7 +10,7 @@ import * as vscode from 'vscode';
 import type { ContentOptions, DisplayOptions, ViewModel, ViewRelation } from 'tonto-view';
 import {
     contentAfter, derive, derivePackages, deriveWorkspacePackages, expandInverseIds, filterDerivedMaterial, idsAtSource,
-    nodesInSelection, packageName, packagesInScope, reconcile
+    nodesInSelection, packageName, packagesInScope, reconcile, renamedId, renamesBetween
 } from 'tonto-view';
 import { ViewSession } from 'tonto-view/session';
 import type { ViewMove } from './rename.js';
@@ -345,6 +345,8 @@ export class DiagramPanel {
         this.store = store;
         this.view = { groups: [], nodes: [], edges: [], gensets: [] };
         this.catalog = { groups: [], nodes: [], edges: [], gensets: [] };
+        // Another document's reading is no evidence of a rename in this one.
+        this.completeCatalog = { groups: [], nodes: [], edges: [], gensets: [] };
         this.positions = {};
         this.filters = [];
         this.visibleNodeIds = new Set();
@@ -756,13 +758,14 @@ export class DiagramPanel {
                 ? { ...options, includedPackages: options.includedPackages ?? ontologyPackages }
                 : options
         });
-        const { hidden, ...unfiltered } = content;
+        const { hidden: _hidden, ...unfiltered } = content;
         const completeCatalog = deriveWith({ ...unfiltered, derivedMaterialMode: 'both' });
+        this.carryRenames(completeCatalog, store);
         const catalog = filterDerivedMaterial(completeCatalog, unfiltered.derivedMaterialMode);
         this.completeCatalog = completeCatalog;
         this.catalog = catalog;
         this.filters = filterItemsOf(catalog);
-        const isFirstDraw = this.installView(filterView(catalog, hidden ?? []), store);
+        const isFirstDraw = this.installView(filterView(catalog, store.state.content.hidden ?? []), store);
         if (isFirstDraw) {
             // Nothing has been arranged yet, so this is the one time the diagram
             // may lay itself out completely.
@@ -770,6 +773,28 @@ export class DiagramPanel {
             return;
         }
         this.send(errors[0]);
+    }
+
+    /**
+     * Moves what the panel knows about an element to its new name, when the
+     * model now reads one where the last reading had another.
+     *
+     * Before the complete catalog is replaced, since it is the last reading.
+     * Without this a renamed class was a new class: placed again in the first
+     * free gap, its routes dropped, and a renamed package -- every id in it
+     * new at once -- left nothing placed, which reads as a diagram never
+     * arranged and was laid out again from scratch.
+     */
+    private carryRenames(next: ViewModel, store: ViewStore): void {
+        const renames = renamesBetween(this.completeCatalog, next);
+        if (!renames) {
+            return;
+        }
+        store.rename(renames);
+        const rename = (id: string) => renamedId(id, renames);
+        this.positions = Object.fromEntries(Object.entries(this.positions).map(([id, rect]) => [rename(id), rect]));
+        this.visibleNodeIds = new Set([...this.visibleNodeIds].map(rename));
+        this.selected = new Set([...this.selected].map(rename));
     }
 
     /**

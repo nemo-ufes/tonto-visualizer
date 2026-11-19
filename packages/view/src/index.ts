@@ -1,6 +1,7 @@
 export * from './model.js';
 export * from './options.js';
 export * from './viewfile.js';
+export * from './renames.js';
 export * from './ids.js';
 export * from './inverses.js';
 export * from './palette.js';

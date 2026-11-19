@@ -17,6 +17,12 @@ import {
     ViewStore, viewChoicesFor, viewFileExists, viewNameFor, viewNameOf, viewToShow, viewUriFor
 } from '../src/view-store.js';
 
+const personToHuman = {
+    nodes: new Map([['Sample::Person', 'Sample::Human']]),
+    edges: new Map<string, string>(),
+    gensets: new Map<string, string>()
+};
+
 function modelUri(path = '/workspace/model.tonto') {
     return {
         path,
@@ -153,6 +159,50 @@ describe('the view store', () => {
         expect(store.state.nodes).toEqual({});
         expect(store.history.undo).toBeUndefined();
         await store.dispose();
+    });
+
+    test('carries a renamed class\'s position, and the history of it, to the new name', async () => {
+        const store = await ViewStore.open(modelUri() as never, 'Sample', true);
+        store.begin('Move');
+        store.move({ 'Sample::Person': { x: 10, y: 10 } });
+        store.begin('Move');
+        store.move({ 'Sample::Person': { x: 30, y: 30 } });
+
+        store.rename(personToHuman);
+
+        expect(store.state.nodes).toEqual({ 'Sample::Human': { x: 30, y: 30 } });
+        // Not a step of its own: undo takes back the second move, of the class
+        // under the name it has now.
+        expect(store.undo()).toBe('Move');
+        expect(store.state.nodes).toEqual({ 'Sample::Human': { x: 10, y: 10 } });
+        await store.dispose();
+        const bytes = filesystem.writeFile.mock.calls.at(-1)![1] as Uint8Array;
+        expect(JSON.parse(Buffer.from(bytes).toString('utf8')).nodes).toEqual({ 'Sample::Human': { x: 10, y: 10 } });
+    });
+
+    test('writes a saved view a rename changed, even with nothing else to save', async () => {
+        filesystem.readFile.mockResolvedValue(Buffer.from(JSON.stringify({
+            nodes: { 'Sample::Person': { x: 10, y: 10 } }
+        })));
+        const store = await ViewStore.open(modelUri() as never, 'Sample', true);
+
+        store.rename(personToHuman);
+        await store.dispose();
+
+        expect(filesystem.writeFile).toHaveBeenCalledTimes(1);
+        const bytes = filesystem.writeFile.mock.calls[0]![1] as Uint8Array;
+        expect(JSON.parse(Buffer.from(bytes).toString('utf8')).nodes).toEqual({ 'Sample::Human': { x: 10, y: 10 } });
+    });
+
+    test('does not create a view file for a rename in an untouched automatic layout', async () => {
+        const store = await ViewStore.open(modelUri() as never, 'Sample', true);
+        store.move({ 'Sample::Person': { x: 24, y: 48 } });
+
+        store.rename(personToHuman);
+        await store.dispose();
+
+        expect(store.state.nodes).toEqual({ 'Sample::Human': { x: 24, y: 48 } });
+        expect(filesystem.writeFile).not.toHaveBeenCalled();
     });
 
     test('writes the arrangement it was taken back to', async () => {

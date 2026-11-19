@@ -17,8 +17,8 @@
  */
 
 import * as vscode from 'vscode';
-import type { EdgeRoute, Placement, ViewFile } from 'tonto-view';
-import { emptyViewFile, readViewFile } from 'tonto-view';
+import type { EdgeRoute, Placement, Renames, ViewFile } from 'tonto-view';
+import { emptyViewFile, readViewFile, renameInViewFile } from 'tonto-view';
 
 /** How far back a view can be taken. Each entry is a whole `ViewFile`. */
 const HISTORY = 100;
@@ -44,12 +44,19 @@ export class ViewStore {
     private step: Step | undefined;
     private saving: NodeJS.Timeout | undefined;
     private dirty = false;
+    /**
+     * Whether the file is on disk, read from there or written since. An
+     * arrangement nobody has touched is not, and a rename is no reason to
+     * make it so.
+     */
+    private persisted: boolean;
     /** Serializes snapshots so an older, slower write cannot overwrite a newer one. */
     private writes: Promise<void> = Promise.resolve();
     private disposal: Promise<void> | undefined;
 
-    private constructor(private uri: vscode.Uri, file: ViewFile, private enabled: boolean) {
+    private constructor(private uri: vscode.Uri, file: ViewFile, private enabled: boolean, persisted = false) {
         this.file = file;
+        this.persisted = persisted;
     }
 
     static async open(
@@ -74,7 +81,7 @@ export class ViewStore {
         }
         if (bytes) {
             try {
-                return new ViewStore(uri, readViewFile(JSON.parse(Buffer.from(bytes).toString('utf8'))), enabled);
+                return new ViewStore(uri, readViewFile(JSON.parse(Buffer.from(bytes).toString('utf8'))), enabled, true);
             } catch {
                 // A broken file must not prevent the diagram from opening. It
                 // remains untouched until a deliberate edit replaces it.
@@ -147,6 +154,34 @@ export class ViewStore {
         this.file = { ...this.file, ...patch };
         if (userChanged || this.dirty) {
             this.schedule();
+        }
+    }
+
+    /**
+     * Carries the arrangement over a rename in the model.
+     *
+     * Not a step: the modeller renamed a class in the editor and takes that
+     * back there, and an undo here that restored the old ids would put the
+     * class's position under a name the model no longer has. The history is
+     * renamed too, so taking back a move made before the rename still moves
+     * the class. Written when it changed something, since the file on disk
+     * otherwise keeps the old names and the next reopen loses the class.
+     */
+    rename(renames: Renames): void {
+        for (const steps of [this.done, this.undone]) {
+            for (const step of steps) {
+                step.file = renameInViewFile(step.file, renames);
+            }
+        }
+        if (this.step) {
+            this.step = { ...this.step, file: renameInViewFile(this.step.file, renames) };
+        }
+        const file = renameInViewFile(this.file, renames);
+        if (file !== this.file) {
+            this.file = file;
+            if (this.persisted || this.dirty) {
+                this.schedule();
+            }
         }
     }
 
@@ -224,6 +259,7 @@ export class ViewStore {
         this.dirty = false;
         const write = this.writes.then(async () => {
             await writeViewFile(this.uri, Buffer.from(text, 'utf8'));
+            this.persisted = true;
         });
         // Keep the queue usable after a reported write failure; callers still
         // receive the original rejection from `write`.

@@ -52,7 +52,12 @@ view are created lazily, only after the modeller changes the automatic result.
 - [ ] Rename and delete named views with explicit, recoverable file operations.
 - [x] Move a model's default and named views with it when it is renamed or
   moved in the editor, as part of the rename's own edit.
-- [ ] Surface orphaned placements so they can be reassigned after a model rename.
+- [x] Carry a class's, relation's or package's arrangement over a rename made
+  while its diagram is open: positions, routes, the hidden list and the undo
+  history follow the new name.
+- [ ] Carry renames into views that were not open, and surface orphaned
+  placements left by renames made with no diagram open, so they can be
+  reassigned.
 
 ## Progress log
 

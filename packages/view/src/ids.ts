@@ -55,3 +55,31 @@ export class RelationIds {
         return count === 0 ? shape : `${shape}#${count + 1}`;
     }
 }
+
+/**
+ * An edge id with its ends renamed, or `undefined` when the id is not one an
+ * edge between two nodes is given.
+ *
+ * Read from the right: a relation's stereotype and name never hold a colon,
+ * so the last two colons are theirs and everything before them is the target,
+ * however many `::` it has -- `rel:a::B->c::D::` is a relation from `a::B` to
+ * `c::D` with neither, not one to `c::D::` with nothing at all.
+ */
+export function renameEdgeEnds(id: string, rename: (node: string) => string): string | undefined {
+    const shape = /^(gen|inst|rel):(.+?)->(.+)$/.exec(id);
+    if (!shape) {
+        return undefined;
+    }
+    const [, prefix, source, rest] = shape as unknown as [string, string, string, string];
+    if (prefix !== 'rel') {
+        return `${prefix}:${rename(source)}->${rename(rest)}`;
+    }
+    const occurrence = /#\d+$/.exec(rest)?.[0] ?? '';
+    const body = rest.slice(0, rest.length - occurrence.length);
+    const name = body.lastIndexOf(':');
+    const stereotype = body.lastIndexOf(':', name - 1);
+    if (stereotype <= 0) {
+        return undefined;
+    }
+    return `rel:${rename(source)}->${rename(body.slice(0, stereotype))}${body.slice(stereotype)}${occurrence}`;
+}
