@@ -55,9 +55,11 @@ view are created lazily, only after the modeller changes the automatic result.
 - [x] Carry a class's, relation's or package's arrangement over a rename made
   while its diagram is open: positions, routes, the hidden list and the undo
   history follow the new name.
-- [ ] Carry renames into views that were not open, and surface orphaned
-  placements left by renames made with no diagram open, so they can be
-  reassigned.
+- [x] Carry the same renames into the model's views that are not open --
+  its named views, other files' views that draw the class, the workspace
+  diagrams -- rewriting only the ids, a moment after the last rename.
+- [ ] Surface orphaned placements left by renames made with no diagram open,
+  so they can be reassigned.
 
 ## Progress log
 

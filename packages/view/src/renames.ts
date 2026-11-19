@@ -17,7 +17,7 @@
 
 import type { ViewEdge, ViewGenset, ViewModel, ViewNode } from './model.js';
 import { renameEdgeEnds } from './ids.js';
-import type { EdgeRoute, Placement, ViewFile } from './viewfile.js';
+import type { ViewFile } from './viewfile.js';
 
 export interface Renames {
     /** Classes, datatypes, enumerations and package cards, old id to new. */
@@ -158,41 +158,62 @@ export function renamedId(id: string, renames: Renames): string {
  * The view file with every id it holds renamed: positions, routes and the
  * hidden list. The same file when nothing in it was affected, so a caller can
  * tell whether there is anything to write.
+ */
+export function renameInViewFile(file: ViewFile, renames: Renames): ViewFile {
+    return renameInRawViewFile(file, renames) as ViewFile | undefined ?? file;
+}
+
+/**
+ * A view file as JSON on disk, with its ids renamed, or `undefined` when the
+ * renames touch nothing in it.
+ *
+ * Raw rather than read: a view that is not open is rewritten only because a
+ * class it names was renamed, and passing it through `readViewFile` would also
+ * fill in every option it leaves to the default and drop whatever it holds
+ * that this version does not know -- a diff of the whole file for a change of
+ * one name. Only the ids move, each keeping its place among its neighbours.
  *
  * A stale entry already sitting under a new name -- from a class of that name
  * deleted long ago -- gives way to the one renamed into it, which is the one
- * on the screen.
+ * the modeller arranged last.
  */
-export function renameInViewFile(file: ViewFile, renames: Renames): ViewFile {
+export function renameInRawViewFile(raw: unknown, renames: Renames): Record<string, unknown> | undefined {
+    if (!isRecord(raw)) {
+        return undefined;
+    }
     let changed = false;
-    const keyed = <T>(record: Record<string, T>): Record<string, T> => {
-        const moved: Record<string, T> = {};
-        const kept: Record<string, T> = {};
+    const keyed = (record: Record<string, unknown>): Record<string, unknown> => {
+        const result: Record<string, unknown> = {};
         for (const [id, value] of Object.entries(record)) {
             const next = renamedId(id, renames);
-            if (next === id) {
-                kept[id] = value;
-            } else {
-                moved[next] = value;
+            if (next !== id) {
                 changed = true;
+                result[next] = value;
+            } else if (!(id in result)) {
+                result[id] = value;
             }
         }
-        return { ...kept, ...moved };
+        return result;
     };
-    const nodes: Record<string, Placement> = keyed(file.nodes);
-    const edges: Record<string, EdgeRoute> = keyed(file.edges);
-    const hidden = file.content.hidden?.map(id => {
-        const next = renamedId(id, renames);
-        changed ||= next !== id;
-        return next;
-    });
-    if (!changed) {
-        return file;
+    const patch: Record<string, unknown> = {};
+    for (const field of ['nodes', 'edges'] as const) {
+        const record = raw[field];
+        if (isRecord(record)) {
+            patch[field] = keyed(record);
+        }
     }
-    return {
-        ...file,
-        content: { ...file.content, ...(hidden ? { hidden: [...new Set(hidden)] } : {}) },
-        nodes,
-        edges
-    };
+    const content = raw.content;
+    if (isRecord(content) && Array.isArray(content.hidden)) {
+        const hidden = content.hidden.map((id: unknown) => {
+            const next = typeof id === 'string' ? renamedId(id, renames) : id;
+            changed ||= next !== id;
+            return next;
+        });
+        patch.content = { ...content, hidden: [...new Set(hidden)] };
+    }
+    return changed ? { ...raw, ...patch } : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

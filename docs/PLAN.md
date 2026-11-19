@@ -192,7 +192,8 @@ tools think of diagrams, and what a large model needs.
   A view file keyed by qualified name goes stale when a class is renamed. While
   the diagram is open, two consecutive readings say which declaration became
   which -- one vanished and one appeared where it was written -- and the
-  arrangement is moved to the new names (`renames.ts`); that evidence is never
+  arrangement is moved to the new names (`renames.ts`), in the open view and
+  in every other view beside the model's files; that evidence is never
   stored, so a position never becomes an identity. A rename made elsewhere
   leaves the entry kept, not dropped, and the view should report what it can
   no longer place, so a rename costs a click rather than a layout.

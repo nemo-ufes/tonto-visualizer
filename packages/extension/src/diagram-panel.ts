@@ -25,6 +25,9 @@ import {
     labelOfView, ViewStore, viewChoicesFor, viewFileExists, viewNameFor, viewNameOf, viewToShow, viewUriFor
 } from './view-store.js';
 import { PANEL_BODY } from './webview/skeleton.js';
+import { ViewRenames } from './view-renames.js';
+
+type Model = Awaited<ReturnType<ViewSession['models']>>[number];
 
 const DEBOUNCE = 300;
 const WORKSPACE_CONFIRMATION_CLASS_LIMIT = 100;
@@ -157,6 +160,8 @@ export class DiagramPanel {
      * that kept drawing it showed edits that exist nowhere any more.
      */
     private readonly closedBuffers = new Set<string>();
+    /** Renames on their way to the views that are not open. */
+    private readonly viewRenames = new ViewRenames();
     private disposal: Promise<void> | undefined;
     /** The last message built, so a panel that becomes ready late still gets it. */
     private last: ToPanel | undefined;
@@ -266,6 +271,9 @@ export class DiagramPanel {
         this.pending = undefined;
         this.fitNextView = true;
         const session = new ViewSession({ workspace: paths });
+        // A view read before a queued rename reached it would write the old
+        // names back over it.
+        await this.viewRenames.flush();
         const store = await ViewStore.open(modelUri, undefined, saveArrangement(), uri);
         if (generation !== this.generation) {
             await store.dispose();
@@ -322,6 +330,7 @@ export class DiagramPanel {
         this.fitNextView = true;
         const folder = modelRootOf(document.uri);
         const session = new ViewSession({ workspace: [folder] });
+        await this.viewRenames.flush();
         const store = await ViewStore.open(document.uri, undefined, saveArrangement(), viewUri);
         if (generation !== this.generation) {
             await store.dispose();
@@ -357,6 +366,9 @@ export class DiagramPanel {
 
     /** Writes the arrangement now, so a file about to be moved holds all of it. */
     async flushView(): Promise<void> {
+        // A rename still queued for another view would otherwise be written
+        // to where that view used to be, and put it back.
+        await this.viewRenames.flush();
         await this.store?.write();
     }
 
@@ -760,7 +772,7 @@ export class DiagramPanel {
         });
         const { hidden: _hidden, ...unfiltered } = content;
         const completeCatalog = deriveWith({ ...unfiltered, derivedMaterialMode: 'both' });
-        this.carryRenames(completeCatalog, store);
+        this.carryRenames(completeCatalog, store, models);
         const catalog = filterDerivedMaterial(completeCatalog, unfiltered.derivedMaterialMode);
         this.completeCatalog = completeCatalog;
         this.catalog = catalog;
@@ -785,12 +797,15 @@ export class DiagramPanel {
      * new at once -- left nothing placed, which reads as a diagram never
      * arranged and was laid out again from scratch.
      */
-    private carryRenames(next: ViewModel, store: ViewStore): void {
+    private carryRenames(next: ViewModel, store: ViewStore, models: readonly Model[]): void {
         const renames = renamesBetween(this.completeCatalog, next);
         if (!renames) {
             return;
         }
         store.rename(renames);
+        if (saveArrangement()) {
+            this.viewRenames.add(renames, viewDirectoriesOf(models), store.location);
+        }
         const rename = (id: string) => renamedId(id, renames);
         this.positions = Object.fromEntries(Object.entries(this.positions).map(([id, rect]) => [rename(id), rect]));
         this.visibleNodeIds = new Set([...this.visibleNodeIds].map(rename));
@@ -1270,7 +1285,33 @@ ${PANEL_BODY}
             disposable.dispose();
         }
         await store?.dispose();
+        await this.viewRenames.flush();
     }
+}
+
+/**
+ * Where the views of these models can be: beside each model, in its `views`
+ * folder, and among the workspace diagrams, whose class view names classes by
+ * the same ids.
+ */
+function viewDirectoriesOf(models: readonly Model[]): vscode.Uri[] {
+    const directories = new Map<string, vscode.Uri>();
+    for (const model of models) {
+        const uri = model.$document?.uri;
+        if (uri?.scheme !== 'file') {
+            continue;
+        }
+        const parent = vscode.Uri.joinPath(vscode.Uri.parse(uri.toString()), '..');
+        for (const directory of [parent, vscode.Uri.joinPath(parent, 'views')]) {
+            directories.set(directory.toString(), directory);
+        }
+    }
+    const folders = vscode.workspace.workspaceFolders;
+    if (folders?.length) {
+        const workspaceViews = vscode.Uri.joinPath(workspaceViewBase(folders), '.tonto-visualizer');
+        directories.set(workspaceViews.toString(), workspaceViews);
+    }
+    return [...directories.values()];
 }
 
 function updateMode(): string {

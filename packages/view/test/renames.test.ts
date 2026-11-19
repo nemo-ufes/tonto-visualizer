@@ -2,7 +2,9 @@ import { describe, expect, test } from 'vitest';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { ViewFile } from '../src/index.js';
-import { derive, emptyViewFile, renameEdgeEnds, renameInViewFile, renamesBetween } from '../src/index.js';
+import {
+    derive, emptyViewFile, renameEdgeEnds, renameInRawViewFile, renameInViewFile, renamesBetween
+} from '../src/index.js';
 import { ViewSession } from '../src/session.js';
 
 const uri = pathToFileURL(resolve(import.meta.dirname, 'fixtures/parties/draft.tonto')).toString();
@@ -104,6 +106,36 @@ describe('a view file carried over a rename', () => {
         const [first, second] = await before_and_after(marriage('Person'), marriage('Human'));
         const file = { ...emptyViewFile(), nodes: { 'Society::Wife': { x: 1, y: 2 } } };
         expect(renameInViewFile(file, renamesBetween(first, second)!)).toBe(file);
+    });
+});
+
+describe('a view file on disk carried over a rename', () => {
+
+    test('moves only the ids, each where it was, and leaves the rest as written', async () => {
+        const [first, second] = await before_and_after(marriage('Person'), marriage('Human'));
+        const raw = {
+            version: 1,
+            display: { routing: 'curved' },
+            somethingNewer: true,
+            nodes: { 'Society::Husband': { x: 0, y: 100 }, 'Society::Person': { x: 10, y: 20 } },
+            edges: { 'gen:Society::Husband->Society::Person': { labelOffset: { x: 1, y: 1 } } }
+        };
+        expect(renameInRawViewFile(raw, renamesBetween(first, second)!)).toEqual({
+            version: 1,
+            display: { routing: 'curved' },
+            somethingNewer: true,
+            nodes: { 'Society::Husband': { x: 0, y: 100 }, 'Society::Human': { x: 10, y: 20 } },
+            edges: { 'gen:Society::Husband->Society::Human': { labelOffset: { x: 1, y: 1 } } }
+        });
+        expect(Object.keys(renameInRawViewFile(raw, renamesBetween(first, second)!)!.nodes as object))
+            .toEqual(['Society::Husband', 'Society::Human']);
+    });
+
+    test('is nothing to write when it names nothing renamed, or is not a view at all', async () => {
+        const [first, second] = await before_and_after(marriage('Person'), marriage('Human'));
+        const renames = renamesBetween(first, second)!;
+        expect(renameInRawViewFile({ nodes: { 'Society::Wife': { x: 1, y: 2 } } }, renames)).toBeUndefined();
+        expect(renameInRawViewFile([1, 2], renames)).toBeUndefined();
     });
 });
 
