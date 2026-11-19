@@ -40,6 +40,7 @@ const optionsPanel = element('options');
 const staleLabel = element('stale');
 // Looked up rather than required: a page without it -- the tests' -- still draws.
 const busyLabel = document.getElementById('busy');
+const orphansLabel = document.getElementById('orphans');
 const ontologyDiagramButton = document.getElementById('ontologyDiagram') as HTMLButtonElement | null;
 
 let view: ViewModel = { groups: [], nodes: [], edges: [], gensets: [] };
@@ -142,6 +143,18 @@ window.addEventListener('message', event => {
         // The reason, which the label has no room for, so the modeller can see
         // why the editor and the diagram disagree about the same text.
         staleLabel.title = message.stale ?? '';
+        if (orphansLabel) {
+            // Said in the toolbar, not drawn: a position with nothing to
+            // place has nowhere on the canvas to be shown.
+            const orphans = message.orphans ?? [];
+            orphansLabel.hidden = orphans.length === 0;
+            orphansLabel.textContent = orphans.length === 1
+                ? '1 saved position matches nothing in the model'
+                : `${orphans.length} saved positions match nothing in the model`;
+            orphansLabel.title = orphans.length
+                ? `Kept in the view file, in case a class was renamed while no diagram was open:\n${orphans.join('\n')}`
+                : '';
+        }
         if (message.fit) {
             fitMode = true;
         }

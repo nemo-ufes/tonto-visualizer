@@ -58,8 +58,14 @@ view are created lazily, only after the modeller changes the automatic result.
 - [x] Carry the same renames into the model's views that are not open --
   its named views, other files' views that draw the class, the workspace
   diagrams -- rewriting only the ids, a moment after the last rename.
-- [ ] Surface orphaned placements left by renames made with no diagram open,
-  so they can be reassigned.
+- [x] Keep the last reading of each model in the extension's workspace
+  storage, and compare the model with it when a view opens, so renames made
+  with no diagram open are carried into every view before anything is placed.
+- [x] Say in the toolbar how many saved positions match nothing in the model,
+  and which, rather than dropping them.
+- [ ] Reassign or discard those orphaned placements from the panel.
+- [ ] Pair what remains by structure -- the neighbours an orphan's saved
+  routes name -- when the text moved too much for positions to tell.
 
 ## Progress log
 

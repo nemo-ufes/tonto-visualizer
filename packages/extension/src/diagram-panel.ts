@@ -26,6 +26,7 @@ import {
 } from './view-store.js';
 import { PANEL_BODY } from './webview/skeleton.js';
 import { ViewRenames } from './view-renames.js';
+import type { Readings } from './readings.js';
 
 type Model = Awaited<ReturnType<ViewSession['models']>>[number];
 
@@ -109,8 +110,13 @@ function prioritizeRelatorPaths(view: ViewModel, materials: readonly ViewRelatio
  */
 const ASSET_VERSION = Date.now();
 
+/** How long after the model last changed its reading is kept. */
+const READING_SETTLE = 5000;
+
 export class DiagramPanel {
     static current: DiagramPanel | undefined;
+    /** Where the last reading of each model is kept; set when the extension starts. */
+    static readings: Readings | undefined;
 
     private readonly disposables: vscode.Disposable[] = [];
     private session: ViewSession | undefined;
@@ -162,6 +168,16 @@ export class DiagramPanel {
     private readonly closedBuffers = new Set<string>();
     /** Renames on their way to the views that are not open. */
     private readonly viewRenames = new ViewRenames();
+    /** What the session reads, by which its last reading is kept. */
+    private readingRoot: string | undefined;
+    /** Whether this view has been compared with the reading kept from before it opened. */
+    private readingCompared = false;
+    private lastModels: Model[] | undefined;
+    /** The whole model, derived from `lastModels` only when asked for. */
+    private whole: { models: Model[]; view: ViewModel } | undefined;
+    private readingTimer: NodeJS.Timeout | undefined;
+    /** Saved positions of the open view that name nothing the model has. */
+    private orphans: string[] = [];
     private disposal: Promise<void> | undefined;
     /** The last message built, so a panel that becomes ready late still gets it. */
     private last: ToPanel | undefined;
@@ -274,6 +290,7 @@ export class DiagramPanel {
         // A view read before a queued rename reached it would write the old
         // names back over it.
         await this.viewRenames.flush();
+        await this.keepReading();
         const store = await ViewStore.open(modelUri, undefined, saveArrangement(), uri);
         if (generation !== this.generation) {
             await store.dispose();
@@ -295,6 +312,7 @@ export class DiagramPanel {
         this.panel.title = `Tonto workspace diagram — ${diagram}`;
         this.session = session;
         this.store = store;
+        this.startReading([...paths].sort().join('\n'));
         this.view = { groups: [], nodes: [], edges: [], gensets: [] };
         this.catalog = { groups: [], nodes: [], edges: [], gensets: [] };
         this.completeCatalog = { groups: [], nodes: [], edges: [], gensets: [] };
@@ -331,6 +349,7 @@ export class DiagramPanel {
         const folder = modelRootOf(document.uri);
         const session = new ViewSession({ workspace: [folder] });
         await this.viewRenames.flush();
+        await this.keepReading();
         const store = await ViewStore.open(document.uri, undefined, saveArrangement(), viewUri);
         if (generation !== this.generation) {
             await store.dispose();
@@ -352,6 +371,7 @@ export class DiagramPanel {
         this.panel.title = this.diagramTitle(document.uri, viewUri);
         this.session = session;
         this.store = store;
+        this.startReading(folder);
         this.view = { groups: [], nodes: [], edges: [], gensets: [] };
         this.catalog = { groups: [], nodes: [], edges: [], gensets: [] };
         // Another document's reading is no evidence of a rename in this one.
@@ -772,12 +792,28 @@ export class DiagramPanel {
         });
         const { hidden: _hidden, ...unfiltered } = content;
         const completeCatalog = deriveWith({ ...unfiltered, derivedMaterialMode: 'both' });
+        // A model half-parsed is missing whatever the error swallowed: no
+        // reading to keep, nor to compare a kept one with.
+        if (errors.length === 0) {
+            this.lastModels = models;
+            if (!this.readingCompared) {
+                // Before anything is placed: a class renamed since the view
+                // was last open is placed where it was, not laid out as new.
+                this.readingCompared = true;
+                await this.carryKeptRenames(models, store);
+                if (generation !== this.generation || store !== this.store) {
+                    return;
+                }
+            }
+            this.scheduleReading();
+        }
         this.carryRenames(completeCatalog, store, models);
         const catalog = filterDerivedMaterial(completeCatalog, unfiltered.derivedMaterialMode);
         this.completeCatalog = completeCatalog;
         this.catalog = catalog;
         this.filters = filterItemsOf(catalog);
         const isFirstDraw = this.installView(filterView(catalog, store.state.content.hidden ?? []), store);
+        this.orphans = this.orphansOf(store, completeCatalog, models);
         if (isFirstDraw) {
             // Nothing has been arranged yet, so this is the one time the diagram
             // may lay itself out completely.
@@ -785,6 +821,91 @@ export class DiagramPanel {
             return;
         }
         this.send(errors[0]);
+    }
+
+    private startReading(root: string): void {
+        this.readingRoot = root;
+        this.readingCompared = false;
+        this.lastModels = undefined;
+        this.whole = undefined;
+        this.orphans = [];
+    }
+
+    /**
+     * The whole model the session reads, whatever this view shows of it.
+     *
+     * A view of one file draws its packages and what they point at; a rename
+     * is found in any file, and a saved position is an orphan only when the
+     * model has nothing of that name anywhere.
+     */
+    private wholeModel(models: Model[]): ViewModel {
+        if (this.whole?.models !== models) {
+            this.whole = { models, view: derive({ models }) };
+        }
+        return this.whole.view;
+    }
+
+    /** Compares the model with the reading kept from when it was last open. */
+    private async carryKeptRenames(models: Model[], store: ViewStore): Promise<void> {
+        const readings = DiagramPanel.readings;
+        const root = this.readingRoot;
+        if (!readings || !root) {
+            return;
+        }
+        const kept = await readings.read(root);
+        const whole = this.wholeModel(models);
+        const renames = kept ? renamesBetween(kept, whole) : undefined;
+        if (renames && store === this.store) {
+            store.rename(renames);
+            if (saveArrangement()) {
+                this.viewRenames.add(renames, viewDirectoriesOf(models), store.location);
+            }
+        }
+        // Found once: the next view of this model to open compares against
+        // the model as it is now.
+        await readings.write(root, whole);
+    }
+
+    /**
+     * Keeps the reading a few seconds after the model last changed, as well
+     * as when the panel moves on, so a window that is closed or crashes
+     * loses only the last moments of it.
+     */
+    private scheduleReading(): void {
+        clearTimeout(this.readingTimer);
+        this.readingTimer = setTimeout(() => void this.keepReading(), READING_SETTLE);
+    }
+
+    private async keepReading(): Promise<void> {
+        clearTimeout(this.readingTimer);
+        this.readingTimer = undefined;
+        const readings = DiagramPanel.readings;
+        const root = this.readingRoot;
+        const models = this.lastModels;
+        if (readings && root && models) {
+            await readings.write(root, this.wholeModel(models));
+        }
+    }
+
+    /**
+     * Saved positions with nothing in the model to place, which the panel
+     * says rather than drops: they are where a class renamed with no diagram
+     * open, and not recognised, used to sit.
+     *
+     * Against the whole model, since a view of one file holds positions for
+     * classes it drew as external references, and only when the view itself
+     * does not already account for them.
+     */
+    private orphansOf(store: ViewStore, catalog: ViewModel, models: Model[]): string[] {
+        const drawn = new Set(catalog.nodes.map(node => node.id));
+        const candidates = Object.keys(store.state.nodes).filter(id => !drawn.has(id));
+        // A package diagram's cards come and go as ontologies are expanded
+        // and collapsed; a card not drawn is not a card renamed.
+        if (candidates.length === 0 || catalog.kind === 'packages') {
+            return [];
+        }
+        const known = new Set(this.wholeModel(models).nodes.map(node => node.id));
+        return candidates.filter(id => !known.has(id));
     }
 
     /**
@@ -926,7 +1047,8 @@ export class DiagramPanel {
             ...(this.workspaceFolders ? { workspaceDiagram: this.workspaceDiagram } : {}),
             filters: this.filters,
             ...(this.fitNextView ? { fit: true } : {}),
-            ...(stale ? { stale } : {})
+            ...(stale ? { stale } : {}),
+            ...(this.orphans.length ? { orphans: this.orphans } : {})
         };
         this.last = message;
         this.post(message);
@@ -1286,6 +1408,7 @@ ${PANEL_BODY}
         }
         await store?.dispose();
         await this.viewRenames.flush();
+        await this.keepReading();
     }
 }
 

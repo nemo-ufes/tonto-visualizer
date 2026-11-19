@@ -3,7 +3,8 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { ViewFile } from '../src/index.js';
 import {
-    derive, emptyViewFile, renameEdgeEnds, renameInRawViewFile, renameInViewFile, renamesBetween
+    derive, emptyViewFile, keptReading, readKeptReading, renameEdgeEnds, renameInRawViewFile, renameInViewFile,
+    renamesBetween
 } from '../src/index.js';
 import { ViewSession } from '../src/session.js';
 
@@ -72,6 +73,29 @@ describe('a rename between two readings of a model', () => {
             marriage('Person'), '\n\n' + marriage('Human').replace('kind Human', 'kind Human // was Person'));
         expect(Object.fromEntries(renamesBetween(first, second)!.nodes))
             .toEqual({ 'Society::Person': 'Society::Human' });
+    });
+});
+
+describe('a reading kept between sessions', () => {
+
+    test('finds the rename once read back, as the reading it was cut from would', async () => {
+        const [first, second] = await before_and_after(marriage('Person'), marriage('Human', 'Kinship'));
+        const kept = readKeptReading(JSON.parse(JSON.stringify(keptReading(first))));
+        expect(renamesBetween(kept!, second)).toEqual(renamesBetween(first, second));
+        expect(renamesBetween(kept!, second)!.nodes.get('Society::Person')).toBe('Kinship::Human');
+    });
+
+    test('holds no names, attributes or documentation, only ids and where each starts', async () => {
+        const [first] = await before_and_after(marriage('Person'), marriage('Person'));
+        const kept = keptReading(first);
+        expect(Object.keys(kept.nodes[0]!).sort()).toEqual(['id', 'kind', 'source', 'stereotype']);
+        expect(Object.keys(kept.nodes[0]!.source!).sort()).toEqual(['character', 'line', 'uri']);
+    });
+
+    test('is refused when another version wrote it, or it is not one', () => {
+        expect(readKeptReading({ version: 99, nodes: [], edges: [], gensets: [] })).toBeUndefined();
+        expect(readKeptReading({ version: 1, nodes: [{ id: 3 }], edges: [], gensets: [] })).toBeUndefined();
+        expect(readKeptReading('nodes')).toBeUndefined();
     });
 });
 

@@ -194,9 +194,11 @@ tools think of diagrams, and what a large model needs.
   which -- one vanished and one appeared where it was written -- and the
   arrangement is moved to the new names (`renames.ts`), in the open view and
   in every other view beside the model's files; that evidence is never
-  stored, so a position never becomes an identity. A rename made elsewhere
-  leaves the entry kept, not dropped, and the view should report what it can
-  no longer place, so a rename costs a click rather than a layout.
+  stored in the repository, so a position never becomes an identity. The last
+  reading of each model is kept in the extension's workspace storage, and a
+  view that opens is first compared with it, which carries renames made while
+  no diagram was open. What still cannot be placed is kept, not dropped, and
+  the toolbar says so, so a rename costs a click rather than a layout.
 
 Dragging changes the *view*, not the model. Editing the ontology from the
 diagram is outside the initial release (§9).

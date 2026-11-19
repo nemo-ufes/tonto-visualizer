@@ -49,6 +49,11 @@ export type ToPanel =
         fit?: boolean;
         /** Set when the model does not parse and the picture is the last good one. */
         stale?: string;
+        /**
+         * Ids with a saved position and nothing in the model to place: what a
+         * rename made with no diagram open, and not recognised, left behind.
+         */
+        orphans?: string[];
     }
     | { type: 'select'; ids: string[] }
     | { type: 'theme'; dark: boolean }

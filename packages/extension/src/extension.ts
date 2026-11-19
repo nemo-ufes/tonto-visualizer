@@ -2,8 +2,13 @@ import * as vscode from 'vscode';
 import { DiagramPanel } from './diagram-panel.js';
 import type { ViewMove } from './rename.js';
 import { viewRenamesFor } from './rename.js';
+import { Readings } from './readings.js';
 
 export function activate(context: vscode.ExtensionContext): void {
+    // A window with no folder has no workspace storage; its models' readings
+    // are kept with the extension's own, under the root each one names.
+    DiagramPanel.readings = new Readings(
+        vscode.Uri.joinPath(context.storageUri ?? context.globalStorageUri, 'readings'));
     // What the last rename moved, from the edit that moved it to the panel
     // that has to follow; the two events of one rename arrive in order.
     let moved: ViewMove[] = [];

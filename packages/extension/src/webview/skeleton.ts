@@ -35,6 +35,7 @@ export const PANEL_BODY = `<div id="shell">
         <span class="spacer"></span>
         <span id="busy" class="busy" hidden></span>
         <span id="stale" class="stale" hidden></span>
+        <span id="orphans" class="orphans" hidden></span>
     </div>
     <div id="options" class="panel" hidden></div>
     <div id="viewport">

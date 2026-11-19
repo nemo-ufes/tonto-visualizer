@@ -15,7 +15,7 @@
  * line number still never becomes an identity.
  */
 
-import type { ViewEdge, ViewGenset, ViewModel, ViewNode } from './model.js';
+import type { NodeKind, SourceLocation, ViewEdge, ViewModel } from './model.js';
 import { renameEdgeEnds } from './ids.js';
 import type { ViewFile } from './viewfile.js';
 
@@ -31,6 +31,100 @@ export interface Renames {
     gensets: ReadonlyMap<string, string>;
 }
 
+/** Where a declaration starts: all a rename needs of where it was written. */
+type Start = Pick<SourceLocation, 'uri' | 'line' | 'character'>;
+
+interface ReadingNode {
+    id: string;
+    kind: NodeKind;
+    stereotype?: string;
+    source?: Start;
+}
+
+interface ReadingEdge {
+    id: string;
+    kind: ViewEdge['kind'];
+    source: string;
+    target: string;
+    stereotype?: string;
+    source_?: Start;
+}
+
+interface ReadingGenset {
+    id: string;
+    general?: string;
+    specifics: readonly string[];
+    source?: Start;
+}
+
+/**
+ * What a rename is told from: the ids of a reading of the model and where
+ * each was written. A `ViewModel` is one; so is what is kept of one between
+ * sessions, which is only this.
+ */
+export interface Reading {
+    kind?: ViewModel['kind'];
+    nodes: readonly ReadingNode[];
+    edges: readonly ReadingEdge[];
+    gensets: readonly ReadingGenset[];
+}
+
+export const READING_VERSION = 1;
+
+/**
+ * A reading cut down to what `renamesBetween` uses, to be kept until the
+ * model is next opened: no names, attributes or documentation, so a large
+ * model's is small and none of its text is copied out of the repository.
+ */
+export function keptReading(view: Reading): Reading & { version: number } {
+    const start = (source: Start | undefined) => source
+        ? { source: { uri: source.uri, line: source.line, character: source.character } }
+        : {};
+    return {
+        version: READING_VERSION,
+        ...(view.kind ? { kind: view.kind } : {}),
+        nodes: view.nodes.map(node => ({
+            id: node.id, kind: node.kind,
+            ...(node.stereotype ? { stereotype: node.stereotype } : {}),
+            ...start(node.source)
+        })),
+        edges: view.edges.map(edge => ({
+            id: edge.id, kind: edge.kind, source: edge.source, target: edge.target,
+            ...(edge.stereotype ? { stereotype: edge.stereotype } : {}),
+            ...(edge.source_ ? { source_: start(edge.source_).source! } : {})
+        })),
+        gensets: view.gensets.map(genset => ({
+            id: genset.id,
+            ...(genset.general ? { general: genset.general } : {}),
+            specifics: [...genset.specifics],
+            ...start(genset.source)
+        }))
+    };
+}
+
+/**
+ * A kept reading read back, or `undefined` when it is not one this version
+ * wrote. Nothing is lost by refusing it: without a reading a rename is not
+ * found, which is where things stood before readings were kept.
+ */
+export function readKeptReading(raw: unknown): Reading | undefined {
+    if (!isRecord(raw) || raw.version !== READING_VERSION
+        || !Array.isArray(raw.nodes) || !Array.isArray(raw.edges) || !Array.isArray(raw.gensets)) {
+        return undefined;
+    }
+    const isStart = (value: unknown): value is Start => isRecord(value) && typeof value.uri === 'string'
+        && typeof value.line === 'number' && typeof value.character === 'number';
+    const ok = raw.nodes.every(node => isRecord(node) && typeof node.id === 'string' && typeof node.kind === 'string'
+            && (node.source === undefined || isStart(node.source)))
+        && raw.edges.every(edge => isRecord(edge) && typeof edge.id === 'string' && typeof edge.kind === 'string'
+            && typeof edge.source === 'string' && typeof edge.target === 'string'
+            && (edge.source_ === undefined || isStart(edge.source_)))
+        && raw.gensets.every(genset => isRecord(genset) && typeof genset.id === 'string'
+            && Array.isArray(genset.specifics) && genset.specifics.every(one => typeof one === 'string')
+            && (genset.source === undefined || isStart(genset.source)));
+    return ok ? raw as unknown as Reading : undefined;
+}
+
 /**
  * The elements of `before` that `after` holds under another name, or
  * `undefined` when there are none.
@@ -43,11 +137,11 @@ export interface Renames {
  * declaration and one new one of the same stereotype in the same document are
  * still the same thing renamed; more than one each is a guess, and not made.
  */
-export function renamesBetween(before: ViewModel, after: ViewModel): Renames | undefined {
+export function renamesBetween(before: Reading, after: Reading): Renames | undefined {
     if (before.kind !== after.kind) {
         return undefined;
     }
-    const nodeKey = (node: ViewNode) => node.source && node.kind !== 'unresolved'
+    const nodeKey = (node: ReadingNode) => node.source && node.kind !== 'unresolved'
         ? {
             at: `${node.kind}|${startOf(node.source)}`,
             family: `${node.kind}|${node.stereotype ?? ''}|${node.source.uri}`
@@ -56,7 +150,7 @@ export function renamesBetween(before: ViewModel, after: ViewModel): Renames | u
     const nodes = pair(...changedBetween(before.nodes, after.nodes), nodeKey, nodeKey);
     const rename = (id: string) => nodes.get(id) ?? id;
     const edges = renamedRelations(before.edges, after.edges, rename);
-    const gensetKey = (ends: (id: string) => string) => (genset: ViewGenset) => genset.source
+    const gensetKey = (ends: (id: string) => string) => (genset: ReadingGenset) => genset.source
         ? { at: startOf(genset.source), family: `${genset.source.uri}|${signatureOf(genset, ends)}` }
         : undefined;
     const gensets = pair(...changedBetween(before.gensets, after.gensets), gensetKey(rename), gensetKey(id => id));
@@ -116,12 +210,12 @@ function pair<T extends { id: string }>(
  * found under the id its renamed ends give it, and needs no entry here.
  */
 function renamedRelations(
-    before: readonly ViewEdge[], after: readonly ViewEdge[], rename: (id: string) => string
+    before: readonly ReadingEdge[], after: readonly ReadingEdge[], rename: (id: string) => string
 ): Map<string, string> {
-    const expected = (edge: ViewEdge) => renameEdgeEnds(edge.id, rename) ?? edge.id;
+    const expected = (edge: ReadingEdge) => renameEdgeEnds(edge.id, rename) ?? edge.id;
     const now = new Set(after.map(edge => edge.id));
     const then = new Set(before.map(expected));
-    const keyOf = (ends: (id: string) => string) => (edge: ViewEdge): Key | undefined =>
+    const keyOf = (ends: (id: string) => string) => (edge: ReadingEdge): Key | undefined =>
         edge.kind === 'relation' && edge.source_
             ? {
                 at: `${startOf(edge.source_)}|${edge.stereotype ?? ''}`,
@@ -136,11 +230,11 @@ function renamedRelations(
 }
 
 /** A set's general and specifics, which a set renamed in another file still has. */
-function signatureOf(genset: ViewGenset, rename: (id: string) => string): string {
+function signatureOf(genset: ReadingGenset, rename: (id: string) => string): string {
     return [rename(genset.general ?? ''), ...genset.specifics.map(rename).sort()].join(',');
 }
 
-function startOf(source: NonNullable<ViewNode['source']>): string {
+function startOf(source: Start): string {
     return `${source.uri}:${source.line}:${source.character}`;
 }
 

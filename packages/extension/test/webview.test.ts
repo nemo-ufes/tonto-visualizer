@@ -354,6 +354,23 @@ describe('the webview and its host protocol', () => {
         expect(checkbox('Sample::Person').checked).toBe(false);
     });
 
+    test('says how many saved positions match nothing in the model, and which', () => {
+        const orphans = document.getElementById('orphans')!;
+        sendModel();
+        expect(orphans.hidden).toBe(true);
+
+        window.dispatchEvent(new MessageEvent('message', { data: {
+            type: 'model', view, positions: {}, routes: {},
+            display: defaultDisplayOptions, content: defaultContentOptions, layout: defaultLayoutOptions,
+            packages: ['Sample'], hasMultipleViews: false, filters: [],
+            orphans: ['Sample::Human', 'Sample::Company']
+        } }));
+
+        expect(orphans.hidden).toBe(false);
+        expect(orphans.textContent).toBe('2 saved positions match nothing in the model');
+        expect(orphans.title).toContain('Sample::Company');
+    });
+
     test('asks the host for the whole workspace, and shows which packages that is', () => {
         window.dispatchEvent(new MessageEvent('message', { data: {
             type: 'model', view, positions: {}, routes: {},
