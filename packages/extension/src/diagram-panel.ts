@@ -15,7 +15,9 @@ import {
 import { ViewSession } from 'tonto-view/session';
 import type { ViewMove } from './rename.js';
 import { autoLayout } from 'tonto-canvas';
-import { darkTheme, drawnSizes, lightTheme, movedTo, placeNewNodes, render, sizeOf } from 'tonto-canvas/draw';
+import { drawnSizes, movedTo, placeNewNodes, render, sizeOf } from 'tonto-canvas/draw';
+import type { DiagramBackground } from './appearance.js';
+import { diagramTheme, isDiagramBackground } from './appearance.js';
 import { filterItemsOf, filterView } from './filters.js';
 import { lockDiagramGroup } from './group-lock.js';
 import { isWithinFolder } from './paths.js';
@@ -118,6 +120,7 @@ export class DiagramPanel {
     private workspaceDiagram: 'packages' | 'classes' = 'packages';
     private readonly expandedOntologies = new Set<string>();
     private hasMultipleViews = false;
+    private background: DiagramBackground = 'editor';
     private view: ViewModel = { groups: [], nodes: [], edges: [], gensets: [] };
     /** The last successfully derived model, before modeller-owned filters. */
     private catalog: ViewModel = { groups: [], nodes: [], edges: [], gensets: [] };
@@ -572,6 +575,16 @@ export class DiagramPanel {
             return;
         }
         const suggested = format ?? 'svg';
+        const choice = await vscode.window.showQuickPick([
+            { label: 'Use diagram background', background: 'diagram' as const, description: 'Keep the current diagram colours' },
+            { label: 'White background', background: 'white' as const, description: 'Dark text and lines on white' },
+            { label: 'Black background', background: 'black' as const, description: 'Light text and lines on black' }
+        ], { title: 'Export diagram', placeHolder: 'Choose the background of the exported SVG or PNG' });
+        if (!choice) {
+            return;
+        }
+        // Export can target a slide or paper without changing the working view.
+        const exportBackground = choice.background === 'diagram' ? this.background : choice.background;
         // A workspace diagram has no document to name the file after, and
         // returning for want of one left its Export button doing nothing.
         const defaultUri = this.document
@@ -595,7 +608,7 @@ export class DiagramPanel {
             routes: store.state.edges,
             display: store.state.display,
             direction: store.state.layout.direction,
-            theme: isDark(vscode.window.activeColorTheme) ? darkTheme : lightTheme
+            theme: diagramTheme(exportBackground, isDark(vscode.window.activeColorTheme))
         });
         const wanted = format ?? (target.path.toLowerCase().endsWith('.png') ? 'png' : 'svg');
         try {
@@ -910,11 +923,17 @@ export class DiagramPanel {
         const store = this.store;
         switch (message.type) {
             case 'ready':
+                this.background = isDiagramBackground(message.background) ? message.background : 'editor';
                 this.ready = true;
                 this.post({ type: 'theme', dark: isDark(vscode.window.activeColorTheme) });
                 if (this.last) {
                     void this.panel.webview.postMessage(this.last);
                     this.fitNextView = false;
+                }
+                return;
+            case 'background':
+                if (isDiagramBackground(message.background)) {
+                    this.background = message.background;
                 }
                 return;
             case 'moved':

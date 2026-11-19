@@ -36,6 +36,7 @@ body {
 
 #toolbar {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 4px;
     padding: 2px 6px;
@@ -130,6 +131,37 @@ button:disabled {
     overflow: hidden;
     cursor: default;
     touch-action: none;
+}
+
+#viewport.pan-enabled,
+#viewport.pan-enabled * {
+    cursor: grab !important;
+}
+
+#viewport.pan-dragging,
+#viewport.pan-dragging * {
+    cursor: grabbing !important;
+}
+
+#viewport:focus-visible {
+    outline: 2px solid var(--vscode-focusBorder, #1f5c5c);
+    outline-offset: -2px;
+}
+
+.background-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+}
+
+.background-control select {
+    min-height: 20px;
+    border: 1px solid var(--vscode-dropdown-border, rgba(128, 128, 128, 0.4));
+    border-radius: 4px;
+    background: var(--vscode-dropdown-background, #ffffff);
+    color: var(--vscode-dropdown-foreground, #1f1c17);
+    font: inherit;
 }
 
 #canvas {

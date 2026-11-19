@@ -58,6 +58,19 @@ The notation covers stereotypes and attributes, datatypes and enumerations, gene
 
 ## Arrange it by hand
 
+**Pan** moves the viewport without moving classes or changing the selection.
+Enable it beside **Fit** and drag anywhere, including over a class, relation or
+resize handle. **Space + drag**, **Alt + drag**, and the **middle mouse button**
+provide temporary pan. **Esc** leaves Pan; ordinary dragging then selects and
+moves classes again. Wheel scrolling and Ctrl/Cmd + wheel zoom remain available.
+
+The **Background** chooser offers **White**, **Black**, and **Editor** (the
+default). White and Black set the diagram's paper and contrasting ink without
+changing VS Code's theme or the toolbar. Editor follows the editor theme again.
+The choice and Pan mode are kept with the panel's viewport state; neither is
+written into the ontology or its arrangement. Exports have their own background
+choice, so a dark working view can produce a white image for a document.
+
 Drag classes to arrange them; select several with a marquee; pin, align and distribute them. Select a line to show its handles: drag a hollow midpoint to add a bend, drag a solid handle to move one, and press Delete to remove it. **Tonto: Arrange Diagram Automatically** places whatever you have not placed yourself; adding a class never moves the ones you have already arranged. **Tonto: Undo Diagram Change** and **Redo** step through arrangement changes.
 
 Once you change an arrangement, it is saved under the model's `views` folder, as a file you can commit next to the model. **Tonto: Save Diagram as Named View** keeps another arrangement of the same model, such as `views/employment.core-taxonomy.tontoview`, and **Tonto: Open Diagram View** switches between views. When you rename or move a model in VS Code, its views move with it, in the same edit, so undoing the rename puts them back too.
@@ -67,6 +80,12 @@ The diagram never edits the model: everything you do in the panel changes only t
 ## Export
 
 **Tonto: Export Diagram as SVG** and **Tonto: Export Diagram as PNG** write the current diagram as it appears, in the typeface it is drawn in, for documents and slides.
+
+Before Save As, choose **Use diagram background**, **White background**, or
+**Black background**. White and Black set both the paper and contrasting ink
+for the exported file, without changing the working view or VS Code's theme.
+The same choice is available from the panel's **Export** button. PNG backgrounds
+are opaque; cancelling either dialog writes no file.
 
 ## Settings
 

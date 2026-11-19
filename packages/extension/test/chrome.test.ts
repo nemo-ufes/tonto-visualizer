@@ -81,13 +81,13 @@ describe('the panel chrome', () => {
         expect(button![2]!.replace(/<[^>]+>/g, '').trim()).toBe('');
     });
 
-    test('starts with fit, arrange and new window without repeating the file name', () => {
+    test('starts with fit, pan, arrange and new window without repeating the file name', () => {
         const toolbar = /<div id="toolbar">([\s\S]*?)<\/div>/.exec(PANEL_BODY);
         expect(toolbar).not.toBeNull();
         const controls = [...toolbar![1]!.matchAll(/<(?:button|span)\b[^>]*id="([^"]+)"/g)]
             .map(match => match[1]);
-        expect(controls.slice(0, 3)).toEqual(['fit', 'arrange', 'newWindow']);
-        expect(controls.slice(3, 6)).toEqual(['distanceDown', 'distance', 'distanceUp']);
+        expect(controls.slice(0, 4)).toEqual(['fit', 'pan', 'arrange', 'newWindow']);
+        expect(controls.slice(4, 7)).toEqual(['distanceDown', 'distance', 'distanceUp']);
         expect(controls).not.toContain('title');
         expect(toolbar![1]).toContain('id="fit" title="Fit to view" aria-pressed="false"');
     });

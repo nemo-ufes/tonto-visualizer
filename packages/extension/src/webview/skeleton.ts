@@ -13,6 +13,7 @@
 export const PANEL_BODY = `<div id="shell">
     <div id="toolbar">
         <button id="fit" title="Fit to view" aria-pressed="false">Fit</button>
+        <button id="pan" title="Pan: drag anywhere. Hold Space, Alt, or the middle button for temporary pan. Esc exits Pan." aria-pressed="false">Pan</button>
         <button id="arrange" title="Arrange the whole diagram automatically">Arrange</button>
         <button id="newWindow" class="icon-button" title="Move into a New Window" aria-label="Move into a New Window">
             <svg viewBox="0 0 16 16" aria-hidden="true">
@@ -27,6 +28,14 @@ export const PANEL_BODY = `<div id="shell">
         <button id="zoomOut" title="Zoom out">−</button>
         <span id="scale" class="scale">100%</span>
         <button id="zoomIn" title="Zoom in">+</button>
+        <label class="background-control" title="Diagram background, independent of the editor theme">
+            Background
+            <select id="diagramBackground" aria-label="Diagram background">
+                <option value="editor">Editor</option>
+                <option value="white">White</option>
+                <option value="black">Black</option>
+            </select>
+        </label>
         <button id="hide" title="Hide the selected classes or associations" disabled>Hide</button>
         <button id="optionsButton" title="What is drawn">⚙</button>
         <button id="exportButton" title="Export as SVG or PNG">Export</button>
@@ -37,7 +46,7 @@ export const PANEL_BODY = `<div id="shell">
         <span id="stale" class="stale" hidden></span>
     </div>
     <div id="options" class="panel" hidden></div>
-    <div id="viewport">
+    <div id="viewport" tabindex="0">
         <div id="canvas"></div>
     </div>
 </div>`;

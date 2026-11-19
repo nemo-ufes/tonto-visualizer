@@ -11,6 +11,7 @@
 import type {
     ContentOptions, DisplayOptions, EdgeRoute, LayoutOptions, Placement, ViewModel
 } from 'tonto-view';
+import type { DiagramBackground } from './appearance.js';
 
 export interface Rect {
     x: number;
@@ -64,7 +65,9 @@ export type ToPanel =
 
 /** Panel → host. */
 export type FromPanel =
-    | { type: 'ready' }
+    | { type: 'ready'; background?: DiagramBackground }
+    /** Reader preference, also used by exports; never changes the model or saved arrangement. */
+    | { type: 'background'; background: DiagramBackground }
     /**
      * Where cards are now. `resized` marks the ones the modeller sized by hand:
      * a placement's size is what the file must never draw the card below, so a
