@@ -10,7 +10,7 @@ import * as vscode from 'vscode';
 import type { ContentOptions, DisplayOptions, ViewModel, ViewRelation } from 'tonto-view';
 import {
     contentAfter, derive, derivePackages, deriveWorkspacePackages, expandInverseIds, filterDerivedMaterial, idsAtSource,
-    nodesInSelection, packageName, packagesInScope, reconcile, renamedId, renamesBetween
+    nodesInSelection, PackageNames, packagesInScope, reconcile, renamedId, renamesBetween
 } from 'tonto-view';
 import { ViewSession } from 'tonto-view/session';
 import type { ViewMove } from './rename.js';
@@ -755,25 +755,26 @@ export class DiagramPanel {
         // diagram of the ontology it bundles.
         const outline = document ? await session.outline(document.uri.toString()) : undefined;
         const workspaceOntologies = workspaceFolders ? await session.workspaceOntologies(models) : undefined;
-        this.availablePackages = [...new Set(models
-            .flatMap(model => model.packages.map(packageName))
-            .filter((name): name is string => name !== undefined))].sort();
-        this.focusPackages = [...new Set(focused
-            .flatMap(model => model.packages.map(packageName))
+        // Named as `derive` names them, from the same models: two ontologies'
+        // `core` are two packages to tick, and a view of one file is a view of
+        // its own `core` alone.
+        const names = new PackageNames(models);
+        const namesOf = (some: Model[]) => [...new Set(some
+            .flatMap(model => model.packages.map(one => names.of(one)))
             .filter((name): name is string => name !== undefined))];
+        this.availablePackages = namesOf(models).sort();
+        this.focusPackages = namesOf(focused);
         // `focusPackages` and `availablePackages` are only good from here on --
         // read before this point (as the scope this file or the whole workspace
         // resolves to) they are last refresh's, which on the very first refresh
         // of a newly opened document is nothing at all: the diagram drew empty
         // until some unrelated change asked for a second one.
         this.ontologyName = outline?.name;
-        this.ontologyPackages = outline?.packages.filter(one => one.available).map(one => one.name);
+        this.ontologyPackages = outline?.packages.filter(one => one.available)
+            .map(one => names.inOntology(outline.name, one.name));
         if (workspaceFolders) {
             this.ontologyName = undefined;
             this.ontologyPackages = undefined;
-            this.availablePackages = [...new Set(models
-                .flatMap(model => model.packages.map(packageName))
-                .filter((name): name is string => name !== undefined))].sort();
         }
         if (this.ontologyPackages) {
             this.availablePackages = this.ontologyPackages;

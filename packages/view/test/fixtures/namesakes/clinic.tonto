@@ -1,0 +1,4 @@
+/// A clinic's ontology, which shares a package name and a class name with
+/// the school's and nothing else.
+ontology clinic bundles
+    people from <clinic-people.tonto>

@@ -11,7 +11,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { ContentOptions, DerivedMaterialMode, DisplayOptions, LayoutOptions, ViewFile } from 'tonto-view';
 import {
-    defaultDisplayOptions, defaultLayoutOptions, derive, derivePackages, packageName, packagesInScope,
+    defaultDisplayOptions, defaultLayoutOptions, derive, derivePackages, PackageNames, packagesInScope,
     readViewFile, reconcile
 } from 'tonto-view';
 import { modelRoot, ViewSession } from 'tonto-view/session';
@@ -36,7 +36,8 @@ packages, the ontologies it imports, and the dependencies between them.
   --partonomy-only   draw names, whole-part relations and constitution, ranked whole
                      above part, with the specializations parts inherit them through
   --loose            lay the model out as one graph, ignoring its packages
-  --package <name>   restrict the view to this package; repeatable
+  --package <name>   restrict the view to this package; repeatable. A name two
+                     ontologies share is written with its ontology: alpha::core
   --no-external      leave out elements from packages outside the view
   --no-datatypes     leave out datatypes and enumerations
   --derived-material <mode>  both (default), relators, or relations
@@ -173,18 +174,20 @@ export async function run(argv: string[]): Promise<number> {
         ...(packages.length > 0 ? { includedPackages: packages } : {})
     };
     const fileModels = all.length > 0 ? all : models;
+    // Every model goes in, the file's packages chosen by name: which packages
+    // share a name across ontologies, and so what each is called, is a fact
+    // about the whole workspace and not about the one file drawn.
+    const names = new PackageNames(models);
     const view = outline ? derivePackages(outline) : derive({
-        models: saved ? models : fileModels,
+        models,
         documentation: session.documentation(),
-        options: saved
-            ? {
-                ...content,
-                includedPackages: packagesInScope(content, {
-                    file: packageNames(fileModels),
-                    workspace: packageNames(models)
-                })
-            }
-            : content
+        options: {
+            ...content,
+            includedPackages: packagesInScope(content, {
+                file: packageNames(fileModels, names),
+                workspace: packageNames(models, names)
+            })
+        }
     });
 
     if (!asSvg) {
@@ -247,7 +250,7 @@ export async function run(argv: string[]): Promise<number> {
     return 0;
 }
 
-function packageNames(models: Awaited<ReturnType<ViewSession['models']>>): string[] {
+function packageNames(models: Awaited<ReturnType<ViewSession['models']>>, names: PackageNames): string[] {
     return [...new Set(models.flatMap(model => model.packages
-        .map(packageName).filter((name): name is string => name !== undefined)))];
+        .map(one => names.of(one)).filter((name): name is string => name !== undefined)))];
 }

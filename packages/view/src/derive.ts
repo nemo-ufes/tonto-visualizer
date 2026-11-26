@@ -53,7 +53,11 @@ import type {
 } from './model.js';
 
 export interface DeriveInput {
-    /** Every parsed model in the workspace. What is drawn is decided by the options. */
+    /**
+     * Every parsed model in the workspace. What is drawn is decided by the
+     * options. Not just the ones drawn: which packages share a name, and so
+     * what every package is called, is a fact about all of them.
+     */
     models: Model[];
     options?: Partial<ContentOptions>;
     /** The package the view is centred on, when the view follows one file. */
@@ -148,6 +152,68 @@ export function packageName(one: Package): string | undefined {
     return one.name ?? undefined;
 }
 
+/**
+ * The ontology a package belongs to, as the model writes it: the `in` clause
+ * of a package in a file of its own, else the header of the document it is
+ * written in.
+ */
+function ontologyOf(one: Package): string | undefined {
+    if (one.owner) {
+        return one.owner;
+    }
+    const model = one.$container;
+    return isModel(model) ? model.ontologies[0]?.name : undefined;
+}
+
+/**
+ * The names packages go by in the diagrams of one workspace.
+ *
+ * A package is named within its ontology, so two ontologies may each have a
+ * `core`. Read by bare name they were one package: one box, the second
+ * ontology's `core::Person` folded into the first's, and a view of one file
+ * drawing the other ontology's package as its own. Where a bare name is shared
+ * by packages of different ontologies, each is named by its ontology too --
+ * `alpha::core` -- and everywhere else by its name alone, so every id a saved
+ * arrangement already holds stays what it was. When a second `core` appears
+ * later, the first one's declarations stay where they are written, which is
+ * what `renames.ts` carries their positions by.
+ */
+export class PackageNames {
+    /** Every bare package name in the workspace and the ontologies that declare it. */
+    private readonly owners = new Map<string, Set<string | undefined>>();
+
+    constructor(models: readonly Model[]) {
+        for (const model of models) {
+            for (const one of model.packages) {
+                const name = packageName(one);
+                if (name !== undefined) {
+                    const owners = this.owners.get(name) ?? new Set();
+                    owners.add(ontologyOf(one));
+                    this.owners.set(name, owners);
+                }
+            }
+        }
+    }
+
+    /** What a package is called in the view, or `undefined` for one with no name. */
+    of(one: Package): string | undefined {
+        const name = packageName(one);
+        // A monolithic ontology's package is named by the ontology already.
+        return name === undefined || isOntologyBody(one) ? name : this.inOntology(ontologyOf(one), name);
+    }
+
+    /**
+     * What the package `name` of `ontology` is called in the view. A package
+     * from outside the workspace -- an imported ontology's -- is named by its
+     * ontology too when a workspace package has its bare name.
+     */
+    inOntology(ontology: string | undefined, name: string): string {
+        const owners = this.owners.get(name);
+        const shared = owners !== undefined && (owners.size > 1 || !owners.has(ontology));
+        return shared && ontology ? qualify(ontology, name) : name;
+    }
+}
+
 class Derivation {
     private readonly options: ContentOptions;
     private readonly hidden: Set<string>;
@@ -164,9 +230,11 @@ class Derivation {
     private readonly derivations: Array<{ client: ViewRelation | ViewNode; from: ReadonlyArray<Reference> }> = [];
     /** Packages inside the view, as AST nodes, so containment is an identity test. */
     private readonly included = new Set<Package>();
+    private readonly names: PackageNames;
 
     constructor(private readonly input: DeriveInput) {
         this.options = { ...defaultContentOptions, ...input.options };
+        this.names = new PackageNames(input.models);
         this.hidden = new Set(this.options.hidden ?? []);
     }
 
@@ -174,7 +242,7 @@ class Derivation {
         const packages = this.input.models.flatMap(model => model.packages);
         const included = this.options.includedPackages ? new Set(this.options.includedPackages) : undefined;
         for (const one of packages) {
-            const name = packageName(one);
+            const name = this.names.of(one);
             if (name !== undefined && (!included || included.has(name))) {
                 this.included.add(one);
             }
@@ -327,7 +395,7 @@ class Derivation {
             id,
             kind: 'class',
             name: declaration.name,
-            package: packageName(declaration.$container),
+            package: this.names.of(declaration.$container),
             stereotype: declaration.stereotype,
             ...(natures ? { natures } : {}),
             color: colorOf(declaration),
@@ -389,7 +457,7 @@ class Derivation {
             id,
             kind: isEnum ? 'enumeration' : 'datatype',
             name: declaration.name,
-            package: packageName(declaration.$container),
+            package: this.names.of(declaration.$container),
             stereotype: isEnum ? 'enum' : 'datatype',
             color: DATATYPE_COLOR,
             isExternal,
@@ -455,7 +523,7 @@ class Derivation {
     }
 
     private addGenset(declaration: GeneralizationSet, owner: Package): void {
-        const id = gensetId(packageName(owner), declaration.name);
+        const id = gensetId(this.names.of(owner), declaration.name);
         const general = declaration.general?.ref ? this.idOf.get(declaration.general.ref) : undefined;
         const specifics = declaration.specifics
             .map(specific => (specific.ref ? this.idOf.get(specific.ref) : undefined))
@@ -576,7 +644,7 @@ class Derivation {
     }
 
     private declarationId(declaration: ClassDeclaration | Datatype | Enumeration): string {
-        return qualify(packageName(declaration.$container), declaration.name);
+        return qualify(this.names.of(declaration.$container), declaration.name);
     }
 
     private naturesOf(declaration: ClassDeclaration): ViewNode['natures'] {

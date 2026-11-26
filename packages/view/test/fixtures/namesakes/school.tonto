@@ -1,0 +1,4 @@
+/// A school's ontology, written apart from the clinic's: both name the
+/// package that holds their people `people`, and both declare a `Person`.
+ontology school bundles
+    people from <school-people.tonto>

@@ -2,10 +2,11 @@ import { describe, expect, test } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { derive, expandInverseIds, idsAtSource, nodesInSelection, packagesInScope } from '../src/index.js';
+import { derive, expandInverseIds, idsAtSource, nodesInSelection, PackageNames, packagesInScope } from '../src/index.js';
 import { ViewSession } from '../src/session.js';
 
 const parties = resolve(import.meta.dirname, 'fixtures/parties');
+const namesakes = resolve(import.meta.dirname, 'fixtures/namesakes');
 
 /** A session over the fixture folder, which is a model of two files. */
 async function viewOfFixture(options?: Parameters<typeof derive>[0]['options']) {
@@ -289,6 +290,43 @@ kind Animal {
         // Ticking packages by hand outranks either scope.
         const picked = viewOf({ scope: 'workspace', includedPackages: ['parties'] });
         expect(picked.groups.filter(group => !group.isExternal).map(group => group.name)).toEqual(['parties']);
+    });
+
+    test('keeps apart two ontologies that name a package alike', async () => {
+        const session = new ViewSession({ workspace: [namesakes] });
+        const models = await session.models();
+        const view = derive({ models });
+
+        expect(view.groups.map(group => group.id).sort()).toEqual(['pkg:clinic::people', 'pkg:school::people']);
+        // Two `Person`s, each the supertype of its own ontology's roles; read
+        // by bare name they were one box that both ontologies specialized.
+        expect(node(view, 'school::people::Person').package).toBe('school::people');
+        expect(node(view, 'clinic::people::Person').package).toBe('clinic::people');
+        const generalizations = view.edges.filter(edge => edge.kind === 'generalization').map(edge => edge.id).sort();
+        expect(generalizations).toEqual([
+            'gen:clinic::people::Patient->clinic::people::Person',
+            'gen:clinic::people::Physician->clinic::people::Person',
+            'gen:school::people::Student->school::people::Person'
+        ]);
+    });
+
+    test('draws only its own ontology\'s package in the view of a file', async () => {
+        const session = new ViewSession({ workspace: [namesakes] });
+        const uri = pathToFileURL(resolve(namesakes, 'clinic-people.tonto')).toString();
+        const models = await session.models();
+        const names = new PackageNames(models);
+        const file = (await session.modelsOf(uri, models))
+            .flatMap(model => model.packages.map(one => names.of(one)!));
+        expect(file).toEqual(['clinic::people']);
+
+        const view = derive({ models, options: { includedPackages: file } });
+        expect(view.groups.map(group => group.name)).toEqual(['clinic::people']);
+        expect(view.nodes.map(one => one.name).sort()).toEqual(['Patient', 'Person', 'Physician', 'Treatment']);
+    });
+
+    test('leaves a package name no other ontology uses as it was', async () => {
+        const view = await viewOfFixture();
+        expect(view.groups.map(group => group.id).sort()).toEqual(['pkg:employment', 'pkg:parties']);
     });
 
     /**

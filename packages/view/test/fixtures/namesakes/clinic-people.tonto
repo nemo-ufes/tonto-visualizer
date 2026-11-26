@@ -1,0 +1,11 @@
+package people in clinic
+
+kind Person
+
+role Patient specializes Person
+role Physician specializes Person
+
+relator Treatment {
+    @mediation [1..*] -- [1] (const) Patient
+    @mediation [1..*] -- [1] (const) Physician
+}
